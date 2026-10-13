@@ -272,7 +272,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
           ← Lobby
         </Link>
         <div className="info">
-          Free · {snap.targetPoints}-pt · Game {game!.gameNumber}
+          {snap.mode === "bot" ? "vs Computer" : "Free"} · {snap.targetPoints}-pt · Game {game!.gameNumber}
           {game!.crawford ? " · Crawford" : ""}
         </div>
         <button className="btn sm" onClick={() => setMenuOpen(true)} aria-haspopup="dialog">
@@ -349,6 +349,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
           </div>
         )}
         {message && !myMovePhase && <div className="status err">{message}</div>}
+        {busy && <div className="status">Sending…</div>}
       </div>
 
       {toast && (
@@ -577,6 +578,18 @@ function WaitingRoom({ snap, matchId, onChange }: { snap: Snapshot; matchId: str
       setErr(e instanceof Error ? e.message : "Failed");
     }
   };
+  const playComputer = async () => {
+    try {
+      if (snap.canCancel) await api(`/api/matches/${matchId}/cancel`, { method: "POST" });
+      const { matchId: id } = await api<{ matchId: string }>("/api/matches", {
+        method: "POST",
+        body: { mode: "bot", targetPoints: snap.targetPoints },
+      });
+      window.location.assign(`/match/${id}`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed");
+    }
+  };
   if (snap.status === "CANCELLED") {
     return (
       <main className="page">
@@ -626,6 +639,15 @@ function WaitingRoom({ snap, matchId, onChange }: { snap: Snapshot; matchId: str
         )}
         {!snap.canJoin && (
           <>
+            <p className="notice" style={{ margin: 0 }}>
+              {snap.mode === "quick"
+                ? "Waiting for another player to press Find online opponent with the same match length. "
+                : "Send this link to your opponent. "}
+              A second tab in this browser counts as you, so test with a private window or another device — or play the computer now.
+            </p>
+            <button className="btn primary block" onClick={playComputer}>
+              Play vs computer instead
+            </button>
             <label>
               Invite link (open on another device or a private window)
               <input readOnly value={url} onFocus={(e) => e.currentTarget.select()} />

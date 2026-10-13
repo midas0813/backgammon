@@ -3,6 +3,7 @@ import {
   GameError,
   applyAction,
   cubeBlockReason,
+  currentSequences,
   newMatch,
   seatToAct,
   startMatch,
@@ -12,6 +13,7 @@ import {
   type GameAction,
 } from "../engine/match";
 import type { Seat } from "../engine/board";
+import { BOT_NAME, BOT_USER_ID, acceptsDouble, chooseSequence } from "./bot";
 import { read, transact, type Db, type MatchMode, type MatchRecord } from "./db";
 import { ApiError, notFound } from "./errors";
 
@@ -30,6 +32,7 @@ function shortId() {
 }
 
 function pushEvents(rec: MatchRecord, events: DomainEvent[]) {
+  rec.updatedAt = Date.now();
   const serverTime = new Date().toISOString();
   for (const e of events) {
     rec.eventSeq += 1;
@@ -54,7 +57,7 @@ function join(db: Db, rec: MatchRecord, userId: string) {
 
 export function createMatch(userId: string, mode: MatchMode, targetPoints: number): { matchId: string } {
   if (!ALLOWED_POINTS.includes(targetPoints)) throw new ApiError(400, "INVALID_INPUT", "Unsupported match length");
-  if (!["quick", "private", "local"].includes(mode)) throw new ApiError(400, "INVALID_INPUT", "Unsupported mode");
+  if (!["quick", "private", "local", "bot"].includes(mode)) throw new ApiError(400, "INVALID_INPUT", "Unsupported mode");
   return transact((db) => {
     // Quick match queue: join the oldest compatible waiting match, otherwise open a new one.
     if (mode === "quick") {
@@ -77,8 +80,11 @@ export function createMatch(userId: string, mode: MatchMode, targetPoints: numbe
       mode,
       createdAt: new Date().toISOString(),
       createdBy: userId,
-      seats: [userId, mode === "local" ? userId : null],
-      names: [mode === "local" ? `${name} (White)` : name, mode === "local" ? `${name} (Black)` : "Waiting…"],
+      seats: [userId, mode === "local" ? userId : mode === "bot" ? BOT_USER_ID : null],
+      names: [
+        mode === "local" ? `${name} (White)` : name,
+        mode === "local" ? `${name} (Black)` : mode === "bot" ? BOT_NAME : "Waiting…",
+      ],
       lastSeen: [Date.now(), 0],
       version: 1,
       state: newMatch(targetPoints),
@@ -87,7 +93,7 @@ export function createMatch(userId: string, mode: MatchMode, targetPoints: numbe
       actions: {},
     };
     pushEvents(rec, [{ type: "MATCH_CREATED", payload: { mode, targetPoints } }]);
-    if (mode === "local") {
+    if (mode === "local" || mode === "bot") {
       rec.version += 1;
       pushEvents(rec, startMatch(rec.state, env));
     }
@@ -100,7 +106,7 @@ export function joinMatch(userId: string, matchId: string) {
   return transact((db) => {
     const rec = db.matches[matchId];
     if (!rec) throw notFound("Match");
-    if (rec.mode === "local") throw new ApiError(409, "EVENT_LOCKED", "Pass-and-play matches cannot be joined");
+    if (rec.mode === "local" || rec.mode === "bot") throw new ApiError(409, "EVENT_LOCKED", "This match cannot be joined");
     join(db, rec, userId);
     return { matchId };
   });
@@ -179,12 +185,11 @@ const ONLINE_MS = 6000;
 export function getSnapshot(userId: string, matchId: string) {
   const now = Date.now();
   // Presence is a soft signal; record it without bumping the state version.
-  const recRaw = read((db) => db.matches[matchId]);
-  if (!recRaw) throw notFound("Match");
-  const mySeats = seatOf(recRaw, userId);
-  for (const s of mySeats) recRaw.lastSeen[s] = now;
+  const rec = read((db) => db.matches[matchId]);
+  if (!rec) throw notFound("Match");
+  const mySeats = seatOf(rec, userId);
+  for (const s of mySeats) rec.lastSeen[s] = now;
 
-  const rec = recRaw;
   const st = rec.state;
   const g = st.game;
   return {
@@ -203,10 +208,10 @@ export function getSnapshot(userId: string, matchId: string) {
       seat: s,
       name: rec.names[s],
       occupied: rec.seats[s] !== null,
-      online: rec.mode === "local" ? true : now - rec.lastSeen[s] < ONLINE_MS,
+      online: rec.mode === "local" || rec.seats[s] === BOT_USER_ID ? true : now - rec.lastSeen[s] < ONLINE_MS,
     })),
     yourSeats: mySeats,
-    canJoin: st.status === "WAITING" && rec.mode !== "local" && mySeats.length === 0,
+    canJoin: st.status === "WAITING" && rec.mode !== "local" && rec.mode !== "bot" && mySeats.length === 0,
     canCancel: st.status === "WAITING" && rec.createdBy === userId,
     seatToAct: seatToAct(st),
     game: g
@@ -251,5 +256,40 @@ export function listMatches(userId: string) {
         .slice(0, 5)
         .map(summary),
     };
+  });
+}
+
+const BOT_STEP_MS = 700;
+
+/**
+ * Advance the computer opponent by at most one action. Called when a participant polls, and paced so
+ * players see the roll before the move. Runs through the same rules engine as human actions.
+ */
+export function tickBot(matchId: string) {
+  const due = read((db) => {
+    const rec = db.matches[matchId];
+    if (!rec || rec.mode !== "bot" || rec.state.status !== "ACTIVE") return false;
+    const seat = seatToAct(rec.state);
+    return seat !== null && rec.seats[seat] === BOT_USER_ID && Date.now() - (rec.updatedAt ?? 0) >= BOT_STEP_MS;
+  });
+  if (!due) return;
+  transact((db) => {
+    const rec = db.matches[matchId];
+    const seat = seatToAct(rec.state);
+    if (seat === null || rec.seats[seat] !== BOT_USER_ID) return;
+    const g = rec.state.game!;
+    let action: GameAction;
+    if (g.phase === "BEFORE_ROLL") action = { actionType: "ROLL" };
+    else if (g.phase === "CUBE_PENDING") {
+      action = {
+        actionType: acceptsDouble(g.board, seat) ? "ACCEPT_DOUBLE" : "PASS_DOUBLE",
+        payload: { pendingOfferId: g.pendingOffer!.offerId },
+      };
+    } else {
+      action = { actionType: "CONFIRM_TURN", payload: { moves: chooseSequence(g.board, seat, currentSequences(g)) } };
+    }
+    const events = applyAction(rec.state, seat, action, env);
+    rec.version += 1;
+    pushEvents(rec, events);
   });
 }

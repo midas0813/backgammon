@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { TOKEN_SCALE } from "../fees";
-import { transact, type Db, type User } from "./db";
+import { read, transact, type Db, type User } from "./db";
 import { grantFreeCredits } from "./ledger";
 
 export const FREE_CREDIT_GRANT = 1000 * TOKEN_SCALE;
@@ -8,12 +8,16 @@ export const THEME_IDS = ["walnut", "slate", "forest", "midnight", "burgundy", "
 
 /** Guest identity for the MVP. A production build replaces this with an approved auth flow. */
 export function ensureUser(id: string | undefined): User {
-  return transact((db) => ensureUserIn(db, id));
+  const existing = id ? read((db) => db.users[id]) : undefined;
+  return existing ?? transact((db) => ensureUserIn(db, id));
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export function ensureUserIn(db: Db, id: string | undefined): User {
   if (id && db.users[id]) return db.users[id];
-  const newId = randomUUID();
+  // Adopt the cookie ID issued by proxy.ts so concurrent first requests resolve to one user.
+  const newId = id && UUID_RE.test(id) ? id : randomUUID();
   const user: User = {
     id: newId,
     name: `Guest-${newId.slice(0, 4).toUpperCase()}`,

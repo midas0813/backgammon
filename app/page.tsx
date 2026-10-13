@@ -9,7 +9,7 @@ import { formatTokens } from "@/lib/fees";
 
 interface MatchSummary {
   matchId: string;
-  mode: "quick" | "private" | "local";
+  mode: "quick" | "private" | "local" | "bot";
   status: string;
   targetPoints: number;
   names: [string, string];
@@ -27,7 +27,7 @@ interface Wallet {
   balances: { freeCredits: number; available: number };
 }
 
-const MODE_LABEL = { quick: "Quick", private: "Invite", local: "Pass & play" };
+const MODE_LABEL = { quick: "Quick", private: "Invite", local: "Pass & play", bot: "vs Computer" };
 
 export default function Lobby() {
   const router = useRouter();
@@ -53,7 +53,7 @@ export default function Lobby() {
     return () => window.clearInterval(t);
   }, [load]);
 
-  const create = async (mode: "quick" | "private" | "local") => {
+  const create = async (mode: MatchSummary["mode"]) => {
     setBusy(true);
     setError(null);
     try {
@@ -134,8 +134,11 @@ export default function Lobby() {
           </div>
         </div>
         <div className="muted small">Free · doubling cube (cap 128) · Crawford rule · no clock · nothing at stake</div>
-        <button className="btn primary block" disabled={busy} onClick={() => create("quick")}>
-          Find opponent
+        <button className="btn primary block" disabled={busy} onClick={() => create("bot")}>
+          Play vs computer
+        </button>
+        <button className="btn block" disabled={busy} onClick={() => create("quick")}>
+          Find online opponent
         </button>
         <div className="grid2">
           <button className="btn" disabled={busy} onClick={() => create("private")}>
@@ -144,6 +147,10 @@ export default function Lobby() {
           <button className="btn" disabled={busy} onClick={() => create("local")}>
             Pass &amp; play
           </button>
+        </div>
+        <div className="muted small">
+          Online play needs a second player in a different browser, a private window or another device. Tabs in the same browser are the
+          same player.
         </div>
         {error && <p className="err small">{error}</p>}
       </section>

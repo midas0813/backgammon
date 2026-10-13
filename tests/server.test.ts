@@ -118,3 +118,49 @@ describe("authoritative match service", () => {
     expect(getSnapshot(alice.id, matchId).stateVersion).not.toBe(999);
   });
 });
+
+describe("computer opponent", () => {
+  it("plays complete matches against a human through the same rules engine", async () => {
+    const { tickBot } = await import("@/lib/server/matches");
+    const { randomEnv } = await import("./helpers");
+    for (let seed = 1; seed <= 5; seed++) {
+      resetDb();
+      const env = randomEnv(seed);
+      setEnvForTests(env);
+      const human = ensureUser(undefined);
+      const { matchId } = createMatch(human.id, "bot", 3);
+      for (let i = 0; i < 4000; i++) {
+        const s = getSnapshot(human.id, matchId);
+        if (s.status === "COMPLETED") break;
+        const g = s.game!;
+        if (s.seatToAct === s.yourSeats[0]) {
+          const req = { actionId: `h${i}`, expectedVersion: s.stateVersion };
+          if (g.phase === "BEFORE_ROLL" && !g.cubeBlock[s.seatToAct] && env.rand() < 0.1) {
+            submitAction(human.id, matchId, { ...req, actionType: "OFFER_DOUBLE", payload: { proposedCube: g.cubeValue * 2 } });
+          } else if (g.phase === "BEFORE_ROLL") {
+            submitAction(human.id, matchId, { ...req, actionType: "ROLL" });
+          } else if (g.phase === "CUBE_PENDING") {
+            submitAction(human.id, matchId, { ...req, actionType: "ACCEPT_DOUBLE", payload: { pendingOfferId: g.pendingOffer!.offerId } });
+          } else {
+            const { currentSequences } = await import("@/lib/engine/match");
+            submitAction(human.id, matchId, { ...req, actionType: "CONFIRM_TURN", payload: { moves: currentSequences(g)[0] } });
+          }
+        } else {
+          transact((db) => void (db.matches[matchId].updatedAt = 0)); // skip the human-visible pacing delay
+          tickBot(matchId);
+        }
+      }
+      const final = getSnapshot(human.id, matchId);
+      expect(final.status).toBe("COMPLETED");
+      expect(Math.max(...final.score)).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("adopts the proxy-issued cookie ID so parallel first requests share one guest", () => {
+    resetDb();
+    const id = "11111111-2222-4333-8444-555555555555";
+    expect(ensureUser(id).id).toBe(id);
+    expect(ensureUser(id).id).toBe(id);
+    expect(read((db) => Object.keys(db.users))).toEqual([id]);
+  });
+});

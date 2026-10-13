@@ -29,7 +29,7 @@ export interface StoredEvent {
   payload: Record<string, unknown>;
 }
 
-export type MatchMode = "quick" | "private" | "local";
+export type MatchMode = "quick" | "private" | "local" | "bot";
 
 export interface MatchRecord {
   id: string;
@@ -40,6 +40,8 @@ export interface MatchRecord {
   names: [string, string];
   lastSeen: [number, number];
   version: number;
+  /** ms timestamp of the last committed state change (paces the computer opponent). */
+  updatedAt?: number;
   state: MatchState;
   events: StoredEvent[];
   eventSeq: number;

@@ -4,7 +4,7 @@ import type { User } from "./db";
 import { ApiError } from "./errors";
 import { ensureUser } from "./users";
 
-const COOKIE = "bg_uid";
+import { GUEST_COOKIE as COOKIE } from "@/proxy";
 
 /** Resolve (or create) the guest user from an httpOnly cookie. */
 export async function currentUser(): Promise<User> {
