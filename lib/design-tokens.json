@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "ui": {
+    "background": "#0B1220",
+    "surface": "#172439",
+    "text": "#EDF3F9",
+    "secondaryText": "#AFC0D6",
+    "primaryAction": "#65E2BC",
+    "actionText": "#0B1220",
+    "warning": "#F4CF87",
+    "error": "#FF8F9C",
+    "border": "#33465E",
+    "fontFamily": "Inter, system-ui, sans-serif",
+    "bodyPx": 16,
+    "labelPx": 14,
+    "headingPx": 24,
+    "spacingBasePx": 8,
+    "screenGutterPx": 16,
+    "buttonMinHeightPx": 48,
+    "cardRadiusPx": 16
+  },
+  "board": {
+    "whiteChecker": "#F7F1E6",
+    "whiteCheckerOutline": "#CDBF9F",
+    "blackChecker": "#101A2E",
+    "blackCheckerOutline": "#61758B",
+    "legalDestination": "#65E2BC",
+    "selectionUsesShapeAndLabel": true
+  },
+  "themes": [
+    {
+      "id": "walnut",
+      "name": "Walnut",
+      "surface": "#9d7951",
+      "lightPoint": "#ead7b5",
+      "darkPoint": "#5b3e31",
+      "bar": "#5b3e31"
+    },
+    {
+      "id": "slate",
+      "name": "Slate",
+      "surface": "#52687e",
+      "lightPoint": "#d8e4ef",
+      "darkPoint": "#26374c",
+      "bar": "#26374c"
+    },
+    {
+      "id": "forest",
+      "name": "Forest",
+      "surface": "#376353",
+      "lightPoint": "#dce9cf",
+      "darkPoint": "#193e34",
+      "bar": "#193e34"
+    },
+    {
+      "id": "midnight",
+      "name": "Midnight",
+      "surface": "#232f47",
+      "lightPoint": "#b8c8e7",
+      "darkPoint": "#101a2e",
+      "bar": "#101a2e"
+    },
+    {
+      "id": "burgundy",
+      "name": "Burgundy",
+      "surface": "#714454",
+      "lightPoint": "#edd1d4",
+      "darkPoint": "#421e31",
+      "bar": "#421e31"
+    },
+    {
+      "id": "sand",
+      "name": "Sand",
+      "surface": "#c4ac83",
+      "lightPoint": "#f4ead8",
+      "darkPoint": "#866a45",
+      "bar": "#866a45"
+    }
+  ]
+}

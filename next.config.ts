@@ -1,9 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
+  // Game state is served from a live in-process store; nothing here benefits from prerender caching.
+  reactStrictMode: true,
 };
 
 export default nextConfig;

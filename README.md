@@ -1,36 +1,46 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Backgammon MVP (Next.js)
 
-## Getting Started
+MVP of the mobile-first backgammon site described in `../specifications`. It covers **Phase 1, the foundation**: a real two-session free match with full rules, the doubling cube, results and reconnect. It also includes the **wallet ledger and simulated payments** requested in `06-payments-development.md`.
 
-First, run the development server:
+## Run
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev            # http://localhost:3000
+npm test               # 31 rules / concurrency / ledger / payment tests
+npm run typecheck
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Production build: `npm run build && npm start`. The simulated payment provider is **off in production**. To demo the wallet on a production build, opt in with `ENABLE_SIMULATED_PAYMENTS=true npm start`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Two-player test: click **Invite a friend**, then open the link in a private window or on another device. Or click **Find opponent** in two different browsers. **Pass & play** runs both seats on one device.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## What works
 
-## Learn More
+| Area | Status |
+| --- | --- |
+| Rules engine (`lib/engine`) | 24 signed points + bar + off; opening roll with tie reroll; full legal-sequence enumeration (max dice, higher-die rule, doubles ×4); hitting, bar entry, bear-off with overshoot; single/gammon/backgammon; 15-checker invariant checked after every turn |
+| Cube | Offer before roll, ownership, accept/pass (pass awards the old value), cap 128, Crawford game, dead-cube block |
+| Authoritative server | Server-only dice (`crypto.randomInt`); clients only propose actions; every action carries `actionId` + `expectedVersion`; retries are idempotent, stale versions are rejected, and the event log has cursors |
+| Multiplayer | Quick-match queue, invite link, pass & play, 1 s polling, presence, refresh/restart restores the exact game |
+| UI | Lobby, waiting room, live board (tap source → highlighted destinations with die labels, undo, confirm), cube decision panel, result & match-over screens, forced-pass announcements, 6 board themes switchable mid-game, profile. Checked for no horizontal overflow at 320/360/390/430 px |
+| Wallet | Double-entry ledger in integer minor units (100 = 1 token = $1). Free credits and paid tokens are separate accounts; match and withdrawal reserves are separate; idempotency keys and reconciliation. Deposit states CREATED→PENDING→CREDITED/FAILED/REVIEW and the withdrawal lifecycle via a **simulated, HMAC-signed provider adapter**. Duplicate, out-of-order, underpaid and forged callbacks are all handled |
+| Fees | Proposed full-tier policy (≤$10 10%, <$500 5%, ≥$500 2.5%) with half-up rounding, marked **not approved** |
 
-To learn more about Next.js, take a look at the following resources:
+## Not in this MVP (by design)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+* Ranked play, ratings and tournaments (Phase 2). They are shown in the lobby as disabled.
+* Token-stake matches (Phase 3). The ledger functions `reserveForMatch`, `settleTokensPerPoint` and `settleFixedStake` exist and are tested, but are not exposed in the UI. They are blocked on the open decisions in `05-decisions.md`.
+* Clocks/timeouts, drag-to-move, sign-in (guest cookie only), real payment providers (Nuvei/Paysafe), admin tools.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Architecture
 
-## Deploy on Vercel
+```
+lib/engine/      pure rules + match state machine (shared by server and client preview)
+lib/server/      db (JSON store, all-or-nothing transactions), matches, users, ledger, wallet, payments/
+app/api/         REST contracts from 03-api-contracts.md
+components/      Board (SVG), MatchView, ThemePicker, BottomNav
+tests/           vitest suites mirroring 04-test-plan.md
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Persistence is a single JSON file at `.data/db.json`, written atomically. It is fine for one process. For production, replace `lib/server/db.ts` with Postgres, using the same entities, unique constraints and an outbox. Realtime uses polling; WebSockets/SSE would replace it later.
