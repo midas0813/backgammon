@@ -7,11 +7,15 @@ MVP of the mobile-first backgammon site described in `../specifications`. It cov
 ```bash
 npm install
 npm run dev            # http://localhost:3000
-npm test               # 33 rules / bot / concurrency / ledger / payment tests
+npm test               # 39 tests: rules, bot, concurrency, accounts, wallet link, ledger, payments
 npm run typecheck
 ```
 
 Production build: `npm run build && npm start`. The simulated payment provider is **off in production**. To demo the wallet on a production build, opt in with `ENABLE_SIMULATED_PAYMENTS=true npm start`.
+
+**Pages:** `/` landing · `/play` lobby · `/signup` · `/login` · `/profile` · `/wallet` · `/match/:id`.
+
+**Images:** the landing and auth pages have 11 AI-image slots. Until files are added to `public/images/`, built-in vector art is shown. See [docs/IMAGE_BRIEF.md](docs/IMAGE_BRIEF.md) for file names, sizes and prompts. Production builds pick up new images on the next build.
 
 **Playing alone:** click **Play vs computer** (a simple heuristic bot, unrated, free).
 
@@ -25,6 +29,10 @@ Production build: `npm run build && npm start`. The simulated payment provider i
 | Cube | Offer before roll, ownership, accept/pass (pass awards the old value), cap 128, Crawford game, dead-cube block |
 | Authoritative server | Server-only dice (`crypto.randomInt`); clients only propose actions; every action carries `actionId` + `expectedVersion`; retries are idempotent, stale versions are rejected, and the event log has cursors |
 | Multiplayer | Play vs computer, quick-match queue, invite link, pass & play, 1 s polling, presence, refresh/restart restores the exact game |
+| Accounts | Email + password sign-up/sign-in (scrypt hashes, opaque httpOnly session tokens, fresh token on login, login rate limiting). A guest is upgraded in place on sign-up, keeping its games and credits |
+| Profile | Avatar upload (cropped/re-encoded in the browser, type checked by magic bytes, ≤ 2 MB, served from `/api/avatars`), name, bio, country, stats, match history, linked wallets, settings |
+| Connect Wallet | Injected EIP-1193 wallets (MetaMask, Coinbase Wallet, Rabby…). Ownership proven by signing a one-time challenge, verified server-side with viem. No gas, no funds moved. WalletConnect QR is not set up (needs a project ID) |
+| Look & motion | Landing page, glass UI, display font, shaded board; dice tumble, checker slides (including opponent replay and hits), cube flip, confetti, scroll reveals. Honors OS reduced-motion and the profile toggle |
 | UI | Lobby, waiting room, live board (tap source → highlighted destinations with die labels, undo, confirm), cube decision panel, result & match-over screens, forced-pass announcements, 6 board themes switchable mid-game, profile. Checked for no horizontal overflow at 320/360/390/430 px |
 | Wallet | Double-entry ledger in integer minor units (100 = 1 token = $1). Free credits and paid tokens are separate accounts; match and withdrawal reserves are separate; idempotency keys and reconciliation. Deposit states CREATED→PENDING→CREDITED/FAILED/REVIEW and the withdrawal lifecycle via a **simulated, HMAC-signed provider adapter**. Duplicate, out-of-order, underpaid and forged callbacks are all handled |
 | Fees | Proposed full-tier policy (≤$10 10%, <$500 5%, ≥$500 2.5%) with half-up rounding, marked **not approved** |

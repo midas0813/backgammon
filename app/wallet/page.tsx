@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import ConnectWalletButton, { chainName, shortAddress } from "@/components/ConnectWallet";
 import { api, sendIdempotent } from "@/lib/client/api";
+import { useMe } from "@/lib/client/me";
 import { formatTokens } from "@/lib/fees";
 
 interface HistoryItem {
@@ -54,6 +56,7 @@ const ACCOUNT_LABEL: Record<string, string> = {
 };
 
 export default function WalletPage() {
+  const me = useMe();
   const [w, setW] = useState<WalletData | null>(null);
   const [qty, setQty] = useState("25");
   const [method, setMethod] = useState<"CARD" | "STABLECOIN">("CARD");
@@ -101,6 +104,25 @@ export default function WalletPage() {
         <strong>Simulated payments.</strong> Provider: <code>{w?.adapter ?? "…"}</code>. No card data is collected and no real transfer happens.
         Development tokens have no cash value. 1 BGT = $1.00 USD.
       </div>
+
+      <section className="card wallet-connect">
+        <div className="spread">
+          <div>
+            <h2>Crypto wallet</h2>
+            <p className="muted small">Link a wallet to deposit stablecoins from it later. Signing is free and moves no funds.</p>
+          </div>
+          <ConnectWalletButton className="btn gold" />
+        </div>
+        {me?.wallets && me.wallets.length > 0 && (
+          <div className="row">
+            {me.wallets.map((w) => (
+              <span key={w.address} className="badge ok" title={w.address}>
+                {shortAddress(w.address)} · {chainName(w.chainId)}
+              </span>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className="card">
         <h2>Balances</h2>

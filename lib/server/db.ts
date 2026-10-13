@@ -13,12 +13,33 @@ import type { DepositMethod, DepositStatus, WithdrawalStatus } from "./payments/
  * unique constraints on action IDs / settlement keys / payment event IDs, and an outbox table.
  */
 
+export interface LinkedWallet {
+  address: string; // checksummed EVM address
+  chainId: number;
+  verifiedAt: string;
+}
+
 export interface User {
   id: string;
   name: string;
   themeId: string;
   reducedMotion: boolean;
   createdAt: string;
+  /** Present once the guest registers. */
+  email?: string;
+  passwordHash?: string;
+  registeredAt?: string;
+  avatar?: string; // file name under the avatar store
+  bio?: string;
+  country?: string;
+  wallets?: LinkedWallet[];
+}
+
+export interface Session {
+  userId: string;
+  createdAt: string;
+  /** Pending wallet-link challenge for this session. */
+  walletNonce?: { nonce: string; message: string; expiresAt: number };
 }
 
 export interface StoredEvent {
@@ -80,6 +101,7 @@ export interface Withdrawal {
 
 export interface Db {
   users: Record<string, User>;
+  sessions: Record<string, Session>;
   matches: Record<string, MatchRecord>;
   ledger: LedgerState;
   deposits: Record<string, DepositIntent>;
@@ -90,6 +112,7 @@ export interface Db {
 
 const emptyDb = (): Db => ({
   users: {},
+  sessions: {},
   matches: {},
   ledger: emptyLedger(),
   deposits: {},
@@ -99,7 +122,8 @@ const emptyDb = (): Db => ({
 });
 
 const DB_FILE = process.env.BG_DB_FILE ?? path.join(process.cwd(), ".data", "db.json");
-const IN_MEMORY = DB_FILE === ":memory:";
+export const IN_MEMORY = DB_FILE === ":memory:";
+export const DATA_DIR = IN_MEMORY ? path.join(process.cwd(), ".data-test") : path.dirname(DB_FILE);
 
 const g = globalThis as unknown as { __bgDb?: Db };
 

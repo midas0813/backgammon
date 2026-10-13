@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Board, { type DieView } from "@/components/Board";
+import Avatar from "@/components/Avatar";
+import Board, { type AnimMove, type DieView } from "@/components/Board";
+import Confetti from "@/components/Confetti";
+import Modal from "@/components/Modal";
 import ThemePicker from "@/components/ThemePicker";
 import { applyMove, diceUses, legalSequences, nextMoves, pipCount, type Move, type Seat } from "@/lib/engine/board";
 import type { GameResult } from "@/lib/engine/match";
@@ -41,7 +44,9 @@ export default function MatchView({ matchId }: { matchId: string }) {
   const [resultModal, setResultModal] = useState<GameResult | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirm, setConfirm] = useState<null | "double" | "forfeit">(null);
+  const [oppAnim, setOppAnim] = useState<{ key: string; moves: AnimMove[] } | null>(null);
   const versionRef = useRef(0);
+  const animatedTurnRef = useRef<string | null>(null);
   const cursorRef = useRef<number | null>(null);
 
   const showToast = useCallback((text: string) => {
@@ -95,6 +100,18 @@ export default function MatchView({ matchId }: { matchId: string }) {
           setSelected(null);
         }
         versionRef.current = data.stateVersion;
+        const lt = data.game?.lastTurn;
+        if (data.game && lt && lt.moves.length > 0) {
+          const turnKey = `${data.game.gameNumber}:${data.game.turnNumber}:${lt.seat}`;
+          const mine = data.yourSeats.length === 1 && data.yourSeats[0] === lt.seat;
+          // Replay the opponent's committed move (not on first load, and never our own, already shown).
+          if (animatedTurnRef.current !== null && animatedTurnRef.current !== turnKey && !mine) {
+            setOppAnim({ key: turnKey, moves: lt.moves.map((m) => ({ ...m, seat: lt.seat })) });
+          }
+          animatedTurnRef.current = turnKey;
+        } else if (animatedTurnRef.current === null) {
+          animatedTurnRef.current = "";
+        }
         setSnap(data);
         setLoadError(null);
         announce(data);
@@ -222,7 +239,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
       <main className="page">
         <div className="card">
           <h1>{loadError}</h1>
-          <Link className="btn primary" href="/">
+          <Link className="btn primary" href="/play">
             Back to lobby
           </Link>
         </div>
@@ -268,7 +285,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
   return (
     <main className="game">
       <div className="topbar">
-        <Link className="btn sm" href="/" aria-label="Back to lobby (the match continues)">
+        <Link className="btn sm" href="/play" aria-label="Back to lobby (the match continues)">
           ← Lobby
         </Link>
         <div className="info">
@@ -295,6 +312,12 @@ export default function MatchView({ matchId }: { matchId: string }) {
           targets={targets}
           lastMoved={lastMoved}
           onTap={onTap}
+          rollKey={game!.dice ? `${game!.gameNumber}-${game!.turnNumber}-${game!.dice.join("")}` : undefined}
+          anim={
+            draft.length > 0
+              ? { key: `draft-${snap.stateVersion}-${draft.length}`, moves: [{ ...draft[draft.length - 1], seat: game!.turn }] }
+              : oppAnim
+          }
         />
       </div>
 
@@ -438,7 +461,17 @@ function PlayerStrip({
   target,
   cube,
 }: {
-  info: { name: string; you: boolean; online: boolean; pips: number; off: number; score: number; toAct: boolean };
+  info: {
+    name: string;
+    you: boolean;
+    online: boolean;
+    pips: number;
+    off: number;
+    score: number;
+    toAct: boolean;
+    avatarUrl?: string | null;
+    bot?: boolean;
+  };
   seat: Seat;
   target: number;
   cube: number | null;
@@ -446,11 +479,20 @@ function PlayerStrip({
   return (
     <div className={`strip${info.toAct ? " active" : ""}`}>
       <div className="who">
-        <span
-          className="dot"
-          style={{ background: seat === 0 ? "#F7F1E6" : "#101A2E", borderColor: seat === 0 ? "#CDBF9F" : "#61758B" }}
-          aria-label={COLOR_NAME[seat]}
-        />
+        <span style={{ position: "relative", display: "inline-flex" }}>
+          <Avatar name={info.name} src={info.avatarUrl} bot={info.bot} size={34} />
+          <span
+            className="dot"
+            style={{
+              position: "absolute",
+              right: -3,
+              bottom: -3,
+              background: seat === 0 ? "#F7F1E6" : "#101A2E",
+              borderColor: seat === 0 ? "#CDBF9F" : "#61758B",
+            }}
+            aria-label={COLOR_NAME[seat]}
+          />
+        </span>
         <span className="name">
           {info.name}
           {info.you ? " (you)" : ""}
@@ -536,7 +578,8 @@ function MatchOver({ snap }: { snap: Snapshot }) {
   const youWon = snap.yourSeats.length === 1 && snap.yourSeats[0] === winner;
   const last = snap.results[snap.results.length - 1];
   return (
-    <div className="card">
+    <div className="card accent">
+      {(youWon || snap.yourSeats.length === 2) && <Confetti />}
       <h2>
         {snap.yourSeats.length === 1 ? (youWon ? "You won the match" : "You lost the match") : `${snap.seats[winner].name} wins the match`}
       </h2>
@@ -559,7 +602,7 @@ function MatchOver({ snap }: { snap: Snapshot }) {
           ))}
         </ul>
       </details>
-      <Link className="btn primary block" href="/">
+      <Link className="btn primary block" href="/play">
         Back to lobby
       </Link>
     </div>
@@ -596,7 +639,7 @@ function WaitingRoom({ snap, matchId, onChange }: { snap: Snapshot; matchId: str
         <div className="card">
           <h1>Match cancelled</h1>
           <p className="muted">Nothing was reserved for this free match.</p>
-          <Link className="btn primary" href="/">
+          <Link className="btn primary" href="/play">
             Back to lobby
           </Link>
         </div>
@@ -669,25 +712,9 @@ function WaitingRoom({ snap, matchId, onChange }: { snap: Snapshot; matchId: str
         )}
         {err && <p className="err small">{err}</p>}
       </div>
-      <Link href="/" className="btn">
+      <Link href="/play" className="btn">
         ← Lobby
       </Link>
     </main>
-  );
-}
-
-function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, [onClose]);
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
-        <h2>{title}</h2>
-        {children}
-      </div>
-    </div>
   );
 }

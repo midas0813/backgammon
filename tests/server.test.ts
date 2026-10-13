@@ -156,11 +156,13 @@ describe("computer opponent", () => {
     }
   });
 
-  it("adopts the proxy-issued cookie ID so parallel first requests share one guest", () => {
+  it("maps one proxy-issued session token to one guest, even across repeated first requests", () => {
     resetDb();
-    const id = "11111111-2222-4333-8444-555555555555";
-    expect(ensureUser(id).id).toBe(id);
-    expect(ensureUser(id).id).toBe(id);
-    expect(read((db) => Object.keys(db.users))).toEqual([id]);
+    const token = "11111111-2222-4333-8444-555555555555";
+    const a = ensureUser(token);
+    const b = ensureUser(token);
+    expect(a.id).toBe(b.id);
+    expect(read((db) => Object.keys(db.users).length)).toBe(1);
+    expect(read((db) => db.sessions[token].userId)).toBe(a.id);
   });
 });

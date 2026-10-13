@@ -1,12 +1,15 @@
 import { handle, readJson } from "@/lib/server/http";
-import { updatePreferences } from "@/lib/server/users";
+import { profileOf, updatePreferences } from "@/lib/server/users";
 
 export async function GET() {
-  return handle((user) => user);
+  return handle((user) => profileOf(user.id));
 }
 
-/** PATCH /api/me — saved preferences only (name, themeId, reducedMotion). */
+/** PATCH /api/me — name, bio, country, themeId, reducedMotion. */
 export async function PATCH(req: Request) {
   const body = await readJson(req);
-  return handle((user) => updatePreferences(user.id, body));
+  return handle((user) => {
+    updatePreferences(user.id, body);
+    return profileOf(user.id);
+  });
 }

@@ -1,17 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-export const GUEST_COOKIE = "bg_uid";
+export const SESSION_COOKIE = "bg_sid";
 
 /**
- * Issue the guest identity cookie on the first request, before any page or API handler runs.
+ * Issue the opaque session cookie on the first request, before any page or API handler runs.
  * Without this, the lobby's parallel first API calls would each mint a different guest.
  */
 export function proxy(request: NextRequest) {
-  if (request.cookies.has(GUEST_COOKIE)) return NextResponse.next();
+  if (request.cookies.has(SESSION_COOKIE)) return NextResponse.next();
   const id = crypto.randomUUID();
-  request.cookies.set(GUEST_COOKIE, id);
+  request.cookies.set(SESSION_COOKIE, id);
   const response = NextResponse.next({ request: { headers: request.headers } });
-  response.cookies.set(GUEST_COOKIE, id, {
+  response.cookies.set(SESSION_COOKIE, id, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",

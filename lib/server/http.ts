@@ -1,26 +1,43 @@
 import { randomUUID } from "node:crypto";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { SESSION_COOKIE } from "@/proxy";
 import type { User } from "./db";
 import { ApiError } from "./errors";
-import { ensureUser } from "./users";
+import { resolveSession } from "./users";
 
-import { GUEST_COOKIE as COOKIE } from "@/proxy";
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: "lax" as const,
+  secure: process.env.NODE_ENV === "production",
+  path: "/",
+  maxAge: 60 * 60 * 24 * 365,
+};
 
-/** Resolve (or create) the guest user from an httpOnly cookie. */
-export async function currentUser(): Promise<User> {
+/** Resolve the session cookie (an opaque random token) to its user, creating a guest when new. */
+export async function currentSession(): Promise<{ user: User; token: string }> {
   const jar = await cookies();
-  const existing = jar.get(COOKIE)?.value;
-  const user = ensureUser(existing);
-  if (user.id !== existing) {
-    jar.set(COOKIE, user.id, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 365,
-    });
-  }
-  return user;
+  const existing = jar.get(SESSION_COOKIE)?.value;
+  const session = resolveSession(existing);
+  if (session.token !== existing) jar.set(SESSION_COOKIE, session.token, COOKIE_OPTIONS);
+  return session;
+}
+
+export async function currentUser(): Promise<User> {
+  return (await currentSession()).user;
+}
+
+export async function setSessionCookie(token: string) {
+  (await cookies()).set(SESSION_COOKIE, token, COOKIE_OPTIONS);
+}
+
+export async function clearSessionCookie() {
+  (await cookies()).delete(SESSION_COOKIE);
+}
+
+/** Best-effort client key for rate limiting (behind a proxy, configure the trusted forwarded header). */
+export async function clientKey(): Promise<string> {
+  const h = await headers();
+  return h.get("x-forwarded-for")?.split(",")[0].trim() || h.get("x-real-ip") || "local";
 }
 
 export async function readJson(req: Request): Promise<Record<string, unknown>> {

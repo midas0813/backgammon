@@ -16,6 +16,7 @@ import type { Seat } from "../engine/board";
 import { BOT_NAME, BOT_USER_ID, acceptsDouble, chooseSequence } from "./bot";
 import { read, transact, type Db, type MatchMode, type MatchRecord } from "./db";
 import { ApiError, notFound } from "./errors";
+import { avatarUrl } from "./users";
 
 const ALLOWED_POINTS = [1, 3, 5, 7];
 const ACTION_TYPES: ActionType[] = ["ROLL", "CONFIRM_TURN", "OFFER_DOUBLE", "ACCEPT_DOUBLE", "PASS_DOUBLE", "FORFEIT_MATCH"];
@@ -185,7 +186,10 @@ const ONLINE_MS = 6000;
 export function getSnapshot(userId: string, matchId: string) {
   const now = Date.now();
   // Presence is a soft signal; record it without bumping the state version.
-  const rec = read((db) => db.matches[matchId]);
+  const { rec, avatars } = read((db) => {
+    const m = db.matches[matchId];
+    return { rec: m, avatars: m ? m.seats.map((id) => (id ? avatarUrl(db.users[id]) : null)) : [] };
+  });
   if (!rec) throw notFound("Match");
   const mySeats = seatOf(rec, userId);
   for (const s of mySeats) rec.lastSeen[s] = now;
@@ -208,6 +212,8 @@ export function getSnapshot(userId: string, matchId: string) {
       seat: s,
       name: rec.names[s],
       occupied: rec.seats[s] !== null,
+      avatarUrl: avatars[s] ?? null,
+      bot: rec.seats[s] === BOT_USER_ID,
       online: rec.mode === "local" || rec.seats[s] === BOT_USER_ID ? true : now - rec.lastSeen[s] < ONLINE_MS,
     })),
     yourSeats: mySeats,
