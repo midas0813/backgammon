@@ -54,7 +54,9 @@ export default function MatchView({ matchId }: { matchId: string }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirm, setConfirm] = useState<null | "double" | "forfeit">(null);
   const [oppAnim, setOppAnim] = useState<{ key: string; moves: AnimMove[] } | null>(null);
+  const [flip, setFlip] = useState(false);
   const versionRef = useRef(0);
+  const statusRef = useRef<string | null>(null);
   const animatedTurnRef = useRef<string | null>(null);
   const cursorRef = useRef<number | null>(null);
 
@@ -127,14 +129,22 @@ export default function MatchView({ matchId }: { matchId: string }) {
         } else if (animatedTurnRef.current === null) {
           animatedTurnRef.current = "";
         }
+        // The host hears the moment someone takes the empty seat.
+        if (statusRef.current === "WAITING" && data.status === "ACTIVE" && data.yourSeats.length === 1) {
+          if (soundRef.current) sounds.joined();
+          navigator.vibrate?.([60, 40, 60]);
+          showToast(`${data.seats[1].name} joined — good luck!`);
+        }
+        statusRef.current = data.status;
         setSnap(data);
         setLoadError(null);
         announce(data);
       } catch (e) {
         if (e instanceof ClientApiError && e.status === 404) setLoadError("Match not found.");
+        else if (e instanceof ClientApiError && e.status === 403) setLoadError(e.message);
       }
     },
-    [matchId, announce],
+    [matchId, announce, showToast],
   );
 
   useEffect(() => {
@@ -179,7 +189,14 @@ export default function MatchView({ matchId }: { matchId: string }) {
   const game = snap?.game ?? null;
   const local = (snap?.yourSeats.length ?? 0) === 2;
   // Pass-and-play shows the player to act at the bottom; online players always see their own side.
-  const viewer: Seat = !snap ? 0 : local ? (snap.seatToAct ?? game?.turn ?? 0) : ((snap.yourSeats[0] ?? 0) as Seat);
+  const spectating = snap?.role === "spectator";
+  const viewer: Seat = !snap
+    ? 0
+    : local
+      ? (snap.seatToAct ?? game?.turn ?? 0)
+      : spectating
+        ? ((flip ? 1 : 0) as Seat)
+        : ((snap.yourSeats[0] ?? 0) as Seat);
   const opp: Seat = viewer === 0 ? 1 : 0;
   const iAct = !!snap && snap.seatToAct !== null && snap.yourSeats.includes(snap.seatToAct as Seat);
   const myMovePhase = iAct && game?.phase === "ROLLED";
@@ -250,6 +267,16 @@ export default function MatchView({ matchId }: { matchId: string }) {
     }
   };
 
+  const toggleSpectators = async (allow: boolean) => {
+    try {
+      await api(`/api/matches/${matchId}/spectators`, { method: "POST", body: { allow } });
+      await refresh(true);
+      showToast(allow ? "Spectators can watch this match." : "Spectators turned off.");
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Could not change");
+    }
+  };
+
   const send = async (actionType: string, payload?: Record<string, unknown>) => {
     if (!snap) return;
     setBusy(true);
@@ -273,7 +300,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
     return (
       <main className="page">
         <div className="card">
-          <h1>{loadError}</h1>
+          <h1 style={{ fontSize: 22 }}>{loadError}</h1>
           <Link className="btn primary" href="/play">
             Back to lobby
           </Link>
@@ -336,11 +363,29 @@ export default function MatchView({ matchId }: { matchId: string }) {
         <div className="info">
           {snap.mode === "bot" ? "vs Computer" : "Free"} · {snap.targetPoints}-pt · Game {game!.gameNumber}
           {game!.crawford ? " · Crawford" : ""}
+          {snap.spectators > 0 && (
+            <span className="eye-count" aria-label={`${snap.spectators} watching`}>
+              {" "}
+              · 👁 {snap.spectators}
+            </span>
+          )}
         </div>
         <button className="btn sm" onClick={() => setMenuOpen(true)} aria-haspopup="dialog">
           Menu
         </button>
       </div>
+
+      {spectating && (
+        <div className="watch-bar">
+          <span>
+            <strong>Watching</strong>
+            <span className="muted"> · {snap.spectators} viewer{snap.spectators === 1 ? "" : "s"}</span>
+          </span>
+          <button className="btn sm" onClick={() => setFlip((f) => !f)}>
+            Flip board
+          </button>
+        </div>
+      )}
 
       <PlayerStrip info={top} seat={opp} target={snap.targetPoints} cube={cubeOwner === "opponent" ? game!.cubeValue : null} />
 
@@ -372,8 +417,14 @@ export default function MatchView({ matchId }: { matchId: string }) {
       <div className="controls" aria-live="polite">
         {snap.status === "COMPLETED" ? (
           <MatchOver snap={snap} />
-        ) : !snap.yourSeats.length ? (
-          <div className="status">You are watching this match.</div>
+        ) : spectating ? (
+          <div className="status">
+            {game!.phase === "CUBE_PENDING"
+              ? `${snap.seats[game!.pendingOffer!.from].name} doubled to ${game!.pendingOffer!.proposed}. ${actorName} is deciding…`
+              : game!.phase === "ROLLED"
+                ? `${actorName} rolled ${game!.dice!.join("-")} and is moving…`
+                : `${actorName} to roll…`}
+          </div>
         ) : game!.phase === "CUBE_PENDING" && iAct ? (
           <CubeDecision snap={snap} viewer={snap.seatToAct as Seat} busy={busy} onSend={send} />
         ) : game!.phase === "CUBE_PENDING" ? (
@@ -478,6 +529,17 @@ export default function MatchView({ matchId }: { matchId: string }) {
           <div className="muted small">
             Rules {snap.rulesVersion} · cube cap 128 · Crawford rule · no clocks in this MVP · state v{snap.stateVersion}
           </div>
+          {snap.yourSeats.length > 0 && (snap.mode === "quick" || snap.mode === "private") && snap.status === "ACTIVE" && (
+            <label className="toggle">
+              <span>
+                <strong>Allow spectators</strong>
+                <span className="muted small" style={{ display: "block" }}>
+                  {snap.spectators} watching now{snap.mode === "quick" ? " · listed under Watch now" : ""}
+                </span>
+              </span>
+              <input type="checkbox" role="switch" checked={snap.allowSpectators} onChange={(e) => toggleSpectators(e.target.checked)} />
+            </label>
+          )}
           {snap.status === "ACTIVE" && snap.yourSeats.length > 0 && (
             <button className="btn danger block" onClick={() => setConfirm("forfeit")}>
               Forfeit match…
@@ -704,8 +766,12 @@ function WaitingRoom({ snap, matchId, onChange }: { snap: Snapshot; matchId: str
     return (
       <main className="page">
         <div className="card">
-          <h1>Match cancelled</h1>
-          <p className="muted">Nothing was reserved for this free match.</p>
+          <h1>{snap.closedReason === "expired" ? "Table closed" : "Match cancelled"}</h1>
+          <p className="muted">
+            {snap.closedReason === "expired"
+              ? "Nobody was at this table for 15 minutes, so it closed. Nothing was reserved for this free match."
+              : "Nothing was reserved for this free match."}
+          </p>
           <Link className="btn primary" href="/play">
             Back to lobby
           </Link>
@@ -720,6 +786,18 @@ function WaitingRoom({ snap, matchId, onChange }: { snap: Snapshot; matchId: str
           <h1>{snap.canJoin ? "Join match" : snap.mode === "quick" ? "Finding an opponent…" : "Waiting for your friend"}</h1>
           <span className="badge ok">Free</span>
         </div>
+        {!snap.canJoin && (
+          <div className="searching" aria-hidden>
+            <span className="radar" />
+            <span className="searching-dice">
+              <span />
+              <span />
+            </span>
+            <span className="muted small">
+              {snap.mode === "quick" ? "Your table is listed in the lobby. We'll bring you to the board the moment someone sits down." : "Share the link below."}
+            </span>
+          </div>
+        )}
         <ul className="list">
           <li>
             <span>Host</span>
@@ -738,6 +816,10 @@ function WaitingRoom({ snap, matchId, onChange }: { snap: Snapshot; matchId: str
             <span className="muted">None in MVP</span>
           </li>
           <li>
+            <span>Spectators</span>
+            <span>{snap.allowSpectators ? "Allowed" : "Off"}</span>
+          </li>
+          <li>
             <span>Entry / reservation</span>
             <span>Free — no tokens reserved</span>
           </li>
@@ -751,7 +833,7 @@ function WaitingRoom({ snap, matchId, onChange }: { snap: Snapshot; matchId: str
           <>
             <p className="notice" style={{ margin: 0 }}>
               {snap.mode === "quick"
-                ? "Waiting for another player to press Find online opponent with the same match length. "
+                ? "Waiting for another player to join from the lobby. The table closes after 15 minutes if you leave. "
                 : "Send this link to your opponent. "}
               A second tab in this browser counts as you, so test with a private window or another device — or play the computer now.
             </p>

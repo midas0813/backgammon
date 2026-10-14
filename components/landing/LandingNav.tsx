@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Brand } from "@/components/BrandMark";
 import WalletButton from "@/components/WalletButton";
+import OpenAppLink from "./OpenAppLink";
 
 export default function LandingNav() {
   const [scrolled, setScrolled] = useState(false);
@@ -26,9 +27,7 @@ export default function LandingNav() {
           <a href="#modes">Modes</a>
         </nav>
         <div className="header-actions">
-          <Link className="btn sm ghost desktop-only" href="/play">
-            Play
-          </Link>
+          <OpenAppLink className="btn sm ghost desktop-only" label="Play" />
           <WalletButton />
         </div>
       </div>

@@ -5,6 +5,7 @@ import WalletButton from "@/components/WalletButton";
 import Reveal from "@/components/Reveal";
 import BoardShowcase from "@/components/landing/BoardShowcase";
 import LandingNav from "@/components/landing/LandingNav";
+import OpenAppLink from "@/components/landing/OpenAppLink";
 import LiveStats from "@/components/landing/LiveStats";
 import StepDiagram from "@/components/landing/StepDiagram";
 import type { ArtKey } from "@/lib/art";
@@ -63,9 +64,7 @@ export default function Landing() {
             Roll fair server-side dice, outplay friends or the computer, and master the doubling cube — on any phone, in seconds.
           </p>
           <div className="l-ctas l-in" style={{ animationDelay: "340ms" }}>
-            <Link className="btn primary lg" href="/play">
-              Play free now
-            </Link>
+            <OpenAppLink className="btn primary lg" label="Play free now" />
             <WalletButton className="btn lg l-ghost" label="Connect Wallet" />
           </div>
           <div className="l-in" style={{ animationDelay: "460ms" }}>
@@ -229,9 +228,7 @@ export default function Landing() {
           <h2 className="l-h2 display">Your board is set.</h2>
           <p>Free to play. No download. Your first game starts in one tap.</p>
           <div className="l-ctas" style={{ justifyContent: "center" }}>
-            <Link className="btn primary lg" href="/play">
-              Play now
-            </Link>
+            <OpenAppLink className="btn primary lg" label="Play now" />
             <WalletButton className="btn lg l-ghost" label="Connect Wallet" />
           </div>
         </Reveal>
@@ -243,7 +240,7 @@ export default function Landing() {
             <Brand />
           </Link>
           <nav className="row">
-            <Link href="/play">Play</Link>
+            <Link href="/home">Open app</Link>
             <Link href="/signup">Connect wallet</Link>
             <Link href="/wallet">Wallet</Link>
           </nav>

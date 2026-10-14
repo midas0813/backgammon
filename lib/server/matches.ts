@@ -16,6 +16,7 @@ import type { Seat } from "../engine/board";
 import { BOT_NAME, BOT_USER_ID, acceptsDouble, chooseSequence } from "./bot";
 import { ApiError, notFound } from "./errors";
 import { tx, type MatchMode, type MatchRecord, type Tx } from "./store";
+import { SPECTATOR_WINDOW_MS } from "./store/types";
 import { avatarUrl } from "./users";
 
 const ALLOWED_POINTS = [1, 3, 5, 7];
@@ -40,6 +41,7 @@ function pushEvents(rec: MatchRecord, events: DomainEvent[]) {
     rec.eventSeq += 1;
     rec.events.push({ seq: rec.eventSeq, type: e.type, stateVersion: rec.version, serverTime, payload: e.payload });
   }
+  if (rec.state.status === "COMPLETED" && !rec.completedAt) rec.completedAt = serverTime;
   if (rec.events.length > EVENT_RETENTION) rec.events.splice(0, rec.events.length - EVENT_RETENTION);
 }
 
@@ -47,8 +49,11 @@ function seatOf(rec: MatchRecord, userId: string): Seat[] {
   return ([0, 1] as Seat[]).filter((s) => rec.seats[s] === userId);
 }
 
-async function join(t: Tx, rec: MatchRecord, userId: string) {
-  if (rec.state.status !== "WAITING") throw new ApiError(409, "EVENT_LOCKED", "Match already started");
+/** A table whose host has not been seen for this long is hidden from the lobby and skipped by Find a game. */
+export const HOST_ONLINE_MS = 2 * 60 * 1000;
+
+export async function join(t: Tx, rec: MatchRecord, userId: string) {
+  if (rec.state.status !== "WAITING") throw new ApiError(409, "EVENT_FULL", "Someone just took this seat");
   if (rec.seats[0] === userId) throw new ApiError(409, "ALREADY_SEATED", "You are already in this match");
   const user = await t.users.get(userId);
   rec.seats[1] = userId;
@@ -59,18 +64,25 @@ async function join(t: Tx, rec: MatchRecord, userId: string) {
   await t.matches.put(rec);
 }
 
-export async function createMatch(userId: string, mode: MatchMode, targetPoints: number): Promise<{ matchId: string }> {
+export async function createMatch(
+  userId: string,
+  mode: MatchMode,
+  targetPoints: number,
+  opts: { allowSpectators?: boolean; joinExisting?: boolean } = {},
+): Promise<{ matchId: string; joined?: boolean }> {
   if (!ALLOWED_POINTS.includes(targetPoints)) throw new ApiError(400, "INVALID_INPUT", "Unsupported match length");
   if (!["quick", "private", "local", "bot"].includes(mode)) throw new ApiError(400, "INVALID_INPUT", "Unsupported mode");
   return tx(async (t) => {
-    // Quick match queue: join the oldest compatible waiting match, otherwise open a new one.
-    if (mode === "quick") {
-      const mine = (await t.matches.listForUser(userId)).find((m) => m.mode === "quick" && m.state.status === "WAITING" && m.seats[0] === userId);
+    // Find a game: join the oldest compatible table whose host is around, otherwise open one.
+    if (mode === "quick" && opts.joinExisting !== false) {
+      const mine = (await t.matches.listForUser(userId)).find(
+        (m) => m.mode === "quick" && m.state.status === "WAITING" && m.seats[0] === userId && m.state.targetPoints === targetPoints,
+      );
       if (mine) return { matchId: mine.id };
-      const open = await t.matches.nextWaitingQuick(targetPoints, userId);
+      const open = await t.matches.nextWaitingQuick(targetPoints, userId, Date.now() - HOST_ONLINE_MS);
       if (open) {
         await join(t, open, userId);
-        return { matchId: open.id };
+        return { matchId: open.id, joined: true };
       }
     }
     const name = (await t.users.get(userId))?.name ?? "Player";
@@ -90,6 +102,7 @@ export async function createMatch(userId: string, mode: MatchMode, targetPoints:
       events: [],
       eventSeq: 0,
       actions: {},
+      allowSpectators: opts.allowSpectators !== false,
     };
     pushEvents(rec, [{ type: "MATCH_CREATED", payload: { mode, targetPoints } }]);
     if (mode === "local" || mode === "bot") {
@@ -97,6 +110,7 @@ export async function createMatch(userId: string, mode: MatchMode, targetPoints:
       pushEvents(rec, startMatch(rec.state, env));
     }
     await t.matches.put(rec);
+    if (mode === "quick" || mode === "private") await t.presence.touch(rec.id, 0, Date.now());
     return { matchId: rec.id };
   });
 }
@@ -122,6 +136,32 @@ export function cancelMatch(userId: string, matchId: string) {
     pushEvents(rec, [{ type: "MATCH_CANCELLED", payload: {} }]);
     await t.matches.put(rec);
     return { matchId };
+  });
+}
+
+/** Close a table whose host has been gone too long (lobby housekeeping). */
+export async function expireTable(t: Tx, matchId: string) {
+  const rec = await t.matches.get(matchId, { lock: true });
+  if (!rec || rec.state.status !== "WAITING") return;
+  rec.state.status = "CANCELLED";
+  rec.closedReason = "expired";
+  rec.version += 1;
+  pushEvents(rec, [{ type: "MATCH_CANCELLED", payload: { reason: "expired" } }]);
+  await t.matches.put(rec);
+}
+
+/** Either player can switch watching on or off. */
+export function setAllowSpectators(userId: string, matchId: string, allow: boolean) {
+  return tx(async (t) => {
+    const rec = await t.matches.get(matchId, { lock: true });
+    if (!rec) throw notFound("Match");
+    if (!rec.seats.includes(userId)) throw new ApiError(403, "NOT_PARTICIPANT", "Only players can change this");
+    if (rec.mode === "local" || rec.mode === "bot") throw new ApiError(409, "WRONG_PHASE", "This match is not shown to others");
+    rec.allowSpectators = allow;
+    rec.version += 1;
+    pushEvents(rec, [{ type: "SPECTATORS_CHANGED", payload: { allow } }]);
+    await t.matches.put(rec);
+    return { allowSpectators: allow };
   });
 }
 
@@ -188,21 +228,44 @@ const lastPresenceWrite = ((globalThis as unknown as { __bgPresenceW?: Map<strin
 const PRESENCE_WRITE_MS = 3000;
 const ONLINE_MS = 9000;
 
-/** Participant-scoped snapshot. Never includes user IDs, wallets or payment data. */
+/**
+ * Players may switch watching off once a match is under way. A WAITING table stays visible so an
+ * invited player can still open the link and join.
+ */
+function assertMayWatch(rec: MatchRecord, userId: string) {
+  if (rec.seats.includes(userId) || rec.state.status === "WAITING" || rec.state.status === "CANCELLED") return;
+  if (rec.allowSpectators === false) throw new ApiError(403, "NOT_PARTICIPANT", "The players turned off watching for this match");
+}
+
+/** Snapshot for a player or a spectator. Never includes user IDs, wallets or payment data. */
 export async function getSnapshot(userId: string, matchId: string) {
   const now = Date.now();
-  const { rec, users, seen } = await tx(async (t) => {
+  const { rec, users, seen, spectators } = await tx(async (t) => {
     const m = await t.matches.get(matchId);
-    if (!m) return { rec: undefined, users: {}, seen: [0, 0] as [number, number] };
-    for (const s of seatOf(m, userId)) {
+    if (!m) return { rec: undefined, users: {}, seen: [0, 0] as [number, number], spectators: 0 };
+    assertMayWatch(m, userId);
+    const mine = seatOf(m, userId);
+    for (const s of mine) {
       const key = `${matchId}:${s}`;
       if (now - (lastPresenceWrite.get(key) ?? 0) >= PRESENCE_WRITE_MS) {
         await t.presence.touch(matchId, s, now);
         lastPresenceWrite.set(key, now);
       }
     }
+    if (mine.length === 0 && m.state.status === "ACTIVE") {
+      const key = `${matchId}:w:${userId}`;
+      if (now - (lastPresenceWrite.get(key) ?? 0) >= PRESENCE_WRITE_MS) {
+        await t.spectators.touch(matchId, userId, now);
+        lastPresenceWrite.set(key, now);
+      }
+    }
     const ids = m.seats.filter((s) => s && s !== BOT_USER_ID) as string[];
-    return { rec: m, users: await t.users.getMany(ids), seen: await t.presence.get(matchId) };
+    return {
+      rec: m,
+      users: await t.users.getMany(ids),
+      seen: await t.presence.get(matchId),
+      spectators: m.mode === "quick" || m.mode === "private" ? await t.spectators.count(matchId, now - SPECTATOR_WINDOW_MS) : 0,
+    };
   });
   if (!rec) throw notFound("Match");
   const mySeats = seatOf(rec, userId);
@@ -233,6 +296,10 @@ export async function getSnapshot(userId: string, matchId: string) {
           : now - seen[s] < ONLINE_MS,
     })),
     yourSeats: mySeats,
+    role: mySeats.length ? ("player" as const) : ("spectator" as const),
+    spectators,
+    allowSpectators: rec.allowSpectators !== false,
+    closedReason: rec.closedReason ?? null,
     canJoin: st.status === "WAITING" && rec.mode !== "local" && rec.mode !== "bot" && mySeats.length === 0,
     canCancel: st.status === "WAITING" && rec.createdBy === userId,
     seatToAct: seatToAct(st),
@@ -244,36 +311,6 @@ export async function getSnapshot(userId: string, matchId: string) {
 }
 
 export type MatchSnapshot = Awaited<ReturnType<typeof getSnapshot>>;
-
-export function listMatches(userId: string) {
-  return tx(async (t) => {
-    const mineAll = await t.matches.listForUser(userId);
-    const open = await t.matches.listOpenQuick(userId);
-    const summary = (m: MatchRecord) => ({
-      matchId: m.id,
-      mode: m.mode,
-      status: m.state.status,
-      targetPoints: m.state.targetPoints,
-      names: m.names,
-      score: m.state.score,
-      createdAt: m.createdAt,
-      yours: m.seats.includes(userId),
-    });
-    const byNewest = (a: MatchRecord, b: MatchRecord) => b.createdAt.localeCompare(a.createdAt);
-    return {
-      open: open.map(summary),
-      mine: mineAll
-        .filter((m) => m.state.status === "ACTIVE" || m.state.status === "WAITING")
-        .sort(byNewest)
-        .map(summary),
-      recent: mineAll
-        .filter((m) => m.state.status === "COMPLETED")
-        .sort(byNewest)
-        .slice(0, 5)
-        .map(summary),
-    };
-  });
-}
 
 const BOT_STEP_MS = 700;
 
@@ -317,7 +354,7 @@ export async function tickBot(matchId: string) {
 export async function matchHistory(userId: string, matchId: string, cursor: number) {
   const rec = await tx((t) => t.matches.get(matchId));
   if (!rec) throw notFound("Match");
-  if (!rec.seats.includes(userId)) throw new ApiError(403, "NOT_PARTICIPANT", "Only players can read the full history");
+  assertMayWatch(rec, userId);
   const oldest = rec.events[0]?.seq ?? rec.eventSeq + 1;
   return {
     events: rec.events.filter((e) => e.seq > cursor),

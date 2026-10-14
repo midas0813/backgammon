@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { Brand } from "@/components/BrandMark";
 import WalletButton from "@/components/WalletButton";
 
-const APP_ROUTES = ["/play", "/wallet", "/profile", "/welcome"];
+const APP_ROUTES = ["/home", "/play", "/wallet", "/profile", "/welcome"];
 
 /** Sticky header for in-app pages. The landing page, sign-in page and live games have their own chrome. */
 export default function AppHeader() {
@@ -14,12 +14,15 @@ export default function AppHeader() {
   return (
     <header className="app-header">
       <div className="inner">
-        <Link href="/" className="brand" aria-label="Home">
+        <Link href="/home" className="brand" aria-label="Home">
           <Brand />
         </Link>
         <nav className="header-actions">
+          <Link className="btn sm ghost desktop-only" href="/home">
+            Home
+          </Link>
           <Link className="btn sm ghost desktop-only" href="/play">
-            Play
+            Lobby
           </Link>
           <Link className="btn sm ghost desktop-only" href="/wallet">
             Wallet

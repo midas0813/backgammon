@@ -1,4 +1,5 @@
-import type { Avatar, DepositIntent, Dispute, MatchRecord, Session, Store, Tx, Txn, User, Withdrawal } from "./types";
+import { summarize } from "./summary";
+import { SPECTATOR_WINDOW_MS, type Avatar, type DepositIntent, type Dispute, type LobbyRow, type MatchRecord, type Session, type Store, type Tx, type Txn, type User, type Withdrawal } from "./types";
 
 /** Minimal driver surface so the same SQL runs on Supabase (postgres.js) and in tests (PGlite). */
 export type Query = <R = Record<string, unknown>>(text: string, params?: unknown[]) => Promise<R[]>;
@@ -128,6 +129,13 @@ function makeTx(q: Query): Tx {
         const [r] = await q(`select count(*) as n from app_users`);
         return num(r.n);
       },
+      async touchSeen(id, at) {
+        await q(`update app_users set last_seen_at = greatest(coalesce(last_seen_at, '-infinity'), to_timestamp($2::float8 / 1000)) where id = $1`, [id, at]);
+      },
+      async countSeenSince(at) {
+        const [r] = await q(`select count(*) as n from app_users where last_seen_at >= to_timestamp($1::float8 / 1000)`, [at]);
+        return num(r.n);
+      },
     },
     sessions: {
       async get(token) {
@@ -164,18 +172,36 @@ function makeTx(q: Query): Tx {
       },
       async put(m) {
         await q(
-          `insert into matches (id, mode, status, target_points, created_by, seat0, seat1, version, created_at, updated_at, data)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10::jsonb)
+          `insert into matches (id, mode, status, target_points, created_by, seat0, seat1, version, created_at, updated_at, data,
+             summary, allow_spectators, completed_at)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10::jsonb, $11::jsonb, $12, $13)
            on conflict (id) do update set status = excluded.status, seat0 = excluded.seat0, seat1 = excluded.seat1,
-             version = excluded.version, updated_at = now(), data = excluded.data`,
-          [m.id, m.mode, m.state.status, m.state.targetPoints, m.createdBy, m.seats[0], m.seats[1], m.version, m.createdAt, JSON.stringify(m)],
+             version = excluded.version, updated_at = now(), data = excluded.data, summary = excluded.summary,
+             allow_spectators = excluded.allow_spectators, completed_at = excluded.completed_at`,
+          [
+            m.id,
+            m.mode,
+            m.state.status,
+            m.state.targetPoints,
+            m.createdBy,
+            m.seats[0],
+            m.seats[1],
+            m.version,
+            m.createdAt,
+            JSON.stringify(m),
+            JSON.stringify(summarize(m)),
+            m.allowSpectators !== false,
+            m.completedAt ?? null,
+          ],
         );
       },
-      async nextWaitingQuick(points, exclude) {
+      async nextWaitingQuick(points, exclude, hostSeenSince) {
         const [r] = await q(
-          `select data from matches where mode = 'quick' and status = 'WAITING' and target_points = $1 and seat0 <> $2
-           order by created_at limit 1 for update skip locked`,
-          [points, exclude],
+          `select m.data from matches m join match_presence p on p.match_id = m.id and p.seat = 0
+           where m.mode = 'quick' and m.status = 'WAITING' and m.target_points = $1 and m.seat0 <> $2
+             and p.seen_at >= to_timestamp($3::float8 / 1000)
+           order by m.created_at limit 1 for update of m skip locked`,
+          [points, exclude, hostSeenSince],
         );
         return r ? parse<MatchRecord>(r.data) : undefined;
       },
@@ -183,12 +209,47 @@ function makeTx(q: Query): Tx {
         const rows = await q(`select data from matches where seat0 = $1 or seat1 = $1 order by created_at desc limit 200`, [userId]);
         return rows.map((r) => parse<MatchRecord>(r.data));
       },
-      async listOpenQuick(exclude) {
+      async listLobby(status, limit) {
         const rows = await q(
-          `select data from matches where mode = 'quick' and status = 'WAITING' and seat0 <> $1 order by created_at limit 50`,
-          [exclude],
+          `select m.id, m.mode, m.status, m.target_points, m.created_at, m.allow_spectators, m.summary,
+                  (extract(epoch from m.updated_at) * 1000)::float8 as updated_ms,
+                  coalesce((select (extract(epoch from p.seen_at) * 1000)::float8 from match_presence p
+                            where p.match_id = m.id and p.seat = 0), 0) as host_seen_ms,
+                  (select count(*) from match_spectators s
+                     where s.match_id = m.id and s.seen_at >= now() - make_interval(secs => $3::float8 / 1000)) as spectators
+           from matches m
+           where m.mode = 'quick' and m.status = $1
+           order by ${status === "WAITING" ? "m.created_at asc" : "m.updated_at desc"}
+           limit $2`,
+          [status, limit, SPECTATOR_WINDOW_MS],
         );
-        return rows.map((r) => parse<MatchRecord>(r.data));
+        return rows.filter((r) => r.summary).map((r): LobbyRow => {
+          const s = parse<{
+            names: [string, string];
+            score: [number, number];
+            cube: number;
+            gameNumber: number;
+            hostId: string;
+            seats?: [string | null, string | null];
+          }>(r.summary);
+          return {
+            id: String(r.id),
+            mode: r.mode as LobbyRow["mode"],
+            status: String(r.status),
+            targetPoints: num(r.target_points),
+            createdAt: iso(r.created_at),
+            updatedAt: num(r.updated_ms),
+            hostId: s.hostId,
+            seats: s.seats ?? [s.hostId, null],
+            names: s.names,
+            score: s.score,
+            cube: num(s.cube),
+            gameNumber: num(s.gameNumber),
+            allowSpectators: Boolean(r.allow_spectators),
+            hostSeenAt: num(r.host_seen_ms),
+            spectators: num(r.spectators),
+          };
+        });
       },
       async stats() {
         const [r] = await q(
@@ -340,6 +401,22 @@ function makeTx(q: Query): Tx {
         const out: [number, number] = [0, 0];
         for (const r of rows) out[Number(r.seat)] = num(r.ms);
         return out;
+      },
+    },
+    spectators: {
+      async touch(matchId, userId, at) {
+        await q(
+          `insert into match_spectators (match_id, user_id, seen_at) values ($1, $2, to_timestamp($3::float8 / 1000))
+           on conflict (match_id, user_id) do update set seen_at = greatest(match_spectators.seen_at, excluded.seen_at)`,
+          [matchId, userId, at],
+        );
+      },
+      async count(matchId, since) {
+        const [r] = await q(`select count(*) as n from match_spectators where match_id = $1 and seen_at >= to_timestamp($2::float8 / 1000)`, [
+          matchId,
+          since,
+        ]);
+        return num(r.n);
       },
     },
     disputes: {

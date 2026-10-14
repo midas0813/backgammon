@@ -53,7 +53,7 @@ export default function WelcomePage() {
     setError(null);
     try {
       setMe(await api<Profile>("/api/me", { method: "PATCH", body: { name } }));
-      router.push("/play");
+      router.push("/home");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save");
       setBusy(false);
@@ -87,7 +87,7 @@ export default function WelcomePage() {
           <button className="btn primary lg block" disabled={busy || name.trim().length < 2}>
             {busy ? "Saving…" : "Start playing"}
           </button>
-          <Link className="btn ghost block" href="/play">
+          <Link className="btn ghost block" href="/home">
             Skip for now
           </Link>
         </form>

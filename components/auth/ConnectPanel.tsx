@@ -23,8 +23,8 @@ export default function ConnectPanel() {
             <div className="muted small mono">{shortAddress(me.walletAddress)}</div>
           </div>
         </div>
-        <Link className="btn primary lg block" href="/play">
-          Continue to the lobby
+        <Link className="btn primary lg block" href="/home">
+          Continue
         </Link>
         <Link className="btn ghost block" href="/profile">
           View profile
@@ -53,7 +53,7 @@ export default function ConnectPanel() {
       <p className="muted small" style={{ textAlign: "center" }}>
         Playing as a guest? Your free games and practice credits move into your account when you sign in.
       </p>
-      <Link className="btn ghost block" href="/play">
+      <Link className="btn ghost block" href="/home">
         Continue as guest
       </Link>
     </div>

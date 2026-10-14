@@ -3,9 +3,12 @@ import { Inter, Playfair_Display } from "next/font/google";
 import AppHeader from "@/components/AppHeader";
 import { artExists } from "@/components/Art";
 import BottomNav from "@/components/BottomNav";
+import TableWatcher from "@/components/TableWatcher";
+import Toaster from "@/components/Toaster";
 import Web3Provider from "@/components/Web3Provider";
 import { BRAND } from "@/lib/brand";
 import "./globals.css";
+import "./app.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 const playfair = Playfair_Display({ subsets: ["latin"], variable: "--font-playfair", weight: ["600", "700", "800"], display: "swap" });
@@ -31,6 +34,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <AppHeader />
           {children}
           <BottomNav />
+          <Toaster />
+          <TableWatcher />
         </Web3Provider>
       </body>
     </html>

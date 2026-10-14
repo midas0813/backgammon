@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { Avatar, DepositIntent, Dispute, MatchRecord, Session, Store, Tx, Txn, User, Withdrawal } from "./types";
+import { lobbyRow } from "./summary";
+import { SPECTATOR_WINDOW_MS, type Avatar, type DepositIntent, type Dispute, type MatchRecord, type Session, type Store, type Tx, type Txn, type User, type Withdrawal } from "./types";
 
 /**
  * Local development store: one JSON document on disk (or in memory for tests). Transactions are
@@ -18,6 +19,8 @@ interface Data {
   avatars: Record<string, { file: string; userId: string; contentType: string; b64: string }>;
   presence: Record<string, [number, number]>;
   disputes: Record<string, Dispute>;
+  seen: Record<string, number>;
+  spectators: Record<string, Record<string, number>>;
   ledger: { balances: Record<string, number>; transactions: Txn[] };
 }
 
@@ -35,6 +38,8 @@ const empty = (): Data => ({
   avatars: {},
   presence: {},
   disputes: {},
+  seen: {},
+  spectators: {},
   ledger: { balances: {}, transactions: [] },
 });
 
@@ -53,6 +58,8 @@ export function createMemoryStore(file: string | null): Store {
       if (parsed && parsed.ledger && Array.isArray(parsed.ledger.transactions) && parsed.avatars) data = { ...data, ...parsed };
       data.presence ??= {};
       data.disputes ??= {};
+      data.seen ??= {};
+      data.spectators ??= {};
     }
     g.__bgMem![cacheKey] = data;
     return data;
@@ -103,6 +110,8 @@ export function createMemoryStore(file: string | null): Store {
         byWallet: async (address) => values<User>("users").find((u) => u.walletAddress?.toLowerCase() === address.toLowerCase()),
         put: async (u) => put("users", u.id, u),
         count: async () => values("users").length,
+        touchSeen: async (id, at) => put("seen", id, Math.max(get<number>("seen", id) ?? 0, at)),
+        countSeenSince: async (at) => values<number>("seen").filter((v) => v >= at).length,
       },
       sessions: {
         get: async (token) => get("sessions", token),
@@ -112,15 +121,32 @@ export function createMemoryStore(file: string | null): Store {
       matches: {
         get: async (id) => get("matches", id),
         put: async (rec) => put("matches", rec.id, rec),
-        nextWaitingQuick: async (points, exclude) =>
+        nextWaitingQuick: async (points, exclude, hostSeenSince) =>
           values<MatchRecord>("matches")
-            .filter((m) => m.mode === "quick" && m.state.status === "WAITING" && m.state.targetPoints === points && m.seats[0] !== exclude)
+            .filter(
+              (m) =>
+                m.mode === "quick" &&
+                m.state.status === "WAITING" &&
+                m.state.targetPoints === points &&
+                m.seats[0] !== exclude &&
+                (get<[number, number]>("presence", m.id)?.[0] ?? 0) >= hostSeenSince,
+            )
             .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0],
         listForUser: async (userId) => values<MatchRecord>("matches").filter((m) => m.seats.includes(userId)),
-        listOpenQuick: async (exclude) =>
-          values<MatchRecord>("matches")
-            .filter((m) => m.mode === "quick" && m.state.status === "WAITING" && m.seats[0] !== exclude)
-            .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+        listLobby: async (status, limit) => {
+          const since = Date.now() - SPECTATOR_WINDOW_MS;
+          return values<MatchRecord>("matches")
+            .filter((m) => m.mode === "quick" && m.state.status === status)
+            .map((m) =>
+              lobbyRow(
+                m,
+                get<[number, number]>("presence", m.id)?.[0] ?? 0,
+                Object.values(get<Record<string, number>>("spectators", m.id) ?? {}).filter((v) => v >= since).length,
+              ),
+            )
+            .sort((a, b) => (status === "WAITING" ? a.createdAt.localeCompare(b.createdAt) : b.updatedAt - a.updatedAt))
+            .slice(0, limit);
+        },
         stats: async () => {
           const all = values<MatchRecord>("matches");
           return {
@@ -196,6 +222,14 @@ export function createMemoryStore(file: string | null): Store {
           put("presence", matchId, cur);
         },
         get: async (matchId) => get<[number, number]>("presence", matchId) ?? [0, 0],
+      },
+      spectators: {
+        touch: async (matchId, userId, at) => {
+          const cur = get<Record<string, number>>("spectators", matchId) ?? {};
+          cur[userId] = Math.max(cur[userId] ?? 0, at);
+          put("spectators", matchId, cur);
+        },
+        count: async (matchId, since) => Object.values(get<Record<string, number>>("spectators", matchId) ?? {}).filter((v) => v >= since).length,
       },
       disputes: {
         put: async (d) => put("disputes", d.id, d),

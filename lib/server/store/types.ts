@@ -62,7 +62,33 @@ export interface MatchRecord {
   eventSeq: number;
   /** actionId → original response, for idempotent retries. */
   actions: Record<string, { fingerprint: string; response: unknown }>;
+  /** Host's choice; undefined (older matches) means allowed. */
+  allowSpectators?: boolean;
+  completedAt?: string;
+  /** Why a WAITING table closed without the host cancelling it. */
+  closedReason?: "expired";
 }
+
+/** What lobby lists need about a match, without the full document. */
+export interface LobbyRow {
+  id: string;
+  mode: MatchMode;
+  status: string;
+  targetPoints: number;
+  createdAt: string;
+  updatedAt: number; // ms
+  hostId: string;
+  seats: [string | null, string | null];
+  names: [string, string];
+  score: [number, number];
+  cube: number;
+  gameNumber: number;
+  allowSpectators: boolean;
+  hostSeenAt: number; // ms, 0 when never seen
+  spectators: number; // seen within the store's spectator window
+}
+
+export const SPECTATOR_WINDOW_MS = 20_000;
 
 export interface DepositIntent {
   id: string;
@@ -127,6 +153,9 @@ export interface Tx {
     byWallet(address: string): Promise<User | undefined>;
     put(user: User): Promise<void>;
     count(): Promise<number>;
+    /** Record activity (for "players online"); callers throttle. */
+    touchSeen(id: string, at: number): Promise<void>;
+    countSeenSince(at: number): Promise<number>;
   };
   sessions: {
     get(token: string): Promise<Session | undefined>;
@@ -136,11 +165,19 @@ export interface Tx {
   matches: {
     get(id: string, opts?: { lock?: boolean }): Promise<MatchRecord | undefined>;
     put(rec: MatchRecord): Promise<void>;
-    /** Oldest waiting quick match with this length not created by `excludeUser`, locked for joining. */
-    nextWaitingQuick(targetPoints: number, excludeUser: string): Promise<MatchRecord | undefined>;
+    /**
+     * Oldest public table with this length not hosted by `excludeUser` whose host was seen at or after
+     * `hostSeenSince` (ms), locked for joining.
+     */
+    nextWaitingQuick(targetPoints: number, excludeUser: string, hostSeenSince: number): Promise<MatchRecord | undefined>;
     listForUser(userId: string): Promise<MatchRecord[]>;
-    listOpenQuick(excludeUser: string): Promise<MatchRecord[]>;
+    /** Public tables (mode quick) in a status, newest activity first for ACTIVE, oldest first for WAITING. */
+    listLobby(status: "WAITING" | "ACTIVE", limit: number): Promise<LobbyRow[]>;
     stats(): Promise<{ live: number; waiting: number; games: number }>;
+  };
+  spectators: {
+    touch(matchId: string, userId: string, at: number): Promise<void>;
+    count(matchId: string, since: number): Promise<number>;
   };
   idempotency: {
     get(key: string): Promise<{ fingerprint: string; response: unknown } | undefined>;
