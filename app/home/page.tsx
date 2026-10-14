@@ -209,7 +209,7 @@ export default function Home() {
                 </div>
                 <span className="row" style={{ gap: 6, flexWrap: "nowrap" }}>
                   {m.yourTurn && <span className="badge ok pulse">Your turn</span>}
-                  <Link className="btn sm primary" href={`/match/${m.matchId}`}>
+                  <Link className="btn sm primary" href={`/match/${m.matchId}`} transitionTypes={["nav-forward"]}>
                     {m.status === "WAITING" ? "Open" : "Resume"}
                   </Link>
                 </span>

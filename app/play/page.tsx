@@ -189,7 +189,7 @@ export default function LobbyPage() {
                       Close
                     </button>
                   )}
-                  <Link className="btn sm primary" href={`/match/${m.matchId}`}>
+                  <Link className="btn sm primary" href={`/match/${m.matchId}`} transitionTypes={["nav-forward"]}>
                     {m.status === "WAITING" ? "Open" : "Resume"}
                   </Link>
                 </span>
@@ -288,7 +288,7 @@ export default function LobbyPage() {
                       👁 {m.spectators}
                     </span>
                   )}
-                  <Link className="btn sm" href={`/match/${m.matchId}`}>
+                  <Link className="btn sm" href={`/match/${m.matchId}`} transitionTypes={["nav-forward"]}>
                     Watch
                   </Link>
                 </span>

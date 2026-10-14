@@ -16,11 +16,17 @@ export default function BottomNav() {
   const pathname = usePathname();
   if (!SHOWN_ON.some((p) => pathname.startsWith(p))) return null;
   return (
-    <nav className="tabs" aria-label="Main">
-      {TABS.map((t) => {
+    <nav className="tabs" aria-label="Main" style={{ viewTransitionName: "app-tabs" }}>
+      {TABS.map((t, i) => {
         const active = pathname.startsWith(t.href);
+        const here = TABS.findIndex((x) => pathname.startsWith(x.href));
         return (
-          <Link key={t.href} href={t.href} aria-current={active ? "page" : undefined}>
+          <Link
+            key={t.href}
+            href={t.href}
+            aria-current={active ? "page" : undefined}
+            transitionTypes={here === -1 || active ? undefined : [i > here ? "nav-forward" : "nav-back"]}
+          >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden>
               <path d={t.icon} />
             </svg>

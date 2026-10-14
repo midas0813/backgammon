@@ -12,7 +12,7 @@ export default function AppHeader() {
   const pathname = usePathname();
   if (!APP_ROUTES.some((r) => pathname.startsWith(r))) return null;
   return (
-    <header className="app-header">
+    <header className="app-header" style={{ viewTransitionName: "app-header" }}>
       <div className="inner">
         <Link href="/home" className="brand" aria-label="Home">
           <Brand />

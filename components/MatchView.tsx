@@ -371,6 +371,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
         <Link
           className="btn sm"
           href="/play"
+          transitionTypes={["nav-back"]}
           aria-label="Back to lobby (the match continues)"
           onClick={(e) => {
             if (activeParticipant) {
