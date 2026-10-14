@@ -18,6 +18,9 @@ Other setups:
   data requests and logs "No database configured".
 - The SQL files are idempotent, so applying them with the Supabase CLI/GitHub integration or the SQL
   editor as well is harmless.
+- Keep the server functions next to the database. Every request makes several database round trips,
+  so a cross-ocean hop turns each one into seconds. `vercel.json` pins functions to `hnd1` (Tokyo)
+  because the Supabase project is in `ap-northeast-1`; change both together if the database moves.
 
 ## Tables
 
