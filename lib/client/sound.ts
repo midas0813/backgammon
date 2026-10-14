@@ -50,7 +50,50 @@ function clack(start: number, gain = 0.25) {
   src.start(a.currentTime + start);
 }
 
+function sweep(from: number, to: number, start: number, dur: number, gain = 0.25, type: OscillatorType = "sine") {
+  const a = audio();
+  if (!a) return;
+  const o = a.createOscillator();
+  const g = a.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(from, a.currentTime + start);
+  o.frequency.exponentialRampToValueAtTime(to, a.currentTime + start + dur);
+  g.gain.setValueAtTime(gain, a.currentTime + start);
+  g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + start + dur);
+  o.connect(g).connect(a.destination);
+  o.start(a.currentTime + start);
+  o.stop(a.currentTime + start + dur + 0.02);
+}
+
 export const sounds = {
+  /** Big doubles: drum roll, bass hit, rising chord. `power` 1–2. */
+  bigRoll(power = 1) {
+    for (let i = 0; i < 8; i++) clack(i * 0.045, 0.12 + i * 0.02);
+    sweep(140, 42, 0.42, 0.55, 0.35 * power);
+    clack(0.42, 0.5);
+    const base = power > 1 ? [523, 659, 784, 1047, 1319] : [440, 554, 659, 880];
+    base.forEach((f, i) => tone(f, 0.5 + i * 0.07, 0.5, 0.06, "triangle"));
+  },
+  /** Small doubles chip. */
+  doubles() {
+    tone(784, 0, 0.12, 0.06, "triangle");
+    tone(1047, 0.08, 0.18, 0.06, "triangle");
+  },
+  hit() {
+    sweep(220, 60, 0, 0.22, 0.3, "triangle");
+    clack(0, 0.45);
+  },
+  heartbeat() {
+    for (const t of [0, 0.22, 0.9, 1.12]) sweep(90, 45, t, 0.16, 0.32);
+  },
+  cubeSlam() {
+    sweep(180, 50, 0, 0.3, 0.35, "square");
+    clack(0, 0.5);
+  },
+  banner() {
+    tone(587, 0, 0.16, 0.05, "triangle");
+    tone(880, 0.1, 0.3, 0.05, "triangle");
+  },
   dice() {
     for (let i = 0; i < 5; i++) clack(i * 0.06 + Math.random() * 0.03, 0.18 + Math.random() * 0.1);
   },

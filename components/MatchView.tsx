@@ -6,12 +6,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Avatar from "@/components/Avatar";
 import Board, { type AnimMove, type DieView } from "@/components/Board";
 import Confetti from "@/components/Confetti";
+import FxLayer, { type FxHandle } from "@/components/FxLayer";
 import Modal from "@/components/Modal";
 import ThemePicker from "@/components/ThemePicker";
 import { applyMove, diceUses, legalSequences, nextMoves, pipCount, type Move, type Seat } from "@/lib/engine/board";
 import type { GameResult } from "@/lib/engine/match";
 import type { MatchSnapshot } from "@/lib/server/matches";
 import { ClientApiError, api, sendIdempotent } from "@/lib/client/api";
+import { effectsFor, longestBlock, type Effect } from "@/lib/client/fx";
 import { useMe } from "@/lib/client/me";
 import { sounds } from "@/lib/client/sound";
 import { useTheme } from "@/lib/client/theme";
@@ -57,6 +59,8 @@ export default function MatchView({ matchId }: { matchId: string }) {
   const [flip, setFlip] = useState(false);
   const versionRef = useRef(0);
   const statusRef = useRef<string | null>(null);
+  const fxRef = useRef<FxHandle>(null);
+  const blockRef = useRef<[number, number]>([0, 0]);
   const animatedTurnRef = useRef<string | null>(null);
   const cursorRef = useRef<number | null>(null);
 
@@ -71,10 +75,24 @@ export default function MatchView({ matchId }: { matchId: string }) {
       const name = (seat: unknown) => s.seats[Number(seat)]?.name ?? "";
       if (cursorRef.current === null) {
         cursorRef.current = s.eventCursor;
+        // Positions already on the board when we arrive are not news.
+        if (s.game) blockRef.current = [longestBlock(s.game.board, 0), longestBlock(s.game.board, 1)];
         return;
       }
-      for (const e of s.events) {
-        if (e.seq <= cursorRef.current) continue;
+      const fresh = s.events.filter((e) => e.seq > cursorRef.current!);
+      const lastTurn = fresh.findLast((e) => e.type === "TURN_COMMITTED")?.seq;
+      const ctx = {
+        yourSeats: s.yourSeats as Seat[],
+        names: [s.seats[0].name, s.seats[1].name] as [string, string],
+        targetPoints: s.targetPoints,
+        score: s.score as [number, number],
+        board: s.game?.board ?? null,
+        announcedBlock: blockRef.current,
+      };
+      const effects: Effect[] = [];
+      for (const e of fresh) effects.push(...effectsFor(e.type, e.payload as Record<string, unknown>, ctx, e.seq === lastTurn));
+      fxRef.current?.play(effects);
+      for (const e of fresh) {
         const p = e.payload as Record<string, unknown>;
         if (e.type === "TURN_COMMITTED" && p.forced) {
           const d = p.dice as number[];
@@ -182,7 +200,10 @@ export default function MatchView({ matchId }: { matchId: string }) {
   useEffect(() => {
     if (!snap || snap.yourSeats.length !== 1) return;
     const mine = snap.status === "ACTIVE" && snap.seatToAct === snap.yourSeats[0];
-    if (prevActRef.current === false && mine && soundRef.current) sounds.turn();
+    if (prevActRef.current === false && mine) {
+      if (soundRef.current) sounds.turn();
+      fxRef.current?.play([{ kind: "your-turn" }]);
+    }
     prevActRef.current = mine;
   }, [snap]);
 
@@ -410,6 +431,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
               : oppAnim
           }
         />
+        <FxLayer ref={fxRef} sound={soundOn} />
       </div>
 
       <PlayerStrip info={bottom} seat={viewer} target={snap.targetPoints} cube={cubeOwner === "viewer" ? game!.cubeValue : null} />
