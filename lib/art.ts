@@ -35,7 +35,7 @@ export const ART: Record<ArtKey, ArtSlot> = {
     file: "hero.webp",
     width: 1920,
     height: 1080,
-    alt: "A walnut backgammon board under dramatic light with dice mid-roll",
+    alt: "Players around a backgammon table in a rooftop lounge at night, city skyline behind",
     usedOn: "Landing hero background (cropped to centre on phones — keep the subject in the middle 50%)",
     prompt:
       "Low-angle close-up of a luxurious walnut backgammon board on a dark table, two ivory dice frozen mid-air above it, " +

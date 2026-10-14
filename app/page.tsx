@@ -49,7 +49,7 @@ export default function Landing() {
 
       <section className="l-hero">
         <div className="l-hero-art">
-          <Art k="hero" priority />
+          <Art k="hero" priority position="72% 60%" />
         </div>
         <div className="l-hero-overlay" />
         <div className="l-hero-content">

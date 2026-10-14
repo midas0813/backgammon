@@ -8,7 +8,18 @@ export function artExists(key: ArtKey): boolean {
   return fs.existsSync(path.join(process.cwd(), "public", "images", ART[key].file));
 }
 
-export default function Art({ k, className, priority }: { k: ArtKey; className?: string; priority?: boolean }) {
+export default function Art({
+  k,
+  className,
+  priority,
+  position = "center",
+}: {
+  k: ArtKey;
+  className?: string;
+  priority?: boolean;
+  /** CSS object-position: which part of the image survives cropping on narrow screens. */
+  position?: string;
+}) {
   const slot = ART[k];
   if (artExists(k)) {
     return (
@@ -21,7 +32,7 @@ export default function Art({ k, className, priority }: { k: ArtKey; className?:
         height={slot.height}
         loading={priority ? "eager" : "lazy"}
         fetchPriority={priority ? "high" : undefined}
-        style={{ objectFit: "cover", width: "100%", height: "100%" }}
+        style={{ objectFit: "cover", objectPosition: position, width: "100%", height: "100%" }}
       />
     );
   }

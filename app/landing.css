@@ -87,9 +87,10 @@
   position: absolute;
   inset: 0;
   z-index: -1;
+  /* Darken behind the copy (left) and fade into the page at the bottom; keep the table scene clear. */
   background:
-    linear-gradient(180deg, rgb(11 18 32 / 0.35) 0%, rgb(11 18 32 / 0.15) 35%, rgb(11 18 32 / 0.92) 78%, var(--bg) 100%),
-    linear-gradient(90deg, rgb(11 18 32 / 0.75), transparent 65%);
+    linear-gradient(180deg, rgb(11 18 32 / 0.45) 0%, transparent 22%, transparent 80%, var(--bg) 100%),
+    linear-gradient(90deg, rgb(11 18 32 / 0.9) 0%, rgb(11 18 32 / 0.6) 38%, transparent 68%);
 }
 .l-hero-content {
   width: 100%;
