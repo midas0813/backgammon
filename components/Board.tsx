@@ -1,6 +1,6 @@
 "use client";
 
-import { useId } from "react";
+import { createContext, useContext, useId } from "react";
 import { absIndex, type Board as BoardState, type Seat } from "@/lib/engine/board";
 import { BOARD, type BoardTheme } from "@/lib/client/theme";
 
@@ -57,6 +57,8 @@ export interface BoardProps {
   rollKey?: string;
   /** Moves to animate into the current position; `key` restarts the animation. */
   anim?: { key: string; moves: AnimMove[] } | null;
+  /** Home board on the left instead of the right (profile setting). */
+  mirror?: boolean;
 }
 
 function colX(rel: number): number {
@@ -149,6 +151,10 @@ function computeMotions(board: BoardState, viewer: Seat, moves: AnimMove[]): Map
   return out;
 }
 
+/** Board mirrored left↔right (home board on the left). Text is counter-flipped so it stays readable. */
+const MirrorCtx = createContext(false);
+const unflip = (mirror: boolean, x: number) => (mirror ? { transform: `matrix(-1 0 0 1 ${2 * x} 0)` } : {});
+
 function Checker({
   cx,
   cy,
@@ -168,6 +174,7 @@ function Checker({
   className?: string;
   motion?: Motion;
 }) {
+  const mirror = useContext(MirrorCtx);
   const style = motion ? ({ "--dx": `${motion.dx}px`, "--dy": `${motion.dy}px`, "--delay": `${motion.delay}ms` } as React.CSSProperties) : undefined;
   return (
     <g className={`checker ${motion ? "arrive" : ""} ${className ?? ""}`} style={style} filter={`url(#${gid}shadow)`}>
@@ -175,7 +182,7 @@ function Checker({
       <circle cx={cx} cy={cy} r={R - 8} fill="none" stroke={white ? BOARD.whiteCheckerOutline : BOARD.blackCheckerOutline} strokeOpacity={0.55} />
       <circle cx={cx} cy={cy} r={R - 12} fill="none" stroke={white ? "#fff" : "#8DA2BC"} strokeOpacity={0.18} />
       {label && (
-        <text x={cx} y={cy + 6} textAnchor="middle" fontSize={17} fontWeight={800} fill={white ? "#0B1220" : "#EDF3F9"}>
+        <text x={cx} y={cy + 6} {...unflip(mirror, cx)} textAnchor="middle" fontSize={17} fontWeight={800} fill={white ? "#0B1220" : "#EDF3F9"}>
           {label}
         </text>
       )}
@@ -218,6 +225,7 @@ function Die({ x, y, value, used, rollKey, delay }: { x: number; y: number; valu
 
 export default function Board(p: BoardProps) {
   const { board, viewer, theme } = p;
+  const mirror = !!p.mirror;
   const gid = useId().replace(/:/g, "");
   const opp: Seat = viewer === 0 ? 1 : 0;
   const viewerIsWhite = viewer === 0;
@@ -256,6 +264,7 @@ export default function Board(p: BoardProps) {
         <text
           x={cx}
           y={top ? TOP - 8 : BOTTOM + 19}
+          {...unflip(mirror, cx)}
           textAnchor="middle"
           fontSize={14}
           fill={target !== undefined ? BOARD.legalDestination : "#EDF3F9"}
@@ -348,7 +357,7 @@ export default function Board(p: BoardProps) {
     }
     if (n > 0) {
       trays.push(
-        <text key={`offn${seat}`} x={TRAY_X + TRAY_W / 2} y={lower ? BOTTOM - 14 - n * 13 : TOP + 22 + n * 13} textAnchor="middle" fontSize={14} fontWeight={800} fill="#EDF3F9">
+        <text key={`offn${seat}`} x={TRAY_X + TRAY_W / 2} y={lower ? BOTTOM - 14 - n * 13 : TOP + 22 + n * 13} {...unflip(mirror, TRAY_X + TRAY_W / 2)} textAnchor="middle" fontSize={14} fontWeight={800} fill="#EDF3F9">
           {n}
         </text>,
       );
@@ -406,6 +415,8 @@ export default function Board(p: BoardProps) {
           <feDropShadow dx="0" dy="2.5" stdDeviation="1.6" floodColor="#000" floodOpacity="0.45" />
         </filter>
       </defs>
+      <MirrorCtx.Provider value={mirror}>
+      <g transform={mirror ? `matrix(-1 0 0 1 ${W} 0)` : undefined}>
 
       <rect x={0} y={0} width={W} height={H} rx={18} fill={`url(#${gid}frame)`} />
       <rect x={F - 4} y={TOP - 6} width={W - 2 * F + 8} height={PLAY_H + 12} rx={12} fill={`url(#${gid}felt)`} />
@@ -426,7 +437,7 @@ export default function Board(p: BoardProps) {
         strokeWidth={4}
       />
       {offTarget !== undefined && (
-        <text x={TRAY_X + TRAY_W / 2} y={MID + 34} textAnchor="middle" fontSize={13} fontWeight={800} fill={BOARD.legalDestination}>
+        <text x={TRAY_X + TRAY_W / 2} y={MID + 34} {...unflip(mirror, TRAY_X + TRAY_W / 2)} textAnchor="middle" fontSize={13} fontWeight={800} fill={BOARD.legalDestination}>
           OFF
         </text>
       )}
@@ -437,7 +448,7 @@ export default function Board(p: BoardProps) {
       <g key={`cube${p.cube.value}`} className={`cube ${p.cube.value > 1 ? "pop" : ""}`} aria-label={`Cube ${p.cube.value}`} opacity={p.cube.disabled ? 0.45 : 1}>
         <rect x={cubeX + 1} y={cubeY + 3} width={40} height={40} rx={7} fill="#000" opacity={0.35} />
         <rect x={cubeX} y={cubeY} width={40} height={40} rx={7} fill="#F7F1E6" stroke="#0B1220" strokeWidth={2} />
-        <text x={cubeX + 20} y={cubeY + 27} textAnchor="middle" fontSize={p.cube.value >= 100 ? 15 : 19} fontWeight={800} fill="#0B1220">
+        <text x={cubeX + 20} y={cubeY + 27} {...unflip(mirror, cubeX + 20)} textAnchor="middle" fontSize={p.cube.value >= 100 ? 15 : 19} fontWeight={800} fill="#0B1220">
           {p.cube.value}
         </text>
       </g>
@@ -467,7 +478,7 @@ export default function Board(p: BoardProps) {
           return (
             <g key={`lbl${rel}`} className="tag">
               <rect x={cx - 17} y={y - 14} width={34} height={22} rx={11} fill={BOARD.legalDestination} />
-              <text x={cx} y={y + 2} textAnchor="middle" fontSize={13} fontWeight={800} fill="#0B1220">
+              <text x={cx} y={y + 2} {...unflip(mirror, cx)} textAnchor="middle" fontSize={13} fontWeight={800} fill="#0B1220">
                 {label}
               </text>
             </g>
@@ -490,6 +501,8 @@ export default function Board(p: BoardProps) {
         ))}
       {p.onTap && <rect x={BAR_X} y={MID} width={BAR_W} height={PLAY_H / 2} fill="transparent" onClick={tap(25)} style={{ cursor: "pointer" }} />}
       {p.onTap && <rect x={TRAY_X} y={MID} width={TRAY_W} height={PLAY_H / 2} fill="transparent" onClick={tap(0)} style={{ cursor: "pointer" }} />}
+      </g>
+      </MirrorCtx.Provider>
     </svg>
   );
 }

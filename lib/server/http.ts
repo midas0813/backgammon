@@ -5,20 +5,28 @@ import type { User } from "./store";
 import { ApiError } from "./errors";
 import { resolveSession } from "./users";
 
-const COOKIE_OPTIONS = {
-  httpOnly: true,
-  sameSite: "lax" as const,
-  secure: process.env.NODE_ENV === "production",
-  path: "/",
-  maxAge: 60 * 60 * 24 * 365,
-};
+/**
+ * `Secure` follows the actual request protocol, not NODE_ENV: a Secure cookie is dropped on plain
+ * http (e.g. testing a production build from a phone on the LAN), which made every request a new guest.
+ */
+async function cookieOptions() {
+  const h = await headers();
+  const https = h.get("x-forwarded-proto")?.split(",")[0].trim() === "https";
+  return { httpOnly: true, sameSite: "lax" as const, secure: https, path: "/", maxAge: 60 * 60 * 24 * 365 };
+}
+
+/** The host the browser used — what the SIWE message's domain must match (proxies set x-forwarded-host). */
+export async function requestHost(): Promise<string> {
+  const h = await headers();
+  return h.get("x-forwarded-host")?.split(",")[0].trim() || h.get("host") || "";
+}
 
 /** Resolve the session cookie (an opaque random token) to its user, creating a guest when new. */
 export async function currentSession(): Promise<{ user: User; token: string }> {
   const jar = await cookies();
   const existing = jar.get(SESSION_COOKIE)?.value;
   const session = await resolveSession(existing);
-  if (session.token !== existing) jar.set(SESSION_COOKIE, session.token, COOKIE_OPTIONS);
+  if (session.token !== existing) jar.set(SESSION_COOKIE, session.token, await cookieOptions());
   return session;
 }
 
@@ -27,7 +35,7 @@ export async function currentUser(): Promise<User> {
 }
 
 export async function setSessionCookie(token: string) {
-  (await cookies()).set(SESSION_COOKIE, token, COOKIE_OPTIONS);
+  (await cookies()).set(SESSION_COOKIE, token, await cookieOptions());
 }
 
 export async function clearSessionCookie() {

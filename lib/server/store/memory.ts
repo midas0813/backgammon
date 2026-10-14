@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { Avatar, DepositIntent, MatchRecord, Session, Store, Tx, Txn, User, Withdrawal } from "./types";
+import type { Avatar, DepositIntent, Dispute, MatchRecord, Session, Store, Tx, Txn, User, Withdrawal } from "./types";
 
 /**
  * Local development store: one JSON document on disk (or in memory for tests). Transactions are
@@ -16,6 +16,8 @@ interface Data {
   withdrawals: Record<string, Withdrawal>;
   paymentEvents: Record<string, { outcome: string }>;
   avatars: Record<string, { file: string; userId: string; contentType: string; b64: string }>;
+  presence: Record<string, [number, number]>;
+  disputes: Record<string, Dispute>;
   ledger: { balances: Record<string, number>; transactions: Txn[] };
 }
 
@@ -31,6 +33,8 @@ const empty = (): Data => ({
   withdrawals: {},
   paymentEvents: {},
   avatars: {},
+  presence: {},
+  disputes: {},
   ledger: { balances: {}, transactions: [] },
 });
 
@@ -47,6 +51,8 @@ export function createMemoryStore(file: string | null): Store {
       const parsed = JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ file, "utf8"));
       // Files from before the store refactor used a different shape; start fresh rather than misread them.
       if (parsed && parsed.ledger && Array.isArray(parsed.ledger.transactions) && parsed.avatars) data = { ...data, ...parsed };
+      data.presence ??= {};
+      data.disputes ??= {};
     }
     g.__bgMem![cacheKey] = data;
     return data;
@@ -182,6 +188,21 @@ export function createMemoryStore(file: string | null): Store {
           return a && { file: a.file, userId: a.userId, contentType: a.contentType, bytes: new Uint8Array(Buffer.from(a.b64, "base64")) };
         },
         delete: async (file) => del("avatars", file),
+      },
+      presence: {
+        touch: async (matchId, seat, at) => {
+          const cur = get<[number, number]>("presence", matchId) ?? [0, 0];
+          cur[seat] = Math.max(cur[seat], at);
+          put("presence", matchId, cur);
+        },
+        get: async (matchId) => get<[number, number]>("presence", matchId) ?? [0, 0],
+      },
+      disputes: {
+        put: async (d) => put("disputes", d.id, d),
+        listByUser: async (userId) =>
+          values<Dispute>("disputes")
+            .filter((d) => d.userId === userId)
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
       },
     };
 

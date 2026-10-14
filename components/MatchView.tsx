@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Avatar from "@/components/Avatar";
 import Board, { type AnimMove, type DieView } from "@/components/Board";
@@ -11,6 +12,8 @@ import { applyMove, diceUses, legalSequences, nextMoves, pipCount, type Move, ty
 import type { GameResult } from "@/lib/engine/match";
 import type { MatchSnapshot } from "@/lib/server/matches";
 import { ClientApiError, api, sendIdempotent } from "@/lib/client/api";
+import { useMe } from "@/lib/client/me";
+import { sounds } from "@/lib/client/sound";
 import { useTheme } from "@/lib/client/theme";
 
 type Snapshot = MatchSnapshot;
@@ -34,6 +37,12 @@ const CUBE_REASON: Record<string, string> = {
 
 export default function MatchView({ matchId }: { matchId: string }) {
   const theme = useTheme();
+  const me = useMe();
+  const router = useRouter();
+  const soundOn = me?.sound ?? true;
+  const soundRef = useRef(soundOn);
+  soundRef.current = soundOn;
+  const [leaveAsk, setLeaveAsk] = useState(false);
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Move[]>([]);
@@ -78,6 +87,12 @@ export default function MatchView({ matchId }: { matchId: string }) {
           );
         } else if (e.type === "GAME_COMPLETED") {
           setResultModal(p as unknown as GameResult);
+        } else if (e.type === "DICE_ROLLED" && soundRef.current) {
+          sounds.dice();
+        } else if (e.type === "TURN_COMMITTED" && !p.forced && soundRef.current && !s.yourSeats.includes(Number(p.seat) as Seat)) {
+          sounds.move();
+        } else if (e.type === "MATCH_COMPLETED" && soundRef.current) {
+          sounds.win();
         }
       }
       cursorRef.current = s.eventCursor;
@@ -139,8 +154,27 @@ export default function MatchView({ matchId }: { matchId: string }) {
     if (!activeParticipant) return;
     const h = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener("beforeunload", h);
-    return () => window.removeEventListener("beforeunload", h);
+    // Browser/phone back: keep a guard entry in history and ask before leaving.
+    window.history.pushState({ bgGuard: true }, "");
+    const onPop = () => {
+      window.history.pushState({ bgGuard: true }, "");
+      setLeaveAsk(true);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("beforeunload", h);
+      window.removeEventListener("popstate", onPop);
+    };
   }, [activeParticipant]);
+
+  // A chime when it becomes this player's turn to act (online and computer matches).
+  const prevActRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (!snap || snap.yourSeats.length !== 1) return;
+    const mine = snap.status === "ACTIVE" && snap.seatToAct === snap.yourSeats[0];
+    if (prevActRef.current === false && mine && soundRef.current) sounds.turn();
+    prevActRef.current = mine;
+  }, [snap]);
 
   const game = snap?.game ?? null;
   const local = (snap?.yourSeats.length ?? 0) === 2;
@@ -200,6 +234,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
       // Several dice can reach "off": use the smallest legal one.
       const options = next.filter((m) => m.from === selected && m.to === rel).sort((a, b) => a.die - b.die);
       setDraft((d) => [...d, options[0]]);
+      if (soundRef.current) sounds.move();
       setSelected(null);
       return;
     }
@@ -285,7 +320,17 @@ export default function MatchView({ matchId }: { matchId: string }) {
   return (
     <main className="game">
       <div className="topbar">
-        <Link className="btn sm" href="/play" aria-label="Back to lobby (the match continues)">
+        <Link
+          className="btn sm"
+          href="/play"
+          aria-label="Back to lobby (the match continues)"
+          onClick={(e) => {
+            if (activeParticipant) {
+              e.preventDefault();
+              setLeaveAsk(true);
+            }
+          }}
+        >
           ← Lobby
         </Link>
         <div className="info">
@@ -312,6 +357,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
           targets={targets}
           lastMoved={lastMoved}
           onTap={onTap}
+          mirror={me?.orientation === "left"}
           rollKey={game!.dice ? `${game!.gameNumber}-${game!.turnNumber}-${game!.dice.join("")}` : undefined}
           anim={
             draft.length > 0
@@ -437,9 +483,30 @@ export default function MatchView({ matchId }: { matchId: string }) {
               Forfeit match…
             </button>
           )}
+          {snap.yourSeats.length > 0 && (
+            <Link className="btn block" href={`/profile?report=${matchId}#support`}>
+              Report a problem with this match
+            </Link>
+          )}
           <button className="btn block" onClick={() => setMenuOpen(false)}>
             Close
           </button>
+        </Modal>
+      )}
+
+      {leaveAsk && (
+        <Modal title="Leave the table?" onClose={() => setLeaveAsk(false)}>
+          <p className="muted">
+            The match keeps going and you will <strong>not</strong> forfeit. You can come back any time from the lobby&apos;s Resume list.
+          </p>
+          <div className="grid2">
+            <button className="btn" onClick={() => setLeaveAsk(false)}>
+              Stay
+            </button>
+            <button className="btn primary" onClick={() => router.push("/play")}>
+              Go to lobby
+            </button>
+          </div>
         </Modal>
       )}
 

@@ -7,16 +7,17 @@ can't read or write anything.
 
 ## Connect your Supabase project
 
-1. **Apply the schema** (pick one):
-   - GitHub integration: Supabase → Project Settings → Integrations → GitHub → this repo, working directory
-     `.`, turn on **Deploy to production**. Pushing to `main` then applies new migrations automatically.
-   - Or paste `supabase/migrations/20261014120000_init.sql` into the Supabase SQL editor and run it.
-2. **Get the connection string**: Supabase → Connect → *Transaction pooler* (port 6543), with your
-   database password filled in.
-3. **Set it where the app runs** (never commit it):
-   - Local: `.env.local` → `DATABASE_URL=postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres`
-   - Hosting (e.g. Vercel): add `DATABASE_URL` as an environment variable.
-4. Restart the app. With `DATABASE_URL` set it uses Postgres; without it, the local `.data/db.json` file.
+**On Vercel with the Supabase integration, nothing else is needed.** The integration provides
+`POSTGRES_URL`; the app reads it (extra provider parameters are stripped) and, on its first request,
+**creates and upgrades the tables itself** from `supabase/migrations/`. Each file is applied once
+(tracked in `app_schema_migrations`) under a lock, so simultaneous cold starts are safe.
+
+Other setups:
+- Set `DATABASE_URL` (Supabase → Connect → *Transaction pooler*, port 6543). It takes priority over `POSTGRES_URL`.
+- Without any database variable the app uses `.data/db.json` locally; on Vercel it refuses to start
+  data requests and logs "No database configured".
+- The SQL files are idempotent, so applying them with the Supabase CLI/GitHub integration or the SQL
+  editor as well is harmless.
 
 ## Tables
 
@@ -29,6 +30,9 @@ can't read or write anything.
 | `idempotency_keys` | Safe retries for wallet requests |
 | `ledger_accounts`, `ledger_transactions`, `ledger_entries` | Double-entry token ledger; no-overdraft check; journal rows are immutable (trigger) |
 | `deposit_intents`, `withdrawals`, `payment_events` | Simulated payment lifecycle; each provider event is processed once |
+| `match_presence` | "Online" heartbeat per seat, shared by all server instances |
+| `disputes` | Player problem reports with reference IDs |
+| `app_schema_migrations` | Which migration files the app has applied |
 
 ## Testing against Postgres without Supabase
 

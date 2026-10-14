@@ -1471,3 +1471,30 @@ html[data-reduced-motion="true"] .reveal {
   background: rgb(30 46 71 / 0.6);
   font-size: 14px;
 }
+
+/* ---------- High contrast (profile setting) ---------- */
+html[data-contrast="high"] {
+  --text: #ffffff;
+  --text-2: #dbe6f3;
+  --border: #8aa0bb;
+  --border-soft: rgb(255 255 255 / 0.35);
+  --glass: rgb(16 26 44 / 0.96);
+}
+html[data-contrast="high"] .muted {
+  color: #dbe6f3;
+}
+html[data-contrast="high"] .btn,
+html[data-contrast="high"] .chip {
+  border-width: 2px;
+}
+html[data-contrast="high"] .board-svg .checker circle:first-child {
+  stroke-width: 3.5;
+}
+.theme-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.theme-preview {
+  animation: fade-up 320ms var(--ease-out) both;
+}

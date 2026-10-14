@@ -7,7 +7,7 @@ MVP of the mobile-first backgammon site described in `../specifications`. It cov
 ```bash
 npm install
 npm run dev            # http://localhost:3000
-npm test               # 39 tests on the in-memory store
+npm test               # 46 tests on the in-memory store
 npm run test:pg        # the same tests on Postgres (PGlite + the Supabase migration)
 npm run typecheck
 ```
@@ -33,6 +33,7 @@ Production build: `npm run build && npm start`. The simulated payment provider i
 | Authoritative server | Server-only dice (`crypto.randomInt`); clients only propose actions; every action carries `actionId` + `expectedVersion`; retries are idempotent, stale versions are rejected, and the event log has cursors |
 | Multiplayer | Play vs computer, quick-match queue, invite link, pass & play, 1 s polling, presence, refresh/restart restores the exact game |
 | Accounts | **Wallet = account.** RainbowKit + wagmi connect, Sign-In with Ethereum (EIP-4361) verified server-side (EOA and EIP-1271/6492 smart wallets), single-use session-bound nonces, rotated httpOnly session cookies. A guest is upgraded in place on first sign-in, keeping its games and credits; `/welcome` onboarding for name and photo |
+| Settings & support | Sound effects, high-contrast mode, board orientation (home left/right), reduced motion, theme preview-then-apply; confirmation before leaving an active match (in-app and browser back); problem reports with reference IDs (`/api/disputes`) |
 | Profile | Avatar upload (cropped/re-encoded in the browser, type checked by magic bytes, ≤ 2 MB, stored in the database, served from `/api/avatars`), name, bio, country, stats, match history, account wallet with explorer link, settings |
 | Storage | Store interface with two implementations: Supabase Postgres (`DATABASE_URL`, row locks, advisory locks, RLS on every table) and a local JSON file for development |
 | Look & motion | Landing page, glass UI, display font, shaded board; dice tumble, checker slides (including opponent replay and hits), cube flip, confetti, scroll reveals. Honors OS reduced-motion and the profile toggle |

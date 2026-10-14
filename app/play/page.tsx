@@ -198,7 +198,7 @@ export default function Lobby() {
 
       <section className="card">
         <h2>Board theme</h2>
-        <ThemePicker />
+        <ThemePicker previewFirst mirror={me?.orientation === "left"} />
       </section>
 
       {lists && lists.recent.length > 0 && (

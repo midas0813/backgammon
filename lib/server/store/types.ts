@@ -12,8 +12,22 @@ export interface User {
   bio?: string;
   country?: string;
   avatar?: string;
+  sound?: boolean;
+  highContrast?: boolean;
+  boardOrientation?: "right" | "left";
   createdAt: string;
   registeredAt?: string;
+}
+
+export interface Dispute {
+  id: string;
+  userId: string;
+  matchId?: string;
+  transactionId?: string;
+  category: "GAME" | "PAYMENT" | "ACCOUNT" | "OTHER";
+  reason: string;
+  status: string;
+  createdAt: string;
 }
 
 export interface Session {
@@ -160,6 +174,16 @@ export interface Tx {
     put(a: Avatar): Promise<void>;
     get(file: string): Promise<Avatar | undefined>;
     delete(file: string): Promise<void>;
+  };
+  presence: {
+    /** Record that `seat` polled `matchId` at `at` (ms). */
+    touch(matchId: string, seat: number, at: number): Promise<void>;
+    /** Last-seen time (ms) per seat; 0 when never seen. */
+    get(matchId: string): Promise<[number, number]>;
+  };
+  disputes: {
+    put(d: Dispute): Promise<void>;
+    listByUser(userId: string): Promise<Dispute[]>;
   };
 }
 

@@ -12,7 +12,9 @@ const listeners = new Set<() => void>();
 function emit() {
   for (const l of listeners) l();
   if (typeof document !== "undefined" && current) {
-    document.documentElement.dataset.reducedMotion = String(current.reducedMotion);
+    const root = document.documentElement.dataset;
+    root.reducedMotion = String(current.reducedMotion);
+    root.contrast = current.highContrast ? "high" : "normal";
   }
 }
 

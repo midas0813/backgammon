@@ -181,23 +181,31 @@ export async function submitAction(userId: string, matchId: string, req: ActionR
 }
 
 /**
- * Presence is a soft, per-process signal (not persisted): writing to the database on every poll
- * would cost a write per player per second. With several server instances, "online" is approximate.
+ * Presence ("online" badge) is stored in the database so it is correct across server instances.
+ * Each process writes a seat's heartbeat at most every PRESENCE_WRITE_MS to keep polling cheap.
  */
-const presence = ((globalThis as unknown as { __bgPresence?: Map<string, number> }).__bgPresence ??= new Map());
-const ONLINE_MS = 6000;
+const lastPresenceWrite = ((globalThis as unknown as { __bgPresenceW?: Map<string, number> }).__bgPresenceW ??= new Map());
+const PRESENCE_WRITE_MS = 3000;
+const ONLINE_MS = 9000;
 
 /** Participant-scoped snapshot. Never includes user IDs, wallets or payment data. */
 export async function getSnapshot(userId: string, matchId: string) {
   const now = Date.now();
-  const { rec, users } = await tx(async (t) => {
+  const { rec, users, seen } = await tx(async (t) => {
     const m = await t.matches.get(matchId);
-    const ids = m ? (m.seats.filter((s) => s && s !== BOT_USER_ID) as string[]) : [];
-    return { rec: m, users: await t.users.getMany(ids) };
+    if (!m) return { rec: undefined, users: {}, seen: [0, 0] as [number, number] };
+    for (const s of seatOf(m, userId)) {
+      const key = `${matchId}:${s}`;
+      if (now - (lastPresenceWrite.get(key) ?? 0) >= PRESENCE_WRITE_MS) {
+        await t.presence.touch(matchId, s, now);
+        lastPresenceWrite.set(key, now);
+      }
+    }
+    const ids = m.seats.filter((s) => s && s !== BOT_USER_ID) as string[];
+    return { rec: m, users: await t.users.getMany(ids), seen: await t.presence.get(matchId) };
   });
   if (!rec) throw notFound("Match");
   const mySeats = seatOf(rec, userId);
-  for (const s of mySeats) presence.set(`${matchId}:${s}`, now);
 
   const st = rec.state;
   const g = st.game;
@@ -222,7 +230,7 @@ export async function getSnapshot(userId: string, matchId: string) {
       online:
         rec.mode === "local" || rec.seats[s] === BOT_USER_ID || mySeats.includes(s)
           ? true
-          : now - (presence.get(`${matchId}:${s}`) ?? 0) < ONLINE_MS,
+          : now - seen[s] < ONLINE_MS,
     })),
     yourSeats: mySeats,
     canJoin: st.status === "WAITING" && rec.mode !== "local" && rec.mode !== "bot" && mySeats.length === 0,
@@ -274,6 +282,14 @@ const BOT_STEP_MS = 700;
  * players see the roll before the move. Runs through the same rules engine as human actions.
  */
 export async function tickBot(matchId: string) {
+  // Cheap unlocked check first: most polls are for human matches or the bot isn't due yet.
+  const due = await tx(async (t) => {
+    const rec = await t.matches.get(matchId);
+    if (!rec || rec.mode !== "bot" || rec.state.status !== "ACTIVE") return false;
+    const seat = seatToAct(rec.state);
+    return seat !== null && rec.seats[seat] === BOT_USER_ID && Date.now() - (rec.updatedAt ?? 0) >= BOT_STEP_MS;
+  });
+  if (!due) return;
   await tx(async (t) => {
     const rec = await t.matches.get(matchId, { lock: true });
     if (!rec || rec.mode !== "bot" || rec.state.status !== "ACTIVE") return;
@@ -295,6 +311,20 @@ export async function tickBot(matchId: string) {
     pushEvents(rec, events);
     await t.matches.put(rec);
   });
+}
+
+/** Committed events after `cursor` (spec: GET /matches/{id}/history). Participants only. */
+export async function matchHistory(userId: string, matchId: string, cursor: number) {
+  const rec = await tx((t) => t.matches.get(matchId));
+  if (!rec) throw notFound("Match");
+  if (!rec.seats.includes(userId)) throw new ApiError(403, "NOT_PARTICIPANT", "Only players can read the full history");
+  const oldest = rec.events[0]?.seq ?? rec.eventSeq + 1;
+  return {
+    events: rec.events.filter((e) => e.seq > cursor),
+    eventCursor: rec.eventSeq,
+    // Events older than the retention window are gone; the client should load a fresh snapshot.
+    snapshotRequired: cursor + 1 < oldest,
+  };
 }
 
 /** Tests: make the bot act immediately. */

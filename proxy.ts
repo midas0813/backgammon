@@ -14,7 +14,8 @@ export function proxy(request: NextRequest) {
   response.cookies.set(SESSION_COOKIE, id, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    // Follow the real protocol: a Secure cookie would be dropped on plain http (LAN/phone testing).
+    secure: request.nextUrl.protocol === "https:" || request.headers.get("x-forwarded-proto") === "https",
     path: "/",
     maxAge: 60 * 60 * 24 * 365,
   });

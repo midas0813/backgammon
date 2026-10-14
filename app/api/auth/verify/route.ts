@@ -1,5 +1,4 @@
-import { headers } from "next/headers";
-import { currentSession, errorResponse, readJson, setSessionCookie } from "@/lib/server/http";
+import { currentSession, errorResponse, readJson, requestHost, setSessionCookie } from "@/lib/server/http";
 import { verifySiwe } from "@/lib/server/siwe";
 
 /**
@@ -10,7 +9,7 @@ export async function POST(req: Request) {
   try {
     const body = await readJson(req);
     const { token } = await currentSession();
-    const host = (await headers()).get("host") ?? "";
+    const host = await requestHost();
     const result = await verifySiwe({ sessionToken: token, host }, body);
     await setSessionCookie(result.token);
     return Response.json({ isNew: result.isNew, profile: result.profile });

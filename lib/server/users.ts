@@ -64,7 +64,16 @@ export function cleanName(value: unknown): string | null {
 
 export async function updatePreferences(
   userId: string,
-  prefs: { name?: unknown; themeId?: unknown; reducedMotion?: unknown; bio?: unknown; country?: unknown },
+  prefs: {
+    name?: unknown;
+    themeId?: unknown;
+    reducedMotion?: unknown;
+    bio?: unknown;
+    country?: unknown;
+    sound?: unknown;
+    highContrast?: unknown;
+    orientation?: unknown;
+  },
 ) {
   return tx(async (t) => {
     const user = (await t.users.get(userId))!;
@@ -72,6 +81,9 @@ export async function updatePreferences(
     if (name) user.name = name;
     if (typeof prefs.themeId === "string" && THEME_IDS.includes(prefs.themeId)) user.themeId = prefs.themeId;
     if (typeof prefs.reducedMotion === "boolean") user.reducedMotion = prefs.reducedMotion;
+    if (typeof prefs.sound === "boolean") user.sound = prefs.sound;
+    if (typeof prefs.highContrast === "boolean") user.highContrast = prefs.highContrast;
+    if (prefs.orientation === "left" || prefs.orientation === "right") user.boardOrientation = prefs.orientation;
     if (typeof prefs.bio === "string") user.bio = prefs.bio.replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 160);
     if (typeof prefs.country === "string") user.country = prefs.country.replace(/[^\p{L} .'-]/gu, "").trim().slice(0, 40);
     await t.users.put(user);
@@ -145,6 +157,9 @@ export async function profileIn(t: Tx, userId: string) {
     country: u.country ?? "",
     themeId: u.themeId,
     reducedMotion: u.reducedMotion,
+    sound: u.sound ?? true,
+    highContrast: u.highContrast ?? false,
+    orientation: u.boardOrientation ?? "right",
     stats: await playerStats(t, userId),
   };
 }

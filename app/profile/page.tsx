@@ -7,6 +7,7 @@ import Avatar from "@/components/Avatar";
 import { useDisconnect } from "wagmi";
 import WalletButton, { shortAddress } from "@/components/WalletButton";
 import { signOutEverywhere } from "@/components/Web3Provider";
+import SupportCard from "@/components/SupportCard";
 import ThemePicker from "@/components/ThemePicker";
 import { ClientApiError, api } from "@/lib/client/api";
 import { uploadAvatar } from "@/lib/client/avatar";
@@ -89,12 +90,18 @@ export default function ProfilePage() {
     window.setTimeout(() => setMsg(null), 3500);
   };
 
+  const SWITCHES = ["sound", "highContrast", "reducedMotion", "orientation"];
   const save = async (patch: Record<string, unknown>) => {
     setSaving(true);
+    // Switches update instantly; the server's answer confirms (or the old value comes back on error).
+    const before = me;
+    const instant = Object.fromEntries(Object.entries(patch).filter(([k]) => SWITCHES.includes(k)));
+    if (Object.keys(instant).length) setMe({ ...me, ...instant } as Profile);
     try {
       setMe(await api<Profile>("/api/me", { method: "PATCH", body: patch }));
       return true;
     } catch (e) {
+      setMe(before);
       flash("err", e instanceof Error ? e.message : "Could not save");
       return false;
     } finally {
@@ -331,7 +338,7 @@ export default function ProfilePage() {
       <section className="card">
         <h2>Board appearance</h2>
         <p className="muted small">Changes only your view, even mid-game.</p>
-        <ThemePicker />
+        <ThemePicker previewFirst mirror={me.orientation === "left"} />
       </section>
 
       <section className="card">
@@ -345,6 +352,40 @@ export default function ProfilePage() {
           </span>
           <input type="checkbox" role="switch" checked={me.reducedMotion} onChange={(e) => save({ reducedMotion: e.target.checked })} />
         </label>
+        <label className="toggle">
+          <span>
+            <strong>Sound</strong>
+            <span className="muted small" style={{ display: "block" }}>
+              Dice, moves and a chime when it&apos;s your turn.
+            </span>
+          </span>
+          <input type="checkbox" role="switch" checked={me.sound} onChange={(e) => save({ sound: e.target.checked })} />
+        </label>
+        <label className="toggle">
+          <span>
+            <strong>High contrast</strong>
+            <span className="muted small" style={{ display: "block" }}>
+              Brighter text, stronger outlines and borders.
+            </span>
+          </span>
+          <input type="checkbox" role="switch" checked={me.highContrast} onChange={(e) => save({ highContrast: e.target.checked })} />
+        </label>
+        <div className="toggle" style={{ display: "flex" }}>
+          <span>
+            <strong>Board orientation</strong>
+            <span className="muted small" style={{ display: "block" }}>
+              Where your home board sits.
+            </span>
+          </span>
+          <span className="row" role="group" aria-label="Board orientation" style={{ flexWrap: "nowrap" }}>
+            <button className="chip" aria-pressed={me.orientation === "left"} onClick={() => save({ orientation: "left" })}>
+              Left
+            </button>
+            <button className="chip" aria-pressed={me.orientation === "right"} onClick={() => save({ orientation: "right" })}>
+              Right
+            </button>
+          </span>
+        </div>
         <ul className="list small">
           <li>
             <span>Free play</span>
@@ -360,6 +401,8 @@ export default function ProfilePage() {
           </li>
         </ul>
       </section>
+
+      <SupportCard history={st.history.map((h) => ({ matchId: h.matchId, label: `vs ${h.opponent} · ${new Date(h.date).toLocaleDateString()}` }))} />
 
       {me.registered && (
         <button className="btn danger block" onClick={signOut}>

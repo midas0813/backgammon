@@ -1,10 +1,39 @@
-import type { Avatar, DepositIntent, MatchRecord, Session, Store, Tx, Txn, User, Withdrawal } from "./types";
+import type { Avatar, DepositIntent, Dispute, MatchRecord, Session, Store, Tx, Txn, User, Withdrawal } from "./types";
 
 /** Minimal driver surface so the same SQL runs on Supabase (postgres.js) and in tests (PGlite). */
 export type Query = <R = Record<string, unknown>>(text: string, params?: unknown[]) => Promise<R[]>;
+/** Run a multi-statement SQL script (no parameters). */
+export type Exec = (sql: string) => Promise<void>;
 export interface Driver {
-  begin<T>(fn: (q: Query) => Promise<T>): Promise<T>;
+  begin<T>(fn: (q: Query, exec: Exec) => Promise<T>): Promise<T>;
   reset?(): Promise<void>;
+}
+
+export interface Migration {
+  name: string;
+  sql: string;
+}
+
+/**
+ * Apply pending migrations once, in name order, under a transaction-scoped advisory lock so parallel
+ * cold starts cannot race. Applied names are recorded in app_schema_migrations. The SQL files are
+ * idempotent, so a migration that the Supabase CLI/GitHub integration already ran is harmless.
+ */
+export async function runMigrations(driver: Driver, migrations: Migration[]): Promise<string[]> {
+  return driver.begin(async (q, exec) => {
+    await q(`select pg_advisory_xact_lock(7272741)`);
+    await exec(`create table if not exists app_schema_migrations (name text primary key, applied_at timestamptz not null default now());
+      alter table app_schema_migrations enable row level security;`);
+    const done = new Set((await q<{ name: string }>(`select name from app_schema_migrations`)).map((r) => r.name));
+    const applied: string[] = [];
+    for (const m of [...migrations].sort((a, b) => a.name.localeCompare(b.name))) {
+      if (done.has(m.name)) continue;
+      await exec(m.sql);
+      await q(`insert into app_schema_migrations (name) values ($1)`, [m.name]);
+      applied.push(m.name);
+    }
+    return applied;
+  });
 }
 
 type Row = Record<string, unknown>;
@@ -22,6 +51,9 @@ function toUser(r: Row): User {
     bio: String(r.bio ?? ""),
     country: String(r.country ?? ""),
     avatar: (r.avatar as string) ?? undefined,
+    sound: r.sound === undefined ? true : Boolean(r.sound),
+    highContrast: Boolean(r.high_contrast),
+    boardOrientation: r.board_orientation === "left" ? "left" : "right",
     createdAt: iso(r.created_at),
     registeredAt: r.registered_at ? iso(r.registered_at) : undefined,
   };
@@ -67,12 +99,29 @@ function makeTx(q: Query): Tx {
       },
       async put(u) {
         await q(
-          `insert into app_users (id, wallet_address, chain_id, name, theme_id, reduced_motion, bio, country, avatar, created_at, registered_at)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          `insert into app_users (id, wallet_address, chain_id, name, theme_id, reduced_motion, bio, country, avatar, created_at, registered_at,
+             sound, high_contrast, board_orientation)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
            on conflict (id) do update set wallet_address = excluded.wallet_address, chain_id = excluded.chain_id,
              name = excluded.name, theme_id = excluded.theme_id, reduced_motion = excluded.reduced_motion, bio = excluded.bio,
-             country = excluded.country, avatar = excluded.avatar, registered_at = excluded.registered_at`,
-          [u.id, u.walletAddress ?? null, u.chainId ?? null, u.name, u.themeId, u.reducedMotion, u.bio ?? "", u.country ?? "", u.avatar ?? null, u.createdAt, u.registeredAt ?? null],
+             country = excluded.country, avatar = excluded.avatar, registered_at = excluded.registered_at,
+             sound = excluded.sound, high_contrast = excluded.high_contrast, board_orientation = excluded.board_orientation`,
+          [
+            u.id,
+            u.walletAddress ?? null,
+            u.chainId ?? null,
+            u.name,
+            u.themeId,
+            u.reducedMotion,
+            u.bio ?? "",
+            u.country ?? "",
+            u.avatar ?? null,
+            u.createdAt,
+            u.registeredAt ?? null,
+            u.sound ?? true,
+            u.highContrast ?? false,
+            u.boardOrientation ?? "right",
+          ],
         );
       },
       async count() {
@@ -278,13 +327,65 @@ function makeTx(q: Query): Tx {
         await q(`delete from app_avatars where file = $1`, [file]);
       },
     },
+    presence: {
+      async touch(matchId, seat, at) {
+        await q(
+          `insert into match_presence (match_id, seat, seen_at) values ($1, $2, to_timestamp($3::float8 / 1000))
+           on conflict (match_id, seat) do update set seen_at = greatest(match_presence.seen_at, excluded.seen_at)`,
+          [matchId, seat, at],
+        );
+      },
+      async get(matchId) {
+        const rows = await q(`select seat, (extract(epoch from seen_at) * 1000)::float8 as ms from match_presence where match_id = $1`, [matchId]);
+        const out: [number, number] = [0, 0];
+        for (const r of rows) out[Number(r.seat)] = num(r.ms);
+        return out;
+      },
+    },
+    disputes: {
+      async put(d: Dispute) {
+        await q(
+          `insert into disputes (id, user_id, match_id, transaction_id, category, reason, status, created_at)
+           values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [d.id, d.userId, d.matchId ?? null, d.transactionId ?? null, d.category, d.reason, d.status, d.createdAt],
+        );
+      },
+      async listByUser(userId) {
+        const rows = await q(`select * from disputes where user_id = $1 order by created_at desc limit 20`, [userId]);
+        return rows.map((r) => ({
+          id: String(r.id),
+          userId: String(r.user_id),
+          matchId: (r.match_id as string) ?? undefined,
+          transactionId: (r.transaction_id as string) ?? undefined,
+          category: r.category as Dispute["category"],
+          reason: String(r.reason),
+          status: String(r.status),
+          createdAt: iso(r.created_at),
+        }));
+      },
+    },
   };
 }
 
-export function createPostgresStore(driver: Driver): Store {
+export function createPostgresStore(driver: Driver, migrations: Migration[] = []): Store {
+  // Apply the schema once per process before the first unit of work; retry on the next call if it fails.
+  let ready: Promise<unknown> | null = null;
+  const ensure = () => {
+    ready ??= runMigrations(driver, migrations).catch((e) => {
+      ready = null;
+      throw e;
+    });
+    return ready;
+  };
   return {
     kind: "postgres",
-    tx: (fn) => driver.begin((q) => fn(makeTx(q))),
-    reset: async () => driver.reset?.(),
+    tx: async (fn) => {
+      await ensure();
+      return driver.begin((q) => fn(makeTx(q)));
+    },
+    reset: async () => {
+      await ensure();
+      await driver.reset?.();
+    },
   };
 }
