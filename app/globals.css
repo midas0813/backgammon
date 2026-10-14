@@ -1404,3 +1404,70 @@ html[data-reduced-motion="true"] .reveal {
     stroke-dasharray: 0 var(--len);
   }
 }
+
+/* ---------- Wallet sign-in ---------- */
+.connect-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 8px;
+}
+.connect-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.connect-steps li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgb(30 46 71 / 0.55);
+  border: 1px solid var(--border-soft);
+  animation: fade-up 480ms var(--ease-out) both;
+}
+.connect-steps .n {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--action);
+  color: var(--action-text);
+  font-weight: 800;
+  font-size: 14px;
+}
+.connect-cta .btn {
+  width: 100%;
+}
+.wallet-chip {
+  gap: 8px;
+  padding: 0 6px 0 10px;
+}
+.welcome {
+  align-items: stretch;
+}
+.welcome h1 {
+  font-size: 32px;
+}
+.welcome-avatar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 0;
+}
+.wallet-id {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgb(30 46 71 / 0.6);
+  font-size: 14px;
+}

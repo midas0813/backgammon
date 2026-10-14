@@ -7,11 +7,14 @@ MVP of the mobile-first backgammon site described in `../specifications`. It cov
 ```bash
 npm install
 npm run dev            # http://localhost:3000
-npm test               # 39 tests: rules, bot, concurrency, accounts, wallet link, ledger, payments
+npm test               # 39 tests on the in-memory store
+npm run test:pg        # the same tests on Postgres (PGlite + the Supabase migration)
 npm run typecheck
 ```
 
 Production build: `npm run build && npm start`. The simulated payment provider is **off in production**. To demo the wallet on a production build, opt in with `ENABLE_SIMULATED_PAYMENTS=true npm start`.
+
+**Configuration:** copy `.env.example` to `.env.local`. `DATABASE_URL` switches storage to Supabase Postgres ([docs/DATABASE.md](docs/DATABASE.md)). `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` enables QR-code and mobile wallets ([docs/WALLET_ACCOUNTS.md](docs/WALLET_ACCOUNTS.md)).
 
 **Pages:** `/` landing · `/play` lobby · `/signup` · `/login` · `/profile` · `/wallet` · `/match/:id`.
 
@@ -29,9 +32,9 @@ Production build: `npm run build && npm start`. The simulated payment provider i
 | Cube | Offer before roll, ownership, accept/pass (pass awards the old value), cap 128, Crawford game, dead-cube block |
 | Authoritative server | Server-only dice (`crypto.randomInt`); clients only propose actions; every action carries `actionId` + `expectedVersion`; retries are idempotent, stale versions are rejected, and the event log has cursors |
 | Multiplayer | Play vs computer, quick-match queue, invite link, pass & play, 1 s polling, presence, refresh/restart restores the exact game |
-| Accounts | Email + password sign-up/sign-in (scrypt hashes, opaque httpOnly session tokens, fresh token on login, login rate limiting). A guest is upgraded in place on sign-up, keeping its games and credits |
-| Profile | Avatar upload (cropped/re-encoded in the browser, type checked by magic bytes, ≤ 2 MB, served from `/api/avatars`), name, bio, country, stats, match history, linked wallets, settings |
-| Connect Wallet | Injected EIP-1193 wallets (MetaMask, Coinbase Wallet, Rabby…). Ownership proven by signing a one-time challenge, verified server-side with viem. No gas, no funds moved. WalletConnect QR is not set up (needs a project ID) |
+| Accounts | **Wallet = account.** RainbowKit + wagmi connect, Sign-In with Ethereum (EIP-4361) verified server-side (EOA and EIP-1271/6492 smart wallets), single-use session-bound nonces, rotated httpOnly session cookies. A guest is upgraded in place on first sign-in, keeping its games and credits; `/welcome` onboarding for name and photo |
+| Profile | Avatar upload (cropped/re-encoded in the browser, type checked by magic bytes, ≤ 2 MB, stored in the database, served from `/api/avatars`), name, bio, country, stats, match history, account wallet with explorer link, settings |
+| Storage | Store interface with two implementations: Supabase Postgres (`DATABASE_URL`, row locks, advisory locks, RLS on every table) and a local JSON file for development |
 | Look & motion | Landing page, glass UI, display font, shaded board; dice tumble, checker slides (including opponent replay and hits), cube flip, confetti, scroll reveals. Honors OS reduced-motion and the profile toggle |
 | UI | Lobby, waiting room, live board (tap source → highlighted destinations with die labels, undo, confirm), cube decision panel, result & match-over screens, forced-pass announcements, 6 board themes switchable mid-game, profile. Checked for no horizontal overflow at 320/360/390/430 px |
 | Wallet | Double-entry ledger in integer minor units (100 = 1 token = $1). Free credits and paid tokens are separate accounts; match and withdrawal reserves are separate; idempotency keys and reconciliation. Deposit states CREATED→PENDING→CREDITED/FAILED/REVIEW and the withdrawal lifecycle via a **simulated, HMAC-signed provider adapter**. Duplicate, out-of-order, underpaid and forged callbacks are all handled |
@@ -47,10 +50,11 @@ Production build: `npm run build && npm start`. The simulated payment provider i
 
 ```
 lib/engine/      pure rules + match state machine (shared by server and client preview)
-lib/server/      db (JSON store, all-or-nothing transactions), matches, users, ledger, wallet, payments/
+lib/server/      store/ (Postgres + local), siwe, matches, users, ledger, wallet, payments/
+supabase/        migrations (schema, RLS)
 app/api/         REST contracts from 03-api-contracts.md
 components/      Board (SVG), MatchView, ThemePicker, BottomNav
 tests/           vitest suites mirroring 04-test-plan.md
 ```
 
-Persistence is a single JSON file at `.data/db.json`, written atomically. It is fine for one process. For production, replace `lib/server/db.ts` with Postgres, using the same entities, unique constraints and an outbox. Realtime uses polling; WebSockets/SSE would replace it later.
+Persistence goes through `lib/server/store`: Postgres when `DATABASE_URL` is set, otherwise a JSON file at `.data/db.json` (one process only). Realtime uses polling; WebSockets/SSE would replace it later.

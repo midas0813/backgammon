@@ -17,7 +17,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/payment-events/
     } catch {
       throw new ApiError(401, "UNAUTHENTICATED", "Invalid payment event signature");
     }
-    return Response.json(processPaymentEvent(event));
+    return Response.json(await processPaymentEvent(event));
   } catch (e) {
     return errorResponse(e);
   }

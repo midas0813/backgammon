@@ -6,9 +6,9 @@ import { getSnapshot, tickBot } from "@/lib/server/matches";
 export async function GET(req: NextRequest, ctx: RouteContext<"/api/matches/[id]">) {
   const { id } = await ctx.params;
   const since = Number(req.nextUrl.searchParams.get("since"));
-  return handle((user) => {
-    tickBot(id);
-    const snap = getSnapshot(user.id, id);
+  return handle(async (user) => {
+    await tickBot(id);
+    const snap = await getSnapshot(user.id, id);
     if (since && since === snap.stateVersion) {
       return { unchanged: true, stateVersion: snap.stateVersion, seats: snap.seats, serverNow: snap.serverNow };
     }

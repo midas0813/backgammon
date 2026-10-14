@@ -1,16 +1,13 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
-import AuthForm from "@/components/auth/AuthForm";
 import AuthLayout from "@/components/auth/AuthLayout";
+import ConnectPanel from "@/components/auth/ConnectPanel";
 
 export const metadata: Metadata = { title: "Create account" };
 
 export default function SignUpPage() {
   return (
-    <AuthLayout title="Create your account" subtitle="Keep your stats, avatar, boards and wallet on every device. Your guest games carry over.">
-      <Suspense>
-        <AuthForm mode="signup" />
-      </Suspense>
+    <AuthLayout title="Create your account" subtitle="Your wallet is your account. Connect it and sign once — that's it.">
+      <ConnectPanel />
     </AuthLayout>
   );
 }

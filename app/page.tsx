@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Art from "@/components/Art";
 import { Brand } from "@/components/BrandMark";
-import ConnectWalletButton from "@/components/ConnectWallet";
+import WalletButton from "@/components/WalletButton";
 import Reveal from "@/components/Reveal";
 import BoardShowcase from "@/components/landing/BoardShowcase";
 import LandingNav from "@/components/landing/LandingNav";
@@ -66,9 +66,7 @@ export default function Landing() {
             <Link className="btn primary lg" href="/play">
               Play free now
             </Link>
-            <Link className="btn lg l-ghost" href="/signup">
-              Create account
-            </Link>
+            <WalletButton className="btn lg l-ghost" label="Connect Wallet" />
           </div>
           <div className="l-in" style={{ animationDelay: "460ms" }}>
             <LiveStats />
@@ -208,14 +206,15 @@ export default function Landing() {
             <Art k="wallet" />
           </div>
           <div className="l-feature-body">
-            <span className="eyebrow">Wallet & tokens</span>
-            <h3 className="display">Connect your wallet</h3>
+            <span className="eyebrow">Wallet = account</span>
+            <h3 className="display">No email. No password.</h3>
             <p className="muted">
-              Link a browser wallet with a free signature — no gas, no funds moved. Tokens (1 token = $1) power stake games and entries.
-              Purchases and payouts are simulated in this preview build.
+              Connect MetaMask, Coinbase Wallet or any browser wallet and sign one free message — that creates your account. Your stats,
+              avatar and tokens follow your address. Tokens (1 = $1) power stake games; purchases and payouts are simulated in this
+              preview build.
             </p>
             <div className="row">
-              <ConnectWalletButton className="btn gold" />
+              <WalletButton className="btn gold" />
             </div>
           </div>
         </Reveal>
@@ -233,9 +232,7 @@ export default function Landing() {
             <Link className="btn primary lg" href="/play">
               Play now
             </Link>
-            <Link className="btn lg l-ghost" href="/signup">
-              Sign up free
-            </Link>
+            <WalletButton className="btn lg l-ghost" label="Connect Wallet" />
           </div>
         </Reveal>
       </section>
@@ -247,8 +244,7 @@ export default function Landing() {
           </Link>
           <nav className="row">
             <Link href="/play">Play</Link>
-            <Link href="/signup">Sign up</Link>
-            <Link href="/login">Sign in</Link>
+            <Link href="/signup">Connect wallet</Link>
             <Link href="/wallet">Wallet</Link>
           </nav>
           <p className="muted small">

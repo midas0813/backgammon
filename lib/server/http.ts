@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { SESSION_COOKIE } from "@/proxy";
-import type { User } from "./db";
+import type { User } from "./store";
 import { ApiError } from "./errors";
 import { resolveSession } from "./users";
 
@@ -17,7 +17,7 @@ const COOKIE_OPTIONS = {
 export async function currentSession(): Promise<{ user: User; token: string }> {
   const jar = await cookies();
   const existing = jar.get(SESSION_COOKIE)?.value;
-  const session = resolveSession(existing);
+  const session = await resolveSession(existing);
   if (session.token !== existing) jar.set(SESSION_COOKIE, session.token, COOKIE_OPTIONS);
   return session;
 }

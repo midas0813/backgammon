@@ -1,90 +1,92 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { privateKeyToAccount } from "viem/accounts";
-import { read, resetDb } from "@/lib/server/db";
+import { createSiweMessage } from "viem/siwe";
 import { sniffImage } from "@/lib/server/avatars";
-import { logIn, logOut, profileOf, resolveSession, signUp } from "@/lib/server/users";
-import { createChallenge, verifyAndLink } from "@/lib/server/walletLink";
+import { createMatch } from "@/lib/server/matches";
+import { createNonce, verifySiwe } from "@/lib/server/siwe";
+import { tx } from "@/lib/server/store";
+import { logOut, profileOf, resolveSession } from "@/lib/server/users";
+import { getWallet } from "@/lib/server/wallet";
 
+const HOST = "localhost:3000";
 const T1 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 const T2 = "aaaaaaaa-bbbb-4ccc-8ddd-ffffffffffff";
+const alice = privateKeyToAccount("0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d");
+const mallory = privateKeyToAccount("0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba");
 
-function codeOf(fn: () => unknown): string | undefined {
-  try {
-    fn();
-  } catch (e) {
-    return (e as { code?: string }).code;
-  }
+async function siweMessage(token: string, address: `0x${string}`, opts: { domain?: string; chainId?: number } = {}) {
+  const nonce = await createNonce(token);
+  return createSiweMessage({
+    domain: opts.domain ?? HOST,
+    address,
+    statement: "Sign in to Backgammon.",
+    uri: `http://${HOST}`,
+    version: "1",
+    chainId: opts.chainId ?? 8453,
+    nonce,
+  });
 }
 
-describe("accounts", () => {
-  beforeEach(() => resetDb());
+async function signIn(token: string, account = alice) {
+  await resolveSession(token);
+  const message = await siweMessage(token, account.address);
+  const signature = await account.signMessage({ message });
+  return verifySiwe({ sessionToken: token, host: HOST }, { message, signature });
+}
 
-  it("sign-up upgrades the guest in place, keeping its id and practice credits", () => {
-    const guest = resolveSession(T1).user;
-    const { user, token } = signUp(T1, { email: "Ann@Example.com", password: "board1234", name: "Ann", acceptTerms: true });
-    expect(user.id).toBe(guest.id);
-    expect(token).toBe(T1);
-    const p = profileOf(user.id);
-    expect(p).toMatchObject({ registered: true, email: "ann@example.com", name: "Ann" });
-    expect(JSON.stringify(p)).not.toContain("scrypt");
+describe("wallet accounts (Sign-In with Ethereum)", () => {
+  it("first sign-in creates the account by upgrading the guest in place", async () => {
+    const guest = (await resolveSession(T1)).user;
+    const { matchId } = await createMatch(guest.id, "bot", 1);
+    const res = await signIn(T1);
+    expect(res.isNew).toBe(true);
+    expect(res.profile).toMatchObject({ registered: true, walletAddress: alice.address, chainId: 8453 });
+    expect(res.token).not.toBe(T1); // session rotated
+    const user = await tx((t) => t.users.byWallet(alice.address.toLowerCase()));
+    expect(user?.id).toBe(guest.id); // guest games and credits carried over
+    expect((await tx((t) => t.matches.get(matchId)))?.seats[0]).toBe(guest.id);
+    expect((await getWallet(guest.id)).balances.freeCredits).toBeGreaterThan(0);
   });
 
-  it("rejects weak passwords, bad emails, duplicates and missing consent", () => {
-    resolveSession(T1);
-    expect(codeOf(() => signUp(T1, { email: "x@y.io", password: "short1", name: "Ann", acceptTerms: true }))).toBe("INVALID_INPUT");
-    expect(codeOf(() => signUp(T1, { email: "nope", password: "board1234", name: "Ann", acceptTerms: true }))).toBe("INVALID_INPUT");
-    expect(codeOf(() => signUp(T1, { email: "x@y.io", password: "board1234", name: "Ann" }))).toBe("INVALID_INPUT");
-    signUp(T1, { email: "x@y.io", password: "board1234", name: "Ann", acceptTerms: true });
-    resolveSession(T2);
-    expect(codeOf(() => signUp(T2, { email: "X@y.io", password: "board1234", name: "Bob", acceptTerms: true }))).toBe("EMAIL_TAKEN");
+  it("signing in again with the same wallet from another browser returns to the same account", async () => {
+    const first = await signIn(T1);
+    const second = await signIn(T2);
+    expect(second.isNew).toBe(false);
+    const a = await tx((t) => t.sessions.get(first.token));
+    const b = await tx((t) => t.sessions.get(second.token));
+    expect(a?.userId).toBe(b?.userId);
+    expect(await tx((t) => t.users.count())).toBe(2); // the second browser's guest stays a separate guest
   });
 
-  it("logs in with a fresh session token, logs out, and rate-limits guessing", () => {
-    resolveSession(T1);
-    const { user } = signUp(T1, { email: "c@d.io", password: "board1234", name: "Cy", acceptTerms: true });
-    logOut(T1);
-    expect(read((db) => db.sessions[T1])).toBeUndefined();
+  it("rejects a signature from a different key, a replayed nonce, the wrong domain and unsupported chains", async () => {
+    await resolveSession(T1);
+    let message = await siweMessage(T1, alice.address);
+    const forged = await mallory.signMessage({ message });
+    await expect(verifySiwe({ sessionToken: T1, host: HOST }, { message, signature: forged })).rejects.toMatchObject({ code: "UNAUTHENTICATED" });
 
-    resolveSession(T2);
-    const res = logIn(T2, { email: "c@d.io", password: "board1234" }, "ip1");
-    expect(res.user.id).toBe(user.id);
-    expect(res.token).not.toBe(T2);
-    expect(read((db) => db.sessions[T2])).toBeUndefined();
+    const good = await alice.signMessage({ message });
+    const ok = await verifySiwe({ sessionToken: T1, host: HOST }, { message, signature: good });
+    // Replaying the same signed message on the new session fails: nonces are single-use and session-bound.
+    await expect(verifySiwe({ sessionToken: ok.token, host: HOST }, { message, signature: good })).rejects.toMatchObject({ code: "CHALLENGE_EXPIRED" });
 
-    expect(codeOf(() => logIn(undefined, { email: "c@d.io", password: "wrong" }, "ip2"))).toBe("UNAUTHENTICATED");
-    for (let i = 0; i < 8; i++) codeOf(() => logIn(undefined, { email: "c@d.io", password: "wrong" }, "ip3"));
-    expect(codeOf(() => logIn(undefined, { email: "c@d.io", password: "board1234" }, "ip3"))).toBe("RATE_LIMITED");
-  });
-});
+    await resolveSession(T2);
+    message = await siweMessage(T2, alice.address, { domain: "evil.example" });
+    await expect(
+      verifySiwe({ sessionToken: T2, host: HOST }, { message, signature: await alice.signMessage({ message }) }),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
 
-describe("connect wallet", () => {
-  beforeEach(() => resetDb());
-  const account = privateKeyToAccount("0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d");
-
-  it("links a wallet only with a valid one-time signature", async () => {
-    const { user } = resolveSession(T1);
-    const { message } = createChallenge(T1, account.address, 8453, "localhost");
-    const signature = await account.signMessage({ message });
-    const wallets = await verifyAndLink(T1, { address: account.address, signature, chainId: 8453 });
-    expect(wallets[0]).toMatchObject({ address: account.address, chainId: 8453 });
-    expect(profileOf(user.id).wallets).toHaveLength(1);
-    // Replay of the same signature fails: the challenge is single-use.
-    await expect(verifyAndLink(T1, { address: account.address, signature, chainId: 8453 })).rejects.toMatchObject({ code: "CHALLENGE_EXPIRED" });
+    message = await siweMessage(T2, alice.address, { chainId: 56 });
+    await expect(
+      verifySiwe({ sessionToken: T2, host: HOST }, { message, signature: await alice.signMessage({ message }) }),
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_CHAIN" });
   });
 
-  it("rejects a signature from a different key and a wallet owned by another account", async () => {
-    resolveSession(T1);
-    const other = privateKeyToAccount("0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba");
-    const { message } = createChallenge(T1, account.address, 1, "localhost");
-    const forged = await other.signMessage({ message });
-    await expect(verifyAndLink(T1, { address: account.address, signature: forged, chainId: 1 })).rejects.toMatchObject({ code: "UNAUTHENTICATED" });
-
-    const ok = await account.signMessage({ message });
-    await verifyAndLink(T1, { address: account.address, signature: ok, chainId: 1 });
-    resolveSession(T2);
-    const c2 = createChallenge(T2, account.address, 1, "localhost");
-    const s2 = await account.signMessage({ message: c2.message });
-    await expect(verifyAndLink(T2, { address: account.address, signature: s2, chainId: 1 })).rejects.toMatchObject({ code: "WALLET_TAKEN" });
+  it("sign-out ends the session; the next request is a fresh guest", async () => {
+    const { token } = await signIn(T1);
+    await logOut(token);
+    expect(await tx((t) => t.sessions.get(token))).toBeUndefined();
+    const next = await resolveSession(token);
+    expect((await profileOf(next.user.id)).registered).toBe(false);
   });
 });
 

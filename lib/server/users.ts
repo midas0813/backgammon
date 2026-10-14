@@ -1,9 +1,9 @@
-import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
-import { TOKEN_SCALE } from "../fees";
+import { randomUUID } from "node:crypto";
 import type { Seat } from "../engine/board";
-import { read, transact, type Db, type User } from "./db";
+import { TOKEN_SCALE } from "../fees";
 import { ApiError } from "./errors";
 import { grantFreeCredits } from "./ledger";
+import { tx, type Tx, type User } from "./store";
 
 export const FREE_CREDIT_GRANT = 1000 * TOKEN_SCALE;
 export const THEME_IDS = ["walnut", "slate", "forest", "midnight", "burgundy", "sand"];
@@ -11,7 +11,8 @@ const TOKEN_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
 
 // ---- Sessions ---------------------------------------------------------------------------------
 
-function createGuest(db: Db): User {
+/** A guest can play free games immediately; it becomes an account when a wallet signs in. */
+export async function createGuest(t: Tx): Promise<User> {
   const id = randomUUID();
   const user: User = {
     id,
@@ -20,173 +21,69 @@ function createGuest(db: Db): User {
     reducedMotion: false,
     createdAt: new Date().toISOString(),
   };
-  db.users[id] = user;
-  grantFreeCredits(db.ledger, id, FREE_CREDIT_GRANT);
+  await t.users.put(user);
+  await grantFreeCredits(t, id, FREE_CREDIT_GRANT);
   return user;
 }
 
 /**
- * Resolve the session token (issued as an httpOnly cookie by proxy.ts) to a user, creating a guest
- * for a new token. Returns the token actually in use.
+ * Resolve the session token (an opaque httpOnly cookie issued by proxy.ts) to its user, creating a
+ * guest for a new token. Returns the token actually in use.
  */
-export function resolveSession(token: string | undefined): { user: User; token: string } {
-  const hit = token ? read((db) => (db.sessions[token] ? db.users[db.sessions[token].userId] : undefined)) : undefined;
-  if (hit && token) return { user: hit, token };
-  return transact((db) => {
-    const t = token && TOKEN_RE.test(token) ? token : randomUUID();
-    const existing = db.sessions[t];
-    if (existing && db.users[existing.userId]) return { user: db.users[existing.userId], token: t };
-    const user = createGuest(db);
-    db.sessions[t] = { userId: user.id, createdAt: new Date().toISOString() };
-    return { user, token: t };
+export async function resolveSession(token: string | undefined): Promise<{ user: User; token: string }> {
+  return tx(async (t) => {
+    const valid = token && TOKEN_RE.test(token) ? token : randomUUID();
+    // Parallel first requests carry the same new cookie: only one may create its guest.
+    await t.lock(`session:${valid}`);
+    const session = await t.sessions.get(valid);
+    const existing = session && (await t.users.get(session.userId));
+    if (existing) return { user: existing, token: valid };
+    const user = await createGuest(t);
+    await t.sessions.put(valid, { userId: user.id, createdAt: new Date().toISOString() });
+    return { user, token: valid };
   });
 }
 
-/** Test/compat helper: the user behind a session token (a new guest when unknown). */
-export function ensureUser(token: string | undefined): User {
-  return resolveSession(token).user;
+/** Tests/compat: the user behind a session token (a new guest when unknown). */
+export async function ensureUser(token: string | undefined): Promise<User> {
+  return (await resolveSession(token)).user;
 }
 
-// ---- Passwords --------------------------------------------------------------------------------
-
-const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
-
-export function hashPassword(password: string): string {
-  const salt = randomBytes(16);
-  const hash = scryptSync(password, salt, SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p });
-  return `scrypt$${SCRYPT.N}$${salt.toString("base64")}$${hash.toString("base64")}`;
+export async function logOut(token: string | undefined) {
+  if (!token) return;
+  await tx((t) => t.sessions.delete(token));
 }
 
-export function verifyPassword(password: string, stored: string): boolean {
-  const [scheme, n, saltB64, hashB64] = stored.split("$");
-  if (scheme !== "scrypt") return false;
-  const expected = Buffer.from(hashB64, "base64");
-  const actual = scryptSync(password, Buffer.from(saltB64, "base64"), expected.length, { N: Number(n), r: SCRYPT.r, p: SCRYPT.p });
-  return timingSafeEqual(actual, expected);
-}
+// ---- Profile ----------------------------------------------------------------------------------
 
-// A fixed hash so unknown emails take the same time as wrong passwords.
-const DUMMY_HASH = hashPassword("not-a-real-password");
-
-// ---- Validation -------------------------------------------------------------------------------
-
-const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
-
-function cleanName(value: unknown): string | null {
+export function cleanName(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const name = value.trim().replace(/[^\p{L}\p{N} _.-]/gu, "").slice(0, 20);
   return name.length >= 2 ? name : null;
 }
 
-function cleanEmail(value: unknown): string {
-  const email = typeof value === "string" ? value.trim().toLowerCase() : "";
-  if (!EMAIL_RE.test(email) || email.length > 254) throw new ApiError(400, "INVALID_INPUT", "Enter a valid email address");
-  return email;
-}
-
-function checkPassword(value: unknown): string {
-  if (typeof value !== "string" || value.length < 8 || value.length > 128) {
-    throw new ApiError(400, "INVALID_INPUT", "Password must be 8–128 characters");
-  }
-  if (!/[A-Za-z]/.test(value) || !/\d/.test(value)) {
-    throw new ApiError(400, "INVALID_INPUT", "Password needs at least one letter and one number");
-  }
-  return value;
-}
-
-const emailTaken = (db: Db, email: string) => Object.values(db.users).some((u) => u.email === email);
-
-// ---- Sign up / sign in / sign out -------------------------------------------------------------
-
-/**
- * Register. A guest is upgraded in place, so its matches, practice credits and wallet history stay.
- * A session that already belongs to a registered account gets a brand-new account and session.
- */
-export function signUp(token: string, body: { email?: unknown; password?: unknown; name?: unknown; acceptTerms?: unknown }) {
-  const email = cleanEmail(body.email);
-  const password = checkPassword(body.password);
-  const name = cleanName(body.name);
-  if (!name) throw new ApiError(400, "INVALID_INPUT", "Display name must be 2–20 letters or numbers");
-  if (body.acceptTerms !== true) throw new ApiError(400, "INVALID_INPUT", "Please accept the terms to continue");
-  const passwordHash = hashPassword(password);
-
-  return transact((db) => {
-    if (emailTaken(db, email)) throw new ApiError(409, "EMAIL_TAKEN", "An account with this email already exists");
-    const session = db.sessions[token];
-    let user = session ? db.users[session.userId] : undefined;
-    let newToken = token;
-    if (!user || user.email) {
-      user = createGuest(db);
-      newToken = randomUUID();
-      delete db.sessions[token];
-      db.sessions[newToken] = { userId: user.id, createdAt: new Date().toISOString() };
-    }
-    user.email = email;
-    user.passwordHash = passwordHash;
-    user.name = name;
-    user.registeredAt = new Date().toISOString();
-    return { user, token: newToken };
-  });
-}
-
-const attempts = new Map<string, number[]>();
-const WINDOW_MS = 15 * 60 * 1000;
-const MAX_ATTEMPTS = 8;
-
-export function logIn(oldToken: string | undefined, body: { email?: unknown; password?: unknown }, clientKey: string) {
-  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-  const password = typeof body.password === "string" ? body.password : "";
-  const key = `${email}|${clientKey}`;
-  const now = Date.now();
-  const recent = (attempts.get(key) ?? []).filter((t) => now - t < WINDOW_MS);
-  if (recent.length >= MAX_ATTEMPTS) {
-    throw new ApiError(429, "RATE_LIMITED", "Too many attempts. Please wait a few minutes and try again.");
-  }
-  const user = read((db) => Object.values(db.users).find((u) => u.email === email));
-  const ok = verifyPassword(password, user?.passwordHash ?? DUMMY_HASH) && !!user;
-  if (!ok) {
-    attempts.set(key, [...recent, now]);
-    throw new ApiError(401, "UNAUTHENTICATED", "Email or password is incorrect");
-  }
-  attempts.delete(key);
-  return transact((db) => {
-    if (oldToken) delete db.sessions[oldToken];
-    const token = randomUUID();
-    db.sessions[token] = { userId: user!.id, createdAt: new Date().toISOString() };
-    return { user: db.users[user!.id], token };
-  });
-}
-
-export function logOut(token: string | undefined) {
-  if (!token) return;
-  transact((db) => {
-    delete db.sessions[token];
-  });
-}
-
-// ---- Profile ----------------------------------------------------------------------------------
-
-export function updatePreferences(
+export async function updatePreferences(
   userId: string,
   prefs: { name?: unknown; themeId?: unknown; reducedMotion?: unknown; bio?: unknown; country?: unknown },
 ) {
-  return transact((db) => {
-    const user = db.users[userId];
+  return tx(async (t) => {
+    const user = (await t.users.get(userId))!;
     const name = cleanName(prefs.name);
     if (name) user.name = name;
     if (typeof prefs.themeId === "string" && THEME_IDS.includes(prefs.themeId)) user.themeId = prefs.themeId;
     if (typeof prefs.reducedMotion === "boolean") user.reducedMotion = prefs.reducedMotion;
     if (typeof prefs.bio === "string") user.bio = prefs.bio.replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 160);
     if (typeof prefs.country === "string") user.country = prefs.country.replace(/[^\p{L} .'-]/gu, "").trim().slice(0, 40);
-    return user;
+    await t.users.put(user);
+    return profileIn(t, userId);
   });
 }
 
 export const avatarUrl = (user: Pick<User, "avatar"> | undefined) => (user?.avatar ? `/api/avatars/${user.avatar}` : null);
 
-export function playerStats(db: Db, userId: string) {
-  const finished = Object.values(db.matches)
-    .filter((m) => m.state.status === "COMPLETED" && m.mode !== "local" && m.seats.includes(userId))
+export async function playerStats(t: Tx, userId: string) {
+  const finished = (await t.matches.listForUser(userId))
+    .filter((m) => m.state.status === "COMPLETED" && m.mode !== "local")
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   let wins = 0,
     gammons = 0,
@@ -232,25 +129,26 @@ export function playerStats(db: Db, userId: string) {
   };
 }
 
-/** What the signed-in user may see about themselves. Never includes the password hash. */
-export function profileOf(userId: string) {
-  return read((db) => {
-    const u = db.users[userId];
-    return {
-      name: u.name,
-      email: u.email ?? null,
-      registered: !!u.email,
-      registeredAt: u.registeredAt ?? null,
-      createdAt: u.createdAt,
-      avatarUrl: avatarUrl(u),
-      bio: u.bio ?? "",
-      country: u.country ?? "",
-      themeId: u.themeId,
-      reducedMotion: u.reducedMotion,
-      wallets: u.wallets ?? [],
-      stats: playerStats(db, userId),
-    };
-  });
+/** What the signed-in user (or guest) may see about themselves. */
+export async function profileIn(t: Tx, userId: string) {
+  const u = await t.users.get(userId);
+  if (!u) throw new ApiError(401, "UNAUTHENTICATED", "Session expired");
+  return {
+    name: u.name,
+    walletAddress: u.walletAddress ?? null,
+    chainId: u.chainId ?? null,
+    registered: !!u.walletAddress,
+    registeredAt: u.registeredAt ?? null,
+    createdAt: u.createdAt,
+    avatarUrl: avatarUrl(u),
+    bio: u.bio ?? "",
+    country: u.country ?? "",
+    themeId: u.themeId,
+    reducedMotion: u.reducedMotion,
+    stats: await playerStats(t, userId),
+  };
 }
 
-export type Profile = ReturnType<typeof profileOf>;
+export const profileOf = (userId: string) => tx((t) => profileIn(t, userId));
+
+export type Profile = Awaited<ReturnType<typeof profileIn>>;

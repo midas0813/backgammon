@@ -2,17 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import Avatar from "@/components/Avatar";
 import { Brand } from "@/components/BrandMark";
-import ConnectWalletButton from "@/components/ConnectWallet";
-import { useMe } from "@/lib/client/me";
+import WalletButton from "@/components/WalletButton";
 
-const APP_ROUTES = ["/play", "/wallet", "/profile"];
+const APP_ROUTES = ["/play", "/wallet", "/profile", "/welcome"];
 
-/** Sticky header for in-app pages. The landing page, auth pages and live games have their own chrome. */
+/** Sticky header for in-app pages. The landing page, sign-in page and live games have their own chrome. */
 export default function AppHeader() {
   const pathname = usePathname();
-  const me = useMe();
   if (!APP_ROUTES.some((r) => pathname.startsWith(r))) return null;
   return (
     <header className="app-header">
@@ -27,16 +24,7 @@ export default function AppHeader() {
           <Link className="btn sm ghost desktop-only" href="/wallet">
             Wallet
           </Link>
-          <ConnectWalletButton compact />
-          {me?.registered ? (
-            <Link href="/profile" aria-label="Your profile" style={{ display: "inline-flex" }}>
-              <Avatar name={me.name} src={me.avatarUrl} size={38} />
-            </Link>
-          ) : (
-            <Link className="btn sm primary" href="/login">
-              Sign in
-            </Link>
-          )}
+          <WalletButton />
         </nav>
       </div>
     </header>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import ConnectWalletButton, { chainName, shortAddress } from "@/components/ConnectWallet";
+import WalletButton, { shortAddress } from "@/components/WalletButton";
 import { api, sendIdempotent } from "@/lib/client/api";
 import { useMe } from "@/lib/client/me";
 import { formatTokens } from "@/lib/fees";
@@ -109,19 +109,14 @@ export default function WalletPage() {
         <div className="spread">
           <div>
             <h2>Crypto wallet</h2>
-            <p className="muted small">Link a wallet to deposit stablecoins from it later. Signing is free and moves no funds.</p>
+            <p className="muted small">
+              {me?.walletAddress
+                ? `Signed in as ${shortAddress(me.walletAddress)}. Stablecoin deposits from this wallet will arrive once a provider is approved.`
+                : "Your wallet is your account. Connect it to sign in; signing is free and moves no funds."}
+            </p>
           </div>
-          <ConnectWalletButton className="btn gold" />
+          <WalletButton className="btn gold" />
         </div>
-        {me?.wallets && me.wallets.length > 0 && (
-          <div className="row">
-            {me.wallets.map((w) => (
-              <span key={w.address} className="badge ok" title={w.address}>
-                {shortAddress(w.address)} · {chainName(w.chainId)}
-              </span>
-            ))}
-          </div>
-        )}
       </section>
 
       <section className="card">

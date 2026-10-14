@@ -3,6 +3,7 @@ import { Inter, Playfair_Display } from "next/font/google";
 import AppHeader from "@/components/AppHeader";
 import { artExists } from "@/components/Art";
 import BottomNav from "@/components/BottomNav";
+import Web3Provider from "@/components/Web3Provider";
 import { BRAND } from "@/lib/brand";
 import "./globals.css";
 
@@ -26,9 +27,11 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en" className={`${inter.variable} ${playfair.variable}`}>
       <body>
-        <AppHeader />
-        {children}
-        <BottomNav />
+        <Web3Provider>
+          <AppHeader />
+          {children}
+          <BottomNav />
+        </Web3Provider>
       </body>
     </html>
   );

@@ -1,15 +1,14 @@
 import { createHash } from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
-import { DATA_DIR, transact } from "./db";
 import { ApiError } from "./errors";
+import { tx } from "./store";
+import { profileIn } from "./users";
 
 /**
- * Avatar storage. Files live outside /public (which is read-only after build) and are served by
- * /api/avatars/[file]. Production: move to object storage (S3/R2) behind the same interface.
+ * Avatars are stored in the database (app_avatars, ≤ 2 MB, already re-encoded to ~25 KB by the
+ * browser) and served by /api/avatars/[file] with immutable caching. A CDN/object store (Supabase
+ * Storage) can replace this behind the same functions later.
  */
 export const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
-const DIR = path.join(DATA_DIR, "avatars");
 const NAME_RE = /^[0-9a-f-]{36}-[0-9a-f]{12}\.(png|jpg|webp)$/;
 const TYPES = { png: "image/png", jpg: "image/jpeg", webp: "image/webp" } as const;
 
@@ -28,38 +27,35 @@ export function sniffImage(bytes: Uint8Array): keyof typeof TYPES | null {
   return null;
 }
 
-export function saveAvatar(userId: string, bytes: Uint8Array): string {
+export async function saveAvatar(userId: string, bytes: Uint8Array) {
   if (bytes.length === 0) throw new ApiError(400, "INVALID_INPUT", "Choose an image to upload");
   if (bytes.length > MAX_AVATAR_BYTES) throw new ApiError(413, "INVALID_INPUT", "Image must be 2 MB or smaller");
   const ext = sniffImage(bytes);
   if (!ext) throw new ApiError(415, "INVALID_INPUT", "Use a PNG, JPEG or WebP image");
   const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 12);
   const file = `${userId}-${hash}.${ext}`;
-  fs.mkdirSync(DIR, { recursive: true });
-  fs.writeFileSync(path.join(DIR, file), bytes);
-  const previous = transact((db) => {
-    const user = db.users[userId];
-    const old = user.avatar;
+  return tx(async (t) => {
+    const user = (await t.users.get(userId))!;
+    await t.avatars.put({ file, userId, contentType: TYPES[ext], bytes });
+    if (user.avatar && user.avatar !== file) await t.avatars.delete(user.avatar);
     user.avatar = file;
-    return old;
+    await t.users.put(user);
+    return profileIn(t, userId);
   });
-  if (previous && previous !== file) fs.rmSync(path.join(DIR, previous), { force: true });
-  return file;
 }
 
-export function removeAvatar(userId: string) {
-  const previous = transact((db) => {
-    const old = db.users[userId].avatar;
-    delete db.users[userId].avatar;
-    return old;
+export async function removeAvatar(userId: string) {
+  return tx(async (t) => {
+    const user = (await t.users.get(userId))!;
+    if (user.avatar) await t.avatars.delete(user.avatar);
+    delete user.avatar;
+    await t.users.put(user);
+    return profileIn(t, userId);
   });
-  if (previous) fs.rmSync(path.join(DIR, previous), { force: true });
 }
 
-export function readAvatar(file: string): { bytes: Buffer; type: string } | null {
+export async function readAvatar(file: string) {
   if (!NAME_RE.test(file)) return null;
-  const full = path.join(DIR, file);
-  if (!fs.existsSync(full)) return null;
-  const ext = file.split(".").pop() as keyof typeof TYPES;
-  return { bytes: fs.readFileSync(full), type: TYPES[ext] };
+  const a = await tx((t) => t.avatars.get(file));
+  return a ? { bytes: a.bytes, type: a.contentType } : null;
 }

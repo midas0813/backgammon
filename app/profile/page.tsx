@@ -4,28 +4,32 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import Avatar from "@/components/Avatar";
-import { NoWalletModal, chainName, shortAddress, useConnectWallet } from "@/components/ConnectWallet";
+import { useDisconnect } from "wagmi";
+import WalletButton, { shortAddress } from "@/components/WalletButton";
+import { signOutEverywhere } from "@/components/Web3Provider";
 import ThemePicker from "@/components/ThemePicker";
 import { ClientApiError, api } from "@/lib/client/api";
-import { refreshMe, setMe, useMe, type Profile } from "@/lib/client/me";
+import { uploadAvatar } from "@/lib/client/avatar";
+import { setMe, useMe, type Profile } from "@/lib/client/me";
 
-const AVATAR_PX = 512;
-
-/** Centre-crop to a square and re-encode, so large phone photos upload quickly and strip EXIF data. */
-async function prepareAvatar(file: File): Promise<Blob> {
-  const bitmap = await createImageBitmap(file).catch(() => {
-    throw new Error("That file couldn't be read as an image. Try a JPEG, PNG or WebP.");
-  });
-  const side = Math.min(bitmap.width, bitmap.height);
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = Math.min(AVATAR_PX, side);
-  const ctx = canvas.getContext("2d")!;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, canvas.width, canvas.height);
-  const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/webp", 0.9));
-  if (blob && blob.type === "image/webp") return blob;
-  return new Promise<Blob>((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error("Encoding failed"))), "image/jpeg", 0.9));
-}
+const CHAIN_NAMES: Record<number, string> = {
+  1: "Ethereum",
+  10: "Optimism",
+  137: "Polygon",
+  8453: "Base",
+  42161: "Arbitrum",
+  11155111: "Sepolia",
+  84532: "Base Sepolia",
+};
+const EXPLORERS: Record<number, string> = {
+  1: "https://etherscan.io",
+  10: "https://optimistic.etherscan.io",
+  137: "https://polygonscan.com",
+  8453: "https://basescan.org",
+  42161: "https://arbiscan.io",
+  11155111: "https://sepolia.etherscan.io",
+  84532: "https://sepolia.basescan.org",
+};
 
 function WinRing({ pct }: { pct: number }) {
   const r = 34;
@@ -68,7 +72,8 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  const wallet = useConnectWallet();
+  const { disconnect } = useDisconnect();
+  const [copied, setCopied] = useState(false);
 
   if (!me) {
     return (
@@ -103,13 +108,7 @@ export default function ProfilePage() {
     if (!file) return;
     setUploading(true);
     try {
-      const blob = await prepareAvatar(file);
-      const fd = new FormData();
-      fd.append("avatar", blob, "avatar");
-      const res = await fetch("/api/me/avatar", { method: "POST", body: fd });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error?.message ?? "Upload failed");
-      setMe(data);
+      setMe(await uploadAvatar(file));
       flash("ok", "Photo updated");
     } catch (err) {
       flash("err", err instanceof Error ? err.message : "Upload failed");
@@ -127,18 +126,9 @@ export default function ProfilePage() {
     }
   };
 
-  const unlink = async (address: string) => {
-    try {
-      await api("/api/wallet/connect", { method: "DELETE", body: { address } });
-      await refreshMe();
-    } catch (e) {
-      flash("err", e instanceof ClientApiError ? e.message : "Could not unlink");
-    }
-  };
-
   const signOut = async () => {
-    await api("/api/auth/logout", { method: "POST" });
-    await refreshMe().catch(() => {});
+    await signOutEverywhere();
+    disconnect();
     router.push("/");
     router.refresh();
   };
@@ -222,7 +212,7 @@ export default function ProfilePage() {
               {me.country && <span className="badge">{me.country}</span>}
               <span className="badge">Since {since}</span>
             </div>
-            {me.email && <div className="muted small">{me.email}</div>}
+            {me.walletAddress && <div className="muted small mono">{shortAddress(me.walletAddress)}</div>}
             <p className={me.bio ? "" : "muted small"}>{me.bio || "No bio yet — tell opponents about your style."}</p>
           </div>
         )}
@@ -231,15 +221,8 @@ export default function ProfilePage() {
 
       {!me.registered && (
         <section className="notice row" style={{ justifyContent: "space-between" }}>
-          <span>You&apos;re a guest. Create an account to keep this profile, photo and stats.</span>
-          <span className="row">
-            <Link className="btn sm" href="/login?next=/profile">
-              Sign in
-            </Link>
-            <Link className="btn sm gold" href="/signup?next=/profile">
-              Create account
-            </Link>
-          </span>
+          <span>You&apos;re a guest. Connect your wallet to create your account and keep this profile, photo and stats.</span>
+          <WalletButton className="btn sm gold" />
         </section>
       )}
 
@@ -300,42 +283,49 @@ export default function ProfilePage() {
         )}
       </section>
 
-      {/* Wallets */}
-      <section className="card" id="wallets">
+      {/* Account wallet */}
+      <section className="card" id="wallet">
         <div className="spread">
-          <h2>Linked wallets</h2>
-          <button className="btn sm gold" onClick={wallet.connect} disabled={wallet.step !== "idle"}>
-            {wallet.step === "idle" ? "Connect Wallet" : wallet.step === "signing" ? "Sign in wallet…" : "Connecting…"}
-          </button>
+          <h2>Account wallet</h2>
+          {me.registered && <span className="badge ok">Verified by signature</span>}
         </div>
-        {me.wallets.length === 0 ? (
-          <p className="muted small">
-            Link a browser wallet (MetaMask, Coinbase Wallet, Rabby…) by signing a free message. No gas, no funds moved.
-          </p>
+        {me.walletAddress ? (
+          <>
+            <div className="wallet-id">
+              <span className="wallet-dot" />
+              <span className="mono" style={{ wordBreak: "break-all" }}>
+                {me.walletAddress}
+              </span>
+            </div>
+            <div className="row">
+              <button
+                className="btn sm"
+                onClick={() => {
+                  navigator.clipboard?.writeText(me.walletAddress!).then(() => setCopied(true));
+                  window.setTimeout(() => setCopied(false), 1500);
+                }}
+              >
+                {copied ? "Copied ✓" : "Copy address"}
+              </button>
+              {me.chainId && EXPLORERS[me.chainId] && (
+                <a className="btn sm ghost" href={`${EXPLORERS[me.chainId]}/address/${me.walletAddress}`} target="_blank" rel="noreferrer">
+                  View on explorer
+                </a>
+              )}
+              <WalletButton />
+            </div>
+            <p className="muted small">
+              This address is your account. Signed in on {CHAIN_NAMES[me.chainId ?? 0] ?? "an EVM network"}
+              {me.registeredAt ? ` · member since ${new Date(me.registeredAt).toLocaleDateString()}` : ""}. Keep your wallet&apos;s recovery
+              phrase safe — without the wallet you can&apos;t sign in.
+            </p>
+          </>
         ) : (
-          <ul className="list">
-            {me.wallets.map((w) => (
-              <li key={w.address}>
-                <span className="row" style={{ flexWrap: "nowrap", minWidth: 0 }}>
-                  <span className="wallet-dot" />
-                  <span style={{ minWidth: 0 }}>
-                    <span className="mono" style={{ display: "block", fontWeight: 650 }} title={w.address}>
-                      {shortAddress(w.address)}
-                    </span>
-                    <span className="muted small">
-                      {chainName(w.chainId)} · verified {new Date(w.verifiedAt).toLocaleDateString()}
-                    </span>
-                  </span>
-                </span>
-                <button className="btn sm ghost" onClick={() => unlink(w.address)}>
-                  Unlink
-                </button>
-              </li>
-            ))}
-          </ul>
+          <>
+            <p className="muted small">Connect a wallet and sign one free message to turn this guest profile into your account.</p>
+            <WalletButton className="btn gold" />
+          </>
         )}
-        {wallet.error && <p className="err small">{wallet.error}</p>}
-        {wallet.noWallet && <NoWalletModal onClose={wallet.closeNoWallet} />}
       </section>
 
       <section className="card">

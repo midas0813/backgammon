@@ -14,13 +14,14 @@ import {
 } from "../engine/match";
 import type { Seat } from "../engine/board";
 import { BOT_NAME, BOT_USER_ID, acceptsDouble, chooseSequence } from "./bot";
-import { read, transact, type Db, type MatchMode, type MatchRecord } from "./db";
 import { ApiError, notFound } from "./errors";
+import { tx, type MatchMode, type MatchRecord, type Tx } from "./store";
 import { avatarUrl } from "./users";
 
 const ALLOWED_POINTS = [1, 3, 5, 7];
 const ACTION_TYPES: ActionType[] = ["ROLL", "CONFIRM_TURN", "OFFER_DOUBLE", "ACCEPT_DOUBLE", "PASS_DOUBLE", "FORFEIT_MATCH"];
 const EVENT_RETENTION = 300;
+const ACTION_RETENTION = 400;
 
 /** Server dice: cryptographically random, never supplied by the client. */
 let env: Env = { roll: () => randomInt(1, 7), newId: () => randomUUID() };
@@ -46,36 +47,33 @@ function seatOf(rec: MatchRecord, userId: string): Seat[] {
   return ([0, 1] as Seat[]).filter((s) => rec.seats[s] === userId);
 }
 
-function join(db: Db, rec: MatchRecord, userId: string) {
+async function join(t: Tx, rec: MatchRecord, userId: string) {
   if (rec.state.status !== "WAITING") throw new ApiError(409, "EVENT_LOCKED", "Match already started");
   if (rec.seats[0] === userId) throw new ApiError(409, "ALREADY_SEATED", "You are already in this match");
+  const user = await t.users.get(userId);
   rec.seats[1] = userId;
-  rec.names[1] = db.users[userId].name;
+  rec.names[1] = user?.name ?? "Player";
   rec.version += 1;
   pushEvents(rec, [{ type: "MATCH_READY", payload: {} }]);
   pushEvents(rec, startMatch(rec.state, env));
+  await t.matches.put(rec);
 }
 
-export function createMatch(userId: string, mode: MatchMode, targetPoints: number): { matchId: string } {
+export async function createMatch(userId: string, mode: MatchMode, targetPoints: number): Promise<{ matchId: string }> {
   if (!ALLOWED_POINTS.includes(targetPoints)) throw new ApiError(400, "INVALID_INPUT", "Unsupported match length");
   if (!["quick", "private", "local", "bot"].includes(mode)) throw new ApiError(400, "INVALID_INPUT", "Unsupported mode");
-  return transact((db) => {
+  return tx(async (t) => {
     // Quick match queue: join the oldest compatible waiting match, otherwise open a new one.
     if (mode === "quick") {
-      const mine = Object.values(db.matches).find(
-        (m) => m.mode === "quick" && m.state.status === "WAITING" && m.seats[0] === userId,
-      );
+      const mine = (await t.matches.listForUser(userId)).find((m) => m.mode === "quick" && m.state.status === "WAITING" && m.seats[0] === userId);
       if (mine) return { matchId: mine.id };
-      const open = Object.values(db.matches)
-        .filter((m) => m.mode === "quick" && m.state.status === "WAITING" && m.state.targetPoints === targetPoints)
-        .filter((m) => m.seats[0] !== userId)
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+      const open = await t.matches.nextWaitingQuick(targetPoints, userId);
       if (open) {
-        join(db, open, userId);
+        await join(t, open, userId);
         return { matchId: open.id };
       }
     }
-    const name = db.users[userId].name;
+    const name = (await t.users.get(userId))?.name ?? "Player";
     const rec: MatchRecord = {
       id: shortId(),
       mode,
@@ -98,30 +96,31 @@ export function createMatch(userId: string, mode: MatchMode, targetPoints: numbe
       rec.version += 1;
       pushEvents(rec, startMatch(rec.state, env));
     }
-    db.matches[rec.id] = rec;
+    await t.matches.put(rec);
     return { matchId: rec.id };
   });
 }
 
 export function joinMatch(userId: string, matchId: string) {
-  return transact((db) => {
-    const rec = db.matches[matchId];
+  return tx(async (t) => {
+    const rec = await t.matches.get(matchId, { lock: true });
     if (!rec) throw notFound("Match");
     if (rec.mode === "local" || rec.mode === "bot") throw new ApiError(409, "EVENT_LOCKED", "This match cannot be joined");
-    join(db, rec, userId);
+    await join(t, rec, userId);
     return { matchId };
   });
 }
 
 export function cancelMatch(userId: string, matchId: string) {
-  return transact((db) => {
-    const rec = db.matches[matchId];
+  return tx(async (t) => {
+    const rec = await t.matches.get(matchId, { lock: true });
     if (!rec) throw notFound("Match");
     if (rec.createdBy !== userId) throw new ApiError(403, "NOT_PARTICIPANT", "Only the creator can cancel");
     if (rec.state.status !== "WAITING") throw new ApiError(409, "EVENT_LOCKED", "Match already started");
     rec.state.status = "CANCELLED";
     rec.version += 1;
     pushEvents(rec, [{ type: "MATCH_CANCELLED", payload: {} }]);
+    await t.matches.put(rec);
     return { matchId };
   });
 }
@@ -134,20 +133,20 @@ export interface ActionRequest {
 }
 
 /**
- * Validate, apply and persist one game action.
+ * Validate, apply and persist one game action under a row lock on the match.
  *  - Same actionId + same payload → original response (safe retry).
  *  - Same actionId + different payload → DUPLICATE_ACTION_CONFLICT.
  *  - Stale expectedVersion → STALE_VERSION with currentVersion; the client resyncs.
  */
-export function submitAction(userId: string, matchId: string, req: ActionRequest) {
+export async function submitAction(userId: string, matchId: string, req: ActionRequest) {
   const actionId = typeof req.actionId === "string" ? req.actionId : "";
   if (!actionId || actionId.length > 64) throw new ApiError(400, "INVALID_INPUT", "actionId is required");
   if (!ACTION_TYPES.includes(req.actionType as ActionType)) throw new ApiError(400, "INVALID_INPUT", "Unknown actionType");
   const action: GameAction = { actionType: req.actionType as ActionType, payload: (req.payload ?? {}) as GameAction["payload"] };
   const fingerprint = JSON.stringify([userId, action.actionType, action.payload]);
 
-  return transact((db) => {
-    const rec = db.matches[matchId];
+  return tx(async (t) => {
+    const rec = await t.matches.get(matchId, { lock: true });
     if (!rec) throw notFound("Match");
     const seats = seatOf(rec, userId);
     if (seats.length === 0) throw new ApiError(403, "NOT_PARTICIPANT", "You are not a player in this match");
@@ -155,7 +154,7 @@ export function submitAction(userId: string, matchId: string, req: ActionRequest
     const prior = rec.actions[actionId];
     if (prior) {
       if (prior.fingerprint !== fingerprint) throw new ApiError(409, "DUPLICATE_ACTION_CONFLICT", "actionId reused with a different payload");
-      return prior.response as { version: number; replayed?: boolean };
+      return prior.response as { version: number };
     }
     if (req.expectedVersion !== rec.version) {
       throw new ApiError(409, "STALE_VERSION", "Game state changed; refreshing", { currentVersion: rec.version });
@@ -167,32 +166,38 @@ export function submitAction(userId: string, matchId: string, req: ActionRequest
     try {
       events = applyAction(rec.state, actor, action, env);
     } catch (e) {
-      if (e instanceof GameError) {
-        throw new ApiError(422, e.code, e.message, { currentVersion: rec.version });
-      }
+      if (e instanceof GameError) throw new ApiError(422, e.code, e.message, { currentVersion: rec.version });
       throw e;
     }
     rec.version += 1;
     pushEvents(rec, events);
     const response = { version: rec.version };
     rec.actions[actionId] = { fingerprint, response };
+    const ids = Object.keys(rec.actions);
+    if (ids.length > ACTION_RETENTION) for (const id of ids.slice(0, ids.length - ACTION_RETENTION)) delete rec.actions[id];
+    await t.matches.put(rec);
     return response;
   });
 }
 
+/**
+ * Presence is a soft, per-process signal (not persisted): writing to the database on every poll
+ * would cost a write per player per second. With several server instances, "online" is approximate.
+ */
+const presence = ((globalThis as unknown as { __bgPresence?: Map<string, number> }).__bgPresence ??= new Map());
 const ONLINE_MS = 6000;
 
 /** Participant-scoped snapshot. Never includes user IDs, wallets or payment data. */
-export function getSnapshot(userId: string, matchId: string) {
+export async function getSnapshot(userId: string, matchId: string) {
   const now = Date.now();
-  // Presence is a soft signal; record it without bumping the state version.
-  const { rec, avatars } = read((db) => {
-    const m = db.matches[matchId];
-    return { rec: m, avatars: m ? m.seats.map((id) => (id ? avatarUrl(db.users[id]) : null)) : [] };
+  const { rec, users } = await tx(async (t) => {
+    const m = await t.matches.get(matchId);
+    const ids = m ? (m.seats.filter((s) => s && s !== BOT_USER_ID) as string[]) : [];
+    return { rec: m, users: await t.users.getMany(ids) };
   });
   if (!rec) throw notFound("Match");
   const mySeats = seatOf(rec, userId);
-  for (const s of mySeats) rec.lastSeen[s] = now;
+  for (const s of mySeats) presence.set(`${matchId}:${s}`, now);
 
   const st = rec.state;
   const g = st.game;
@@ -212,31 +217,30 @@ export function getSnapshot(userId: string, matchId: string) {
       seat: s,
       name: rec.names[s],
       occupied: rec.seats[s] !== null,
-      avatarUrl: avatars[s] ?? null,
+      avatarUrl: rec.seats[s] ? avatarUrl(users[rec.seats[s]!]) : null,
       bot: rec.seats[s] === BOT_USER_ID,
-      online: rec.mode === "local" || rec.seats[s] === BOT_USER_ID ? true : now - rec.lastSeen[s] < ONLINE_MS,
+      online:
+        rec.mode === "local" || rec.seats[s] === BOT_USER_ID || mySeats.includes(s)
+          ? true
+          : now - (presence.get(`${matchId}:${s}`) ?? 0) < ONLINE_MS,
     })),
     yourSeats: mySeats,
     canJoin: st.status === "WAITING" && rec.mode !== "local" && rec.mode !== "bot" && mySeats.length === 0,
     canCancel: st.status === "WAITING" && rec.createdBy === userId,
     seatToAct: seatToAct(st),
-    game: g
-      ? {
-          ...g,
-          cubeBlock: [cubeBlockReason(st, 0), cubeBlockReason(st, 1)],
-        }
-      : null,
+    game: g ? { ...g, cubeBlock: [cubeBlockReason(st, 0), cubeBlockReason(st, 1)] } : null,
     events: rec.events.slice(-30),
     eventCursor: rec.eventSeq,
     serverNow: new Date(now).toISOString(),
   };
 }
 
-export type MatchSnapshot = ReturnType<typeof getSnapshot>;
+export type MatchSnapshot = Awaited<ReturnType<typeof getSnapshot>>;
 
 export function listMatches(userId: string) {
-  return read((db) => {
-    const all = Object.values(db.matches);
+  return tx(async (t) => {
+    const mineAll = await t.matches.listForUser(userId);
+    const open = await t.matches.listOpenQuick(userId);
     const summary = (m: MatchRecord) => ({
       matchId: m.id,
       mode: m.mode,
@@ -247,18 +251,16 @@ export function listMatches(userId: string) {
       createdAt: m.createdAt,
       yours: m.seats.includes(userId),
     });
+    const byNewest = (a: MatchRecord, b: MatchRecord) => b.createdAt.localeCompare(a.createdAt);
     return {
-      open: all
-        .filter((m) => m.mode === "quick" && m.state.status === "WAITING" && m.seats[0] !== userId)
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      open: open.map(summary),
+      mine: mineAll
+        .filter((m) => m.state.status === "ACTIVE" || m.state.status === "WAITING")
+        .sort(byNewest)
         .map(summary),
-      mine: all
-        .filter((m) => m.seats.includes(userId) && (m.state.status === "ACTIVE" || m.state.status === "WAITING"))
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-        .map(summary),
-      recent: all
-        .filter((m) => m.seats.includes(userId) && m.state.status === "COMPLETED")
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      recent: mineAll
+        .filter((m) => m.state.status === "COMPLETED")
+        .sort(byNewest)
         .slice(0, 5)
         .map(summary),
     };
@@ -271,18 +273,12 @@ const BOT_STEP_MS = 700;
  * Advance the computer opponent by at most one action. Called when a participant polls, and paced so
  * players see the roll before the move. Runs through the same rules engine as human actions.
  */
-export function tickBot(matchId: string) {
-  const due = read((db) => {
-    const rec = db.matches[matchId];
-    if (!rec || rec.mode !== "bot" || rec.state.status !== "ACTIVE") return false;
+export async function tickBot(matchId: string) {
+  await tx(async (t) => {
+    const rec = await t.matches.get(matchId, { lock: true });
+    if (!rec || rec.mode !== "bot" || rec.state.status !== "ACTIVE") return;
     const seat = seatToAct(rec.state);
-    return seat !== null && rec.seats[seat] === BOT_USER_ID && Date.now() - (rec.updatedAt ?? 0) >= BOT_STEP_MS;
-  });
-  if (!due) return;
-  transact((db) => {
-    const rec = db.matches[matchId];
-    const seat = seatToAct(rec.state);
-    if (seat === null || rec.seats[seat] !== BOT_USER_ID) return;
+    if (seat === null || rec.seats[seat] !== BOT_USER_ID || Date.now() - (rec.updatedAt ?? 0) < BOT_STEP_MS) return;
     const g = rec.state.game!;
     let action: GameAction;
     if (g.phase === "BEFORE_ROLL") action = { actionType: "ROLL" };
@@ -297,5 +293,17 @@ export function tickBot(matchId: string) {
     const events = applyAction(rec.state, seat, action, env);
     rec.version += 1;
     pushEvents(rec, events);
+    await t.matches.put(rec);
+  });
+}
+
+/** Tests: make the bot act immediately. */
+export async function forceBotDue(matchId: string) {
+  await tx(async (t) => {
+    const rec = await t.matches.get(matchId, { lock: true });
+    if (rec) {
+      rec.updatedAt = 0;
+      await t.matches.put(rec);
+    }
   });
 }

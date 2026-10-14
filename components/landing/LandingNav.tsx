@@ -2,13 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import Avatar from "@/components/Avatar";
 import { Brand } from "@/components/BrandMark";
-import ConnectWalletButton from "@/components/ConnectWallet";
-import { useMe } from "@/lib/client/me";
+import WalletButton from "@/components/WalletButton";
 
 export default function LandingNav() {
-  const me = useMe();
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
     const on = () => setScrolled(window.scrollY > 24);
@@ -29,23 +26,10 @@ export default function LandingNav() {
           <a href="#modes">Modes</a>
         </nav>
         <div className="header-actions">
-          <span className="desktop-only">
-            <ConnectWalletButton compact className="btn sm ghost" />
-          </span>
-          {me?.registered ? (
-            <Link href="/profile" aria-label="Your profile" style={{ display: "inline-flex" }}>
-              <Avatar name={me.name} src={me.avatarUrl} size={38} />
-            </Link>
-          ) : (
-            <>
-              <Link className="btn sm ghost" href="/login">
-                Sign in
-              </Link>
-              <Link className="btn sm primary" href="/signup">
-                Sign up
-              </Link>
-            </>
-          )}
+          <Link className="btn sm ghost desktop-only" href="/play">
+            Play
+          </Link>
+          <WalletButton />
         </div>
       </div>
     </header>

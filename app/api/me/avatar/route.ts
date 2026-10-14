@@ -1,7 +1,6 @@
 import { ApiError } from "@/lib/server/errors";
 import { handle } from "@/lib/server/http";
 import { MAX_AVATAR_BYTES, removeAvatar, saveAvatar } from "@/lib/server/avatars";
-import { profileOf } from "@/lib/server/users";
 
 /** POST /api/me/avatar — multipart field "avatar" (PNG/JPEG/WebP, ≤ 2 MB). */
 export async function POST(req: Request) {
@@ -11,14 +10,10 @@ export async function POST(req: Request) {
     const form = await req.formData().catch(() => null);
     const file = form?.get("avatar");
     if (!(file instanceof Blob)) throw new ApiError(400, "INVALID_INPUT", "Choose an image to upload");
-    saveAvatar(user.id, new Uint8Array(await file.arrayBuffer()));
-    return profileOf(user.id);
+    return saveAvatar(user.id, new Uint8Array(await file.arrayBuffer()));
   });
 }
 
 export async function DELETE() {
-  return handle((user) => {
-    removeAvatar(user.id);
-    return profileOf(user.id);
-  });
+  return handle((user) => removeAvatar(user.id));
 }

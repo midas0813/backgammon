@@ -12,10 +12,10 @@ import { findOwnedPaymentObject, paymentAdapter, processPaymentEvent } from "@/l
  */
 export async function POST(req: Request) {
   const body = await readJson(req);
-  return handle((user) => {
+  return handle(async (user) => {
     if (!simulatedPaymentsEnabled()) throw new ApiError(404, "NOT_FOUND", "Not available");
     const kind = body.kind === "WITHDRAWAL" ? "WITHDRAWAL" : "DEPOSIT";
-    const obj = findOwnedPaymentObject(user.id, kind, String(body.id));
+    const obj = await findOwnedPaymentObject(user.id, kind, String(body.id));
     const amountUnits =
       body.amountTokens !== undefined ? Math.round(Number(body.amountTokens) * TOKEN_SCALE) : "tokenUnits" in obj ? obj.tokenUnits : obj.amountUnits;
     const raw = JSON.stringify({
@@ -27,6 +27,6 @@ export async function POST(req: Request) {
       occurredAt: new Date().toISOString(),
     });
     const event = paymentAdapter.validateAndNormalizeEvent(raw, signSimulatedEvent(raw));
-    return { eventId: event.eventId, ...processPaymentEvent(event) };
+    return { eventId: event.eventId, ...(await processPaymentEvent(event)) };
   });
 }

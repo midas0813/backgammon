@@ -8,8 +8,5 @@ export async function GET() {
 /** PATCH /api/me — name, bio, country, themeId, reducedMotion. */
 export async function PATCH(req: Request) {
   const body = await readJson(req);
-  return handle((user) => {
-    updatePreferences(user.id, body);
-    return profileOf(user.id);
-  });
+  return handle((user) => updatePreferences(user.id, body));
 }
