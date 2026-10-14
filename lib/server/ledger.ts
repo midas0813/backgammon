@@ -12,10 +12,11 @@ export const SYSTEM = {
   companyRevenue: "system:COMPANY_REVENUE",
   freeIssuance: "system:FREE_ISSUANCE",
   eventEscrow: "system:EVENT_ESCROW",
+  adjustments: "system:ADJUSTMENTS",
 } as const;
 
 // System sources may go negative (they mirror money/credits that originate outside the ledger).
-const MAY_BE_NEGATIVE = new Set<string>([SYSTEM.externalClearing, SYSTEM.freeIssuance]);
+const MAY_BE_NEGATIVE = new Set<string>([SYSTEM.externalClearing, SYSTEM.freeIssuance, SYSTEM.adjustments]);
 
 export const userAccount = (userId: string, kind: UserAccountKind) => `user:${userId}:${kind}`;
 

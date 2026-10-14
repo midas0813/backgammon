@@ -54,6 +54,18 @@ export async function logOut(token: string | undefined) {
   await tx((t) => t.sessions.delete(token));
 }
 
+/** Suspended accounts cannot sign in with their wallet or start/join matches. Expired suspensions lapse. */
+export function isSuspended(user: Pick<User, "status" | "suspendedUntil">, now = Date.now()) {
+  return user.status === "suspended" && (!user.suspendedUntil || Date.parse(user.suspendedUntil) > now);
+}
+
+export function assertActive(user: User | undefined) {
+  if (user && isSuspended(user)) {
+    const until = user.suspendedUntil ? ` until ${new Date(user.suspendedUntil).toUTCString()}` : "";
+    throw new ApiError(403, "INELIGIBLE", `This account is suspended${until}. Contact support if you think this is a mistake.`);
+  }
+}
+
 // ---- Profile ----------------------------------------------------------------------------------
 
 export function cleanName(value: unknown): string | null {

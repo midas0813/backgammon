@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import Announcements from "@/components/Announcements";
 import Avatar from "@/components/Avatar";
 import CountUp from "@/components/CountUp";
 import WalletButton, { shortAddress } from "@/components/WalletButton";
@@ -98,6 +99,7 @@ export default function Home() {
 
   return (
     <main className="page home">
+      <Announcements />
       <section className="home-hero">
         <div className="home-id">
           <span className="home-avatar">

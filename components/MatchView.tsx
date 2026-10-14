@@ -438,7 +438,17 @@ export default function MatchView({ matchId }: { matchId: string }) {
       <PlayerStrip info={bottom} seat={viewer} target={snap.targetPoints} cube={cubeOwner === "viewer" ? game!.cubeValue : null} />
 
       <div className="controls" aria-live="polite">
-        {snap.status === "COMPLETED" ? (
+        {snap.status === "VOIDED" ? (
+          <div className="card">
+            <h2>Match voided by support</h2>
+            <p className="muted">
+              {snap.voided?.reason ? `Reason: “${snap.voided.reason}”. ` : ""}It no longer counts in anyone&apos;s stats. Nothing was at stake in this free match.
+            </p>
+            <Link className="btn primary block" href="/play">
+              Back to lobby
+            </Link>
+          </div>
+        ) : snap.status === "COMPLETED" ? (
           <MatchOver snap={snap} />
         ) : spectating ? (
           <div className="status">

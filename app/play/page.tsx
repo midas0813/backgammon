@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import Announcements from "@/components/Announcements";
 import Avatar from "@/components/Avatar";
 import CountUp from "@/components/CountUp";
 import Modal from "@/components/Modal";
@@ -110,6 +111,7 @@ export default function LobbyPage() {
 
   return (
     <main className="page lobby">
+      <Announcements />
       <section className="lobby-head">
         <div>
           <span className="eyebrow">Free play</span>

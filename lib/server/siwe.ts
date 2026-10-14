@@ -4,7 +4,7 @@ import { arbitrum, base, baseSepolia, mainnet, optimism, polygon, sepolia } from
 import { generateSiweNonce, parseSiweMessage, validateSiweMessage } from "viem/siwe";
 import { ApiError } from "./errors";
 import { tx, type User } from "./store";
-import { createGuest, profileIn } from "./users";
+import { assertActive, createGuest, profileIn } from "./users";
 
 /**
  * Sign-In with Ethereum (EIP-4361). The wallet IS the account: the first successful sign-in with an
@@ -26,7 +26,7 @@ export async function createNonce(sessionToken: string): Promise<string> {
 }
 
 /** EOA signatures verify offline; smart-contract wallets (EIP-1271/6492) need an RPC read. */
-async function verifySignature(address: `0x${string}`, message: string, signature: `0x${string}`, chainId: number) {
+export async function verifySignature(address: `0x${string}`, message: string, signature: `0x${string}`, chainId: number) {
   if (await verifyMessage({ address, message, signature }).catch(() => false)) return true;
   const chain = SIWE_CHAINS.find((c) => c.id === chainId);
   if (!chain) return false;
@@ -65,6 +65,7 @@ export async function verifySiwe(ctx: VerifyContext, body: { message?: unknown; 
     await t.sessions.delete(ctx.sessionToken); // rotate the session token on every sign-in
 
     let user: User | undefined = await t.users.byWallet(address);
+    assertActive(user);
     let isNew = false;
     if (!user) {
       isNew = true;

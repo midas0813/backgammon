@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { BOT_USER_ID } from "./bot";
 import { ApiError } from "./errors";
 import { HOST_ONLINE_MS, createMatch, expireTable } from "./matches";
+import { operatorSettings } from "./settings";
 import { tx, type LobbyRow, type MatchRecord, type Tx, type User } from "./store";
 import { avatarUrl } from "./users";
 
@@ -98,9 +99,10 @@ export async function lobby(userId: string, opts: { points?: number } = {}) {
         r.hostSeenAt >= now - HOST_ONLINE_MS &&
         (!opts.points || r.targetPoints === opts.points),
     );
-    const live = (await t.matches.listLobby("ACTIVE", 60)).filter(
-      (r) => r.allowSpectators && r.updatedAt >= now - LIVE_STALE_MS && !mineIds.has(r.id),
-    );
+    const settings = await operatorSettings(t);
+    const live = settings.spectators
+      ? (await t.matches.listLobby("ACTIVE", 60)).filter((r) => r.allowSpectators && r.updatedAt >= now - LIVE_STALE_MS && !mineIds.has(r.id))
+      : [];
     const mine = mineAll
       .filter((m) => (m.state.status === "WAITING" || m.state.status === "ACTIVE") && !stale.has(m.id))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -141,6 +143,7 @@ export async function lobby(userId: string, opts: { points?: number } = {}) {
         open: open.length,
       },
       limits: { maxOpenTables: MAX_OPEN_TABLES, tableExpiryMinutes: TABLE_EXPIRY_MS / 60_000 },
+      maintenance: settings.maintenance.enabled ? settings.maintenance.message : null,
     };
   });
   // Lets the client skip re-rendering when nothing changed (?v=).

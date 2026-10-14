@@ -17,7 +17,8 @@ import { BOT_NAME, BOT_USER_ID, acceptsDouble, chooseSequence } from "./bot";
 import { ApiError, notFound } from "./errors";
 import { tx, type MatchMode, type MatchRecord, type Tx } from "./store";
 import { SPECTATOR_WINDOW_MS } from "./store/types";
-import { avatarUrl } from "./users";
+import { operatorSettings } from "./settings";
+import { assertActive, avatarUrl } from "./users";
 
 const ALLOWED_POINTS = [1, 3, 5, 7];
 const ACTION_TYPES: ActionType[] = ["ROLL", "CONFIRM_TURN", "OFFER_DOUBLE", "ACCEPT_DOUBLE", "PASS_DOUBLE", "FORFEIT_MATCH"];
@@ -56,6 +57,7 @@ export async function join(t: Tx, rec: MatchRecord, userId: string) {
   if (rec.state.status !== "WAITING") throw new ApiError(409, "EVENT_FULL", "Someone just took this seat");
   if (rec.seats[0] === userId) throw new ApiError(409, "ALREADY_SEATED", "You are already in this match");
   const user = await t.users.get(userId);
+  assertActive(user);
   rec.seats[1] = userId;
   rec.names[1] = user?.name ?? "Player";
   rec.version += 1;
@@ -73,6 +75,9 @@ export async function createMatch(
   if (!ALLOWED_POINTS.includes(targetPoints)) throw new ApiError(400, "INVALID_INPUT", "Unsupported match length");
   if (!["quick", "private", "local", "bot"].includes(mode)) throw new ApiError(400, "INVALID_INPUT", "Unsupported mode");
   return tx(async (t) => {
+    const settings = await operatorSettings(t);
+    if (settings.maintenance.enabled) throw new ApiError(503, "SERVICE_UNAVAILABLE", settings.maintenance.message);
+    assertActive(await t.users.get(userId));
     // Find a game: join the oldest compatible table whose host is around, otherwise open one.
     if (mode === "quick" && opts.joinExisting !== false) {
       const mine = (await t.matches.listForUser(userId)).find(
@@ -147,6 +152,36 @@ export async function expireTable(t: Tx, matchId: string) {
   rec.closedReason = "expired";
   rec.version += 1;
   pushEvents(rec, [{ type: "MATCH_CANCELLED", payload: { reason: "expired" } }]);
+  await t.matches.put(rec);
+}
+
+/**
+ * Administrative void (spec 02): the record stays, with who, why and when. Free matches hold no
+ * reserves, so there is nothing to reverse in the ledger.
+ */
+export async function voidMatchIn(t: Tx, matchId: string, by: string, reason: string) {
+  const rec = await t.matches.get(matchId, { lock: true });
+  if (!rec) throw notFound("Match");
+  if (rec.state.status !== "ACTIVE" && rec.state.status !== "COMPLETED") {
+    throw new ApiError(409, "WRONG_PHASE", "Only matches in progress or finished can be voided");
+  }
+  const from = rec.state.status;
+  rec.state.status = "VOIDED";
+  rec.voided = { by, reason, at: new Date().toISOString() };
+  rec.version += 1;
+  pushEvents(rec, [{ type: "MATCH_VOIDED", payload: { reason } }]);
+  await t.matches.put(rec);
+  return { from, ledger: "none: free match, nothing reserved" };
+}
+
+/** Admin: close a waiting table. */
+export async function cancelTableIn(t: Tx, matchId: string) {
+  const rec = await t.matches.get(matchId, { lock: true });
+  if (!rec) throw notFound("Match");
+  if (rec.state.status !== "WAITING") throw new ApiError(409, "WRONG_PHASE", "Only waiting tables can be closed");
+  rec.state.status = "CANCELLED";
+  rec.version += 1;
+  pushEvents(rec, [{ type: "MATCH_CANCELLED", payload: { reason: "admin" } }]);
   await t.matches.put(rec);
 }
 
@@ -232,9 +267,10 @@ const ONLINE_MS = 9000;
  * Players may switch watching off once a match is under way. A WAITING table stays visible so an
  * invited player can still open the link and join.
  */
-function assertMayWatch(rec: MatchRecord, userId: string) {
+function assertMayWatch(rec: MatchRecord, userId: string, spectatorsOn: boolean) {
   if (rec.seats.includes(userId) || rec.state.status === "WAITING" || rec.state.status === "CANCELLED") return;
   if (rec.allowSpectators === false) throw new ApiError(403, "NOT_PARTICIPANT", "The players turned off watching for this match");
+  if (!spectatorsOn) throw new ApiError(403, "NOT_PARTICIPANT", "Watching other players' matches is paused right now");
 }
 
 /** Snapshot for a player or a spectator. Never includes user IDs, wallets or payment data. */
@@ -243,7 +279,7 @@ export async function getSnapshot(userId: string, matchId: string) {
   const { rec, users, seen, spectators } = await tx(async (t) => {
     const m = await t.matches.get(matchId);
     if (!m) return { rec: undefined, users: {}, seen: [0, 0] as [number, number], spectators: 0 };
-    assertMayWatch(m, userId);
+    assertMayWatch(m, userId, (await operatorSettings(t)).spectators);
     const mine = seatOf(m, userId);
     for (const s of mine) {
       const key = `${matchId}:${s}`;
@@ -300,6 +336,7 @@ export async function getSnapshot(userId: string, matchId: string) {
     spectators,
     allowSpectators: rec.allowSpectators !== false,
     closedReason: rec.closedReason ?? null,
+    voided: rec.voided ? { reason: rec.voided.reason, at: rec.voided.at } : null,
     canJoin: st.status === "WAITING" && rec.mode !== "local" && rec.mode !== "bot" && mySeats.length === 0,
     canCancel: st.status === "WAITING" && rec.createdBy === userId,
     seatToAct: seatToAct(st),
@@ -354,7 +391,7 @@ export async function tickBot(matchId: string) {
 export async function matchHistory(userId: string, matchId: string, cursor: number) {
   const rec = await tx((t) => t.matches.get(matchId));
   if (!rec) throw notFound("Match");
-  assertMayWatch(rec, userId);
+  assertMayWatch(rec, userId, true);
   const oldest = rec.events[0]?.seq ?? rec.eventSeq + 1;
   return {
     events: rec.events.filter((e) => e.seq > cursor),

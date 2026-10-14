@@ -1,7 +1,46 @@
 import fs from "node:fs";
 import path from "node:path";
 import { lobbyRow } from "./summary";
-import { SPECTATOR_WINDOW_MS, type Avatar, type DepositIntent, type Dispute, type MatchRecord, type Session, type Store, type Tx, type Txn, type User, type Withdrawal } from "./types";
+import {
+  SPECTATOR_WINDOW_MS,
+  type Adjustment,
+  type AdminChallenge,
+  type AdminRole,
+  type AdminSession,
+  type Announcement,
+  type AuditEntry,
+  type Avatar,
+  type DepositIntent,
+  type Dispute,
+  type DisputeNote,
+  type MatchRecord,
+  type Session,
+  type Store,
+  type Tx,
+  type Txn,
+  type User,
+  type UserRow,
+  type Withdrawal,
+} from "./types";
+
+interface RoleRecord {
+  id: string;
+  userId: string;
+  role: AdminRole;
+  grantedBy?: string;
+  grantedAt: string;
+  revokedBy?: string;
+  revokedAt?: string;
+}
+
+const dayKey = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+function daily(days: number, stamps: number[]) {
+  const today = Date.parse(`${dayKey(Date.now())}T00:00:00Z`);
+  return Array.from({ length: days }, (_, i) => {
+    const day = dayKey(today - (days - 1 - i) * 86_400_000);
+    return { day, n: stamps.filter((s) => dayKey(s) === day).length };
+  });
+}
 
 /**
  * Local development store: one JSON document on disk (or in memory for tests). Transactions are
@@ -21,6 +60,14 @@ interface Data {
   disputes: Record<string, Dispute>;
   seen: Record<string, number>;
   spectators: Record<string, Record<string, number>>;
+  adminRoles: Record<string, RoleRecord>;
+  adminSessions: Record<string, AdminSession>;
+  adminChallenges: Record<string, AdminChallenge>;
+  audit: Record<string, AuditEntry>;
+  settings: Record<string, unknown>;
+  announcements: Record<string, Announcement>;
+  disputeNotes: Record<string, DisputeNote>;
+  adjustments: Record<string, Adjustment>;
   ledger: { balances: Record<string, number>; transactions: Txn[] };
 }
 
@@ -40,6 +87,14 @@ const empty = (): Data => ({
   disputes: {},
   seen: {},
   spectators: {},
+  adminRoles: {},
+  adminSessions: {},
+  adminChallenges: {},
+  audit: {},
+  settings: {},
+  announcements: {},
+  disputeNotes: {},
+  adjustments: {},
   ledger: { balances: {}, transactions: [] },
 });
 
@@ -60,6 +115,9 @@ export function createMemoryStore(file: string | null): Store {
       data.disputes ??= {};
       data.seen ??= {};
       data.spectators ??= {};
+      for (const k of ["adminRoles", "adminSessions", "adminChallenges", "audit", "settings", "announcements", "disputeNotes", "adjustments"] as const) {
+        (data as unknown as Record<string, object>)[k] ??= {};
+      }
     }
     g.__bgMem![cacheKey] = data;
     return data;
@@ -112,11 +170,32 @@ export function createMemoryStore(file: string | null): Store {
         count: async () => values("users").length,
         touchSeen: async (id, at) => put("seen", id, Math.max(get<number>("seen", id) ?? 0, at)),
         countSeenSince: async (at) => values<number>("seen").filter((v) => v >= at).length,
+        search: async (query, limit) => {
+          const q = query.trim().toLowerCase();
+          return values<User>("users")
+            .filter((u) => !q || u.id === q || u.name.toLowerCase().includes(q) || (u.walletAddress ?? "").toLowerCase().includes(q))
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+            .slice(0, limit)
+            .map((u): UserRow => {
+              const seenAt = get<number>("seen", u.id);
+              return { ...u, lastSeenAt: seenAt ? new Date(seenAt).toISOString() : undefined };
+            });
+        },
+        countCreatedSince: async (at) => values<User>("users").filter((u) => Date.parse(u.createdAt) >= at).length,
+        countRegistered: async () => values<User>("users").filter((u) => u.walletAddress).length,
+        dailyNew: async (days) => daily(days, values<User>("users").map((u) => Date.parse(u.createdAt))),
       },
       sessions: {
         get: async (token) => get("sessions", token),
         put: async (token, s) => put("sessions", token, s),
         delete: async (token) => del("sessions", token),
+        deleteForUser: async (userId) => {
+          const ids = Object.keys(base.sessions)
+            .concat([...(pending.sessions?.keys() ?? [])])
+            .filter((token) => get<Session>("sessions", token)?.userId === userId);
+          for (const token of new Set(ids)) del("sessions", token);
+          return new Set(ids).size;
+        },
       },
       matches: {
         get: async (id) => get("matches", id),
@@ -147,6 +226,29 @@ export function createMemoryStore(file: string | null): Store {
             .sort((a, b) => (status === "WAITING" ? a.createdAt.localeCompare(b.createdAt) : b.updatedAt - a.updatedAt))
             .slice(0, limit);
         },
+        listAdmin: async (f) => {
+          const since = Date.now() - SPECTATOR_WINDOW_MS;
+          return values<MatchRecord>("matches")
+            .filter((m) => (!f.status || m.state.status === f.status) && (!f.userId || m.seats.includes(f.userId)))
+            .map((m) =>
+              lobbyRow(
+                m,
+                get<[number, number]>("presence", m.id)?.[0] ?? 0,
+                Object.values(get<Record<string, number>>("spectators", m.id) ?? {}).filter((v) => v >= since).length,
+              ),
+            )
+            .sort((a, b) => b.updatedAt - a.updatedAt)
+            .slice(0, f.limit);
+        },
+        countCompletedSince: async (at) =>
+          values<MatchRecord>("matches").filter((m) => m.completedAt && Date.parse(m.completedAt) >= at).length,
+        dailyCompleted: async (days) =>
+          daily(
+            days,
+            values<MatchRecord>("matches")
+              .filter((m) => m.completedAt)
+              .map((m) => Date.parse(m.completedAt!)),
+          ),
         stats: async () => {
           const all = values<MatchRecord>("matches");
           return {
@@ -168,6 +270,11 @@ export function createMemoryStore(file: string | null): Store {
           values<DepositIntent>("deposits")
             .filter((d) => d.userId === userId)
             .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+        listAll: async (f) =>
+          values<DepositIntent>("deposits")
+            .filter((d) => !f.status || d.status === f.status)
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+            .slice(0, f.limit),
       },
       withdrawals: {
         get: async (id) => get("withdrawals", id),
@@ -177,6 +284,11 @@ export function createMemoryStore(file: string | null): Store {
           values<Withdrawal>("withdrawals")
             .filter((w) => w.userId === userId)
             .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+        listAll: async (f) =>
+          values<Withdrawal>("withdrawals")
+            .filter((w) => !f.status || w.status === f.status)
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+            .slice(0, f.limit),
       },
       paymentEvents: {
         get: async (id) => get("paymentEvents", id),
@@ -237,6 +349,90 @@ export function createMemoryStore(file: string | null): Store {
           values<Dispute>("disputes")
             .filter((d) => d.userId === userId)
             .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+        get: async (id) => get("disputes", id),
+        update: async (d) => put("disputes", d.id, d),
+        listAll: async (f) =>
+          values<Dispute>("disputes")
+            .filter((d) => !f.status || d.status === f.status)
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+            .slice(0, f.limit),
+        countOpen: async () => values<Dispute>("disputes").filter((d) => d.status === "OPEN" || d.status === "IN_REVIEW").length,
+        addNote: async (n) => {
+          const id = values("disputeNotes").length + 1;
+          put("disputeNotes", String(id), { ...n, id });
+        },
+        notes: async (disputeId) =>
+          values<DisputeNote>("disputeNotes")
+            .filter((n) => n.disputeId === disputeId)
+            .sort((a, b) => (a.id ?? 0) - (b.id ?? 0)),
+      },
+      admin: {
+        activeRole: async (userId) => {
+          const r = values<RoleRecord>("adminRoles").find((r) => r.userId === userId && !r.revokedAt);
+          return r && { userId: r.userId, role: r.role, grantedBy: r.grantedBy, grantedAt: r.grantedAt };
+        },
+        everHadRole: async (userId) => values<RoleRecord>("adminRoles").some((r) => r.userId === userId),
+        listRoles: async () =>
+          values<RoleRecord>("adminRoles")
+            .filter((r) => !r.revokedAt)
+            .sort((a, b) => a.grantedAt.localeCompare(b.grantedAt))
+            .map((r) => ({ userId: r.userId, role: r.role, grantedBy: r.grantedBy, grantedAt: r.grantedAt })),
+        grantRole: async (userId, role, by) => {
+          const now = new Date().toISOString();
+          for (const r of values<RoleRecord>("adminRoles").filter((r) => r.userId === userId && !r.revokedAt)) {
+            put("adminRoles", r.id, { ...r, revokedAt: now, revokedBy: by ?? undefined });
+          }
+          const id = `r${values("adminRoles").length + 1}`;
+          put("adminRoles", id, { id, userId, role, grantedBy: by ?? undefined, grantedAt: now });
+        },
+        revokeRole: async (userId, by) => {
+          const now = new Date().toISOString();
+          for (const r of values<RoleRecord>("adminRoles").filter((r) => r.userId === userId && !r.revokedAt)) {
+            put("adminRoles", r.id, { ...r, revokedAt: now, revokedBy: by });
+          }
+        },
+        putSession: async (s) => put("adminSessions", s.token, s),
+        getSession: async (token) => get("adminSessions", token),
+        touchSession: async (token, at) => {
+          const s = get<AdminSession>("adminSessions", token);
+          if (s) put("adminSessions", token, { ...s, lastSeenAt: Math.max(s.lastSeenAt, at) });
+        },
+        deleteSession: async (token) => del("adminSessions", token),
+        deleteSessionsForUser: async (userId) => {
+          for (const s of values<AdminSession>("adminSessions").filter((s) => s.userId === userId)) del("adminSessions", s.token);
+        },
+        putChallenge: async (c) => put("adminChallenges", c.nonce, c),
+        takeChallenge: async (nonce, userId, at) => {
+          const c = get<AdminChallenge>("adminChallenges", nonce);
+          if (!c || c.userId !== userId || c.usedAt || c.expiresAt < at) return undefined;
+          put("adminChallenges", nonce, { ...c, usedAt: at });
+          return c;
+        },
+        audit: async (e) => {
+          const id = values("audit").length + 1;
+          put("audit", String(id), { ...e, id });
+        },
+        listAudit: async (f) =>
+          values<AuditEntry>("audit")
+            .filter(
+              (e) =>
+                (!f.actorId || e.actorId === f.actorId) &&
+                (!f.targetType || e.targetType === f.targetType) &&
+                (!f.targetId || e.targetId === f.targetId),
+            )
+            .sort((a, b) => (b.id ?? 0) - (a.id ?? 0))
+            .slice(0, f.limit),
+        getSetting: async <T,>(key: string) => get<T>("settings", key),
+        allSettings: async () => Object.fromEntries(Object.keys({ ...base.settings, ...Object.fromEntries(pending.settings ?? []) }).map((k) => [k, get("settings", k)])),
+        putSetting: async (key, value) => put("settings", key, value),
+        listAnnouncements: async () => values<Announcement>("announcements").sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+        putAnnouncement: async (a) => put("announcements", a.id, a),
+        putAdjustment: async (a) => put("adjustments", a.id, a),
+        getAdjustment: async (id) => get("adjustments", id),
+        listAdjustments: async (status) =>
+          values<Adjustment>("adjustments")
+            .filter((a) => !status || a.status === status)
+            .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt)),
       },
     };
 

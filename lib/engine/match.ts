@@ -20,7 +20,7 @@ export const RULES_VERSION = "bg-rules-1.0";
 export const CUBE_CAP = 128; // proposed house rule; offer to 256 is rejected
 
 export type GamePhase = "BEFORE_ROLL" | "ROLLED" | "CUBE_PENDING";
-export type MatchStatus = "WAITING" | "ACTIVE" | "COMPLETED" | "CANCELLED";
+export type MatchStatus = "WAITING" | "ACTIVE" | "COMPLETED" | "CANCELLED" | "VOIDED";
 export type ResultKind = "single" | "gammon" | "backgammon" | "pass" | "forfeit";
 
 export interface GameResult {

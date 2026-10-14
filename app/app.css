@@ -1040,3 +1040,27 @@ html[data-reduced-motion="true"]::view-transition-group(*) {
   animation-duration: 0s !important;
   animation-delay: 0s !important;
 }
+
+/* ---------- Announcements ---------- */
+.announce {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 6px 10px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  border: 1px solid rgb(157 183 255 / 0.4);
+  background: linear-gradient(135deg, rgb(157 183 255 / 0.14), rgb(157 183 255 / 0.04));
+  animation: fade-up 360ms var(--ease-out) both;
+}
+.announce > span {
+  flex: 1;
+}
+.announce.ok {
+  border-color: rgb(101 226 188 / 0.45);
+  background: linear-gradient(135deg, rgb(101 226 188 / 0.16), rgb(101 226 188 / 0.04));
+}
+.announce.warn {
+  border-color: rgb(244 207 135 / 0.5);
+  background: linear-gradient(135deg, rgb(244 207 135 / 0.16), rgb(244 207 135 / 0.04));
+}
