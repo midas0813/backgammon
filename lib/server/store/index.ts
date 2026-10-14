@@ -54,6 +54,16 @@ function postgresJsDriver(url: string): Driver {
     connect_timeout: 15,
     connection: { application_name: "backgammon-mvp" },
     ssl: /localhost|127\.0\.0\.1/.test(url) ? false : "require",
+    // The store already passes JSON text; the default serializer would stringify it again and
+    // store a JSON string scalar that `data->'state'` cannot see into.
+    types: {
+      json: {
+        to: 114,
+        from: [114, 3802],
+        serialize: (x: unknown) => (typeof x === "string" ? x : JSON.stringify(x)),
+        parse: (x: string) => JSON.parse(x),
+      },
+    },
   });
   return {
     begin: (fn) =>
