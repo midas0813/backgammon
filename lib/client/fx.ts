@@ -82,6 +82,11 @@ export function effectsFor(type: string, p: Record<string, unknown>, ctx: FxCont
     case "TURN_COMMITTED": {
       const seat = Number(p.seat) as Seat;
       const moves = (p.moves as { to: number; hit?: boolean }[]) ?? [];
+      if (p.forced && latest && ctx.board && ctx.board.bar[seat] > 0) {
+        const d = p.dice as number[];
+        out.push({ kind: "banner", text: `Closed out! ${ctx.names[seat]} rolled ${d[0]}-${d[1]} and can't enter`, tone: "red" });
+        break;
+      }
       if (moves.some((m) => m.hit)) out.push({ kind: "hit", mine: isMine(seat) });
       if (latest && ctx.board) {
         const block = longestBlock(ctx.board, seat);

@@ -15,6 +15,7 @@ import type { MatchSnapshot } from "@/lib/server/matches";
 import { ClientApiError, api, sendIdempotent } from "@/lib/client/api";
 import { effectsFor, longestBlock, type Effect } from "@/lib/client/fx";
 import { useMe } from "@/lib/client/me";
+import { opponentAnimation, type AnimSpec } from "@/lib/client/replay";
 import { sounds } from "@/lib/client/sound";
 import { useTheme } from "@/lib/client/theme";
 
@@ -55,7 +56,10 @@ export default function MatchView({ matchId }: { matchId: string }) {
   const [resultModal, setResultModal] = useState<GameResult | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirm, setConfirm] = useState<null | "double" | "forfeit">(null);
-  const [oppAnim, setOppAnim] = useState<{ key: string; moves: AnimMove[] } | null>(null);
+  const [oppAnim, setOppAnim] = useState<AnimSpec | null>(null);
+  // The checker just placed in the draft; cleared on undo so nothing replays.
+  const [draftAnim, setDraftAnim] = useState<{ key: string; moves: AnimMove[] } | null>(null);
+  const draftSeq = useRef(0);
   const [flip, setFlip] = useState(false);
   const versionRef = useRef(0);
   const statusRef = useRef<string | null>(null);
@@ -96,7 +100,12 @@ export default function MatchView({ matchId }: { matchId: string }) {
         const p = e.payload as Record<string, unknown>;
         if (e.type === "TURN_COMMITTED" && p.forced) {
           const d = p.dice as number[];
-          showToast(`${name(p.seat)} rolled ${d[0]}-${d[1]}: no legal moves, turn passes.`);
+          const closedOut = (s.game?.board.bar[Number(p.seat)] ?? 0) > 0;
+          showToast(
+            closedOut
+              ? `${name(p.seat)} rolled ${d[0]}-${d[1]} and can't enter: closed out. Turn passes.`
+              : `${name(p.seat)} rolled ${d[0]}-${d[1]}: no legal moves, turn passes.`,
+          );
         } else if (e.type === "CUBE_ACCEPTED") {
           showToast(`${name(p.owner)} accepted. Cube is now ${p.cube}.`);
         } else if (e.type === "OPENING_ROLL_COMMITTED") {
@@ -132,21 +141,14 @@ export default function MatchView({ matchId }: { matchId: string }) {
         if (data.stateVersion !== versionRef.current) {
           // New authoritative state: tentative drafts never survive a version change.
           setDraft([]);
+          setDraftAnim(null);
           setSelected(null);
         }
         versionRef.current = data.stateVersion;
-        const lt = data.game?.lastTurn;
-        if (data.game && lt && lt.moves.length > 0) {
-          const turnKey = `${data.game.gameNumber}:${data.game.turnNumber}:${lt.seat}`;
-          const mine = data.yourSeats.length === 1 && data.yourSeats[0] === lt.seat;
-          // Replay the opponent's committed move (not on first load, and never our own, already shown).
-          if (animatedTurnRef.current !== null && animatedTurnRef.current !== turnKey && !mine) {
-            setOppAnim({ key: turnKey, moves: lt.moves.map((m) => ({ ...m, seat: lt.seat })) });
-          }
-          animatedTurnRef.current = turnKey;
-        } else if (animatedTurnRef.current === null) {
-          animatedTurnRef.current = "";
-        }
+        // Animate the opponent's new turn once; anything else (our turn, a forced pass) stops it.
+        const next = opponentAnimation(animatedTurnRef.current, data.game, data.yourSeats as Seat[]);
+        animatedTurnRef.current = next.key;
+        if (next.anim !== undefined) setOppAnim(next.anim);
         // The host hears the moment someone takes the empty seat.
         if (statusRef.current === "WAITING" && data.status === "ACTIVE" && data.yourSeats.length === 1) {
           if (soundRef.current) sounds.joined();
@@ -164,6 +166,13 @@ export default function MatchView({ matchId }: { matchId: string }) {
     },
     [matchId, announce, showToast],
   );
+
+  // A played animation is dropped afterwards so it can never be handed back to the board.
+  useEffect(() => {
+    if (!oppAnim) return;
+    const t = window.setTimeout(() => setOppAnim((cur) => (cur === oppAnim ? null : cur)), oppAnim.moves.length * 320 + 900);
+    return () => window.clearTimeout(t);
+  }, [oppAnim]);
 
   useEffect(() => {
     refresh(true);
@@ -272,6 +281,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
       // Several dice can reach "off": use the smallest legal one.
       const options = next.filter((m) => m.from === selected && m.to === rel).sort((a, b) => a.die - b.die);
       setDraft((d) => [...d, options[0]]);
+      setDraftAnim({ key: `draft-${++draftSeq.current}`, moves: [{ ...options[0], seat: game!.turn }] });
       if (soundRef.current) sounds.move();
       setSelected(null);
       return;
@@ -426,11 +436,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
           onTap={onTap}
           mirror={me?.orientation === "left"}
           rollKey={game!.dice ? `${game!.gameNumber}-${game!.turnNumber}-${game!.dice.join("")}` : undefined}
-          anim={
-            draft.length > 0
-              ? { key: `draft-${snap.stateVersion}-${draft.length}`, moves: [{ ...draft[draft.length - 1], seat: game!.turn }] }
-              : oppAnim
-          }
+          anim={draft.length > 0 ? draftAnim : oppAnim}
         />
         <FxLayer ref={fxRef} sound={soundOn} />
       </div>
@@ -488,7 +494,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
                     : `${local ? `${actorName}: ` : ""}Select a checker to move.`)}
             </div>
             <div className="grid2">
-              <button className="btn" disabled={busy || draft.length === 0} onClick={() => (setDraft((d) => d.slice(0, -1)), setSelected(null))}>
+              <button className="btn" disabled={busy || draft.length === 0} onClick={() => (setDraft((d) => d.slice(0, -1)), setDraftAnim(null), setSelected(null))}>
                 Undo
               </button>
               <button className="btn primary" disabled={busy || !complete} onClick={() => send("CONFIRM_TURN", { moves: draft })}>

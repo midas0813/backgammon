@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useId } from "react";
+import { createContext, useContext, useEffect, useId, useRef } from "react";
 import { absIndex, type Board as BoardState, type Seat } from "@/lib/engine/board";
 import { BOARD, type BoardTheme } from "@/lib/client/theme";
 
@@ -230,8 +230,18 @@ export default function Board(p: BoardProps) {
   const opp: Seat = viewer === 0 ? 1 : 0;
   const viewerIsWhite = viewer === 0;
   const tap = (rel: number) => () => p.onTap?.(rel);
-  const motions = p.anim ? computeMotions(board, viewer, p.anim.moves) : new Map<string, Motion>();
-  const animKey = p.anim?.key ?? "";
+  // Each animation plays once. An earlier one handed back (e.g. after an undo) is ignored, otherwise
+  // its checkers would remount and visibly repeat a move that is not happening now.
+  const seenAnims = useRef(new Set<string>());
+  const activeAnim = useRef<string | null>(null);
+  const fresh = !!p.anim && (!seenAnims.current.has(p.anim.key) || activeAnim.current === p.anim.key);
+  const anim = fresh ? p.anim! : null;
+  useEffect(() => {
+    if (anim) seenAnims.current.add(anim.key);
+    activeAnim.current = anim?.key ?? null;
+  });
+  const motions = anim ? computeMotions(board, viewer, anim.moves) : new Map<string, Motion>();
+  const animKey = anim?.key ?? "";
 
   const points = [];
   for (let rel = 1; rel <= 24; rel++) {
