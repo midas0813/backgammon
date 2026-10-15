@@ -226,7 +226,9 @@ function Die({ x, y, value, used, rollKey, delay }: { x: number; y: number; valu
 export default function Board(p: BoardProps) {
   const { board, viewer, theme } = p;
   const mirror = !!p.mirror;
-  const gid = useId().replace(/:/g, "");
+  // Theme in the gradient ids: WebKit (all iPhone browsers) may not repaint a gradient whose colours
+  // change in place, which left the previous theme's frame showing. New ids force a repaint.
+  const gid = useId().replace(/:/g, "") + theme.id;
   const opp: Seat = viewer === 0 ? 1 : 0;
   const viewerIsWhite = viewer === 0;
   const tap = (rel: number) => () => p.onTap?.(rel);
