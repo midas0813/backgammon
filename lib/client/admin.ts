@@ -1,9 +1,11 @@
 "use client";
 
-import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { useCallback } from "react";
-import { useAccount, useSignMessage } from "wagmi";
+import { useConnection, useSignMessage } from "wagmi";
+import { getConnection, reconnect } from "wagmi/actions";
 import { ClientApiError, api } from "./api";
+import { wagmiConfig } from "./wagmi";
+import { openWalletDialog } from "./wallet";
 
 export interface SignDetails {
   action: string;
@@ -20,16 +22,22 @@ export interface Proof {
  * is this account's and that the message names exactly this action, target and reason.
  */
 export function useAdminSigner(expectedWallet: string | null) {
-  const { address, isConnected } = useAccount();
-  const { openConnectModal } = useConnectModal();
-  const { signMessageAsync } = useSignMessage();
+  const { address, isConnected } = useConnection();
+  const { mutateAsync: signMessageAsync } = useSignMessage();
   return useCallback(
     async (d: SignDetails): Promise<Proof> => {
-      if (!isConnected || !address) {
-        openConnectModal?.();
+      let current = isConnected && address ? address : null;
+      if (!current) {
+        // Just after a page load the wallet may still be reconnecting: give it a moment first.
+        await reconnect(wagmiConfig).catch(() => {});
+        const c = getConnection(wagmiConfig);
+        current = c.status === "connected" && c.address ? c.address : null;
+      }
+      if (!current) {
+        openWalletDialog();
         throw new ClientApiError(0, { code: "UNAUTHENTICATED", message: "Connect your admin wallet, then try again." });
       }
-      if (expectedWallet && address.toLowerCase() !== expectedWallet.toLowerCase()) {
+      if (expectedWallet && current.toLowerCase() !== expectedWallet.toLowerCase()) {
         throw new ClientApiError(0, {
           code: "UNAUTHENTICATED",
           message: `Switch your wallet to ${expectedWallet.slice(0, 6)}…${expectedWallet.slice(-4)} — the account you are signed in with.`,
@@ -43,7 +51,7 @@ export function useAdminSigner(expectedWallet: string | null) {
         throw new ClientApiError(0, { code: "UNAUTHENTICATED", message: "Signature cancelled in your wallet." });
       }
     },
-    [address, isConnected, expectedWallet, openConnectModal, signMessageAsync],
+    [address, isConnected, expectedWallet, signMessageAsync],
   );
 }
 

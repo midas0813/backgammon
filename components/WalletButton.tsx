@@ -1,8 +1,10 @@
 "use client";
 
-import { ConnectButton } from "@rainbow-me/rainbowkit";
+import Link from "next/link";
 import Avatar from "@/components/Avatar";
+import { useMounted } from "@/lib/client/hooks";
 import { useMe } from "@/lib/client/me";
+import { openWalletDialog } from "@/lib/client/wallet";
 
 export const shortAddress = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
@@ -13,8 +15,8 @@ const WalletIcon = () => (
 );
 
 /**
- * The one sign-in control: RainbowKit's ConnectButton rendered in the site's style.
- * Connect → choose wallet → sign the SIWE message → signed in (account created on first sign-in).
+ * The one sign-in control. Not signed in: opens the wallet dialog (connect → sign the free SIWE
+ * message → signed in; the first sign-in creates the account). Signed in: the account chip.
  */
 export default function WalletButton({
   label = "Connect Wallet",
@@ -26,46 +28,27 @@ export default function WalletButton({
   showAccount?: boolean;
 }) {
   const me = useMe();
+  const mounted = useMounted();
+  if (!mounted || !me) {
+    return (
+      <button className={className} disabled aria-hidden style={{ opacity: 0.5 }}>
+        <WalletIcon /> {label}
+      </button>
+    );
+  }
+  if (!me.registered || !me.walletAddress) {
+    return (
+      <button className={className} onClick={openWalletDialog}>
+        <WalletIcon /> {label}
+      </button>
+    );
+  }
+  if (!showAccount) return null;
   return (
-    <ConnectButton.Custom>
-      {({ account, chain, openAccountModal, openChainModal, openConnectModal, authenticationStatus, mounted }) => {
-        const ready = mounted && authenticationStatus !== "loading";
-        const connected = ready && account && chain && authenticationStatus === "authenticated";
-        if (!ready) {
-          return (
-            <button className={className} disabled aria-hidden style={{ opacity: 0.5 }}>
-              <WalletIcon /> {label}
-            </button>
-          );
-        }
-        if (!connected) {
-          return (
-            <button className={className} onClick={openConnectModal}>
-              <WalletIcon /> {account && authenticationStatus === "unauthenticated" ? "Sign in" : label}
-            </button>
-          );
-        }
-        if (chain.unsupported) {
-          return (
-            <button className="btn sm danger" onClick={openChainModal}>
-              Wrong network
-            </button>
-          );
-        }
-        if (!showAccount) return null;
-        return (
-          <button className="btn sm wallet-chip" onClick={openAccountModal} title={account.address}>
-            {chain.hasIcon && chain.iconUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={chain.iconUrl} alt={chain.name ?? "network"} width={18} height={18} style={{ borderRadius: 9 }} />
-            ) : (
-              <span className="wallet-dot" />
-            )}
-            <span className="mono">{account.displayName}</span>
-            {me && <Avatar name={me.name} src={me.avatarUrl} size={24} />}
-          </button>
-        );
-      }}
-    </ConnectButton.Custom>
+    <Link className="btn sm wallet-chip" href="/profile#wallet" title={me.walletAddress}>
+      <span className="wallet-dot" />
+      <span className="mono">{shortAddress(me.walletAddress)}</span>
+      <Avatar name={me.name} src={me.avatarUrl} size={24} />
+    </Link>
   );
 }

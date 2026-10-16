@@ -2199,3 +2199,51 @@ html[data-reduced-motion="true"]::view-transition-group(*) {
     opacity: 0.3;
   }
 }
+
+/* ---- Connect a wallet ------------------------------------------------------------------------- */
+.wallet-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.wallet-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+.wallet-option:hover:not(:disabled) {
+  border-color: var(--action);
+}
+.wallet-option img,
+.wallet-option-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  flex: none;
+}
+.wallet-option-icon {
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  font-weight: 800;
+}
+.wallet-option .muted {
+  margin-left: auto;
+}
+.wallet-current {
+  display: grid;
+  gap: 8px;
+}

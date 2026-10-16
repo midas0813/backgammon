@@ -30,12 +30,15 @@ export const RULES = {
 export type LimitRule = keyof typeof RULES;
 
 /** Count one request for `who` under `rule`; throws RATE_LIMITED (429, with retryAfter seconds) when over. */
+/** Browser tests run many players from one address; their server raises the limits (never set in production). */
+const scale = () => Math.max(1, Number(process.env.RATE_LIMIT_MULTIPLIER) || 1);
+
 export async function rateLimit(rule: LimitRule, who: string, now = Date.now()) {
   const over = await tx(async (t) => {
     for (const w of RULES[rule]) {
       const start = now - (now % w.windowMs);
       const n = await t.rateLimits.hit(`${rule}:${w.windowMs}:${who}`, start);
-      if (n > w.max) return Math.max(1, Math.ceil((start + w.windowMs - now) / 1000));
+      if (n > w.max * scale()) return Math.max(1, Math.ceil((start + w.windowMs - now) / 1000));
     }
     return 0;
   });

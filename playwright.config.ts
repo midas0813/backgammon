@@ -30,6 +30,8 @@ export default defineConfig({
     url: `http://127.0.0.1:${PORT}/api/stats`,
     reuseExistingServer: false,
     timeout: 120_000,
-    env: { BG_DB_FILE: ":memory:" },
+    // The admin test signs in with a well-known public development key (Hardhat account #1); only
+    // this throwaway test server treats it as an admin.
+    env: { BG_DB_FILE: ":memory:", RATE_LIMIT_MULTIPLIER: "20", ADMIN_BOOTSTRAP_WALLETS: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" },
   },
 });
