@@ -102,8 +102,8 @@ export const sounds = {
     tone(180, 0, 0.08, 0.05, "triangle");
   },
   turn() {
-    tone(660, 0, 0.18);
-    tone(880, 0.12, 0.25);
+    [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.07, 0.3, 0.05, "triangle"));
+    tone(1568, 0.3, 0.45, 0.025);
   },
   joined() {
     [392, 523, 659].forEach((f, i) => tone(f, i * 0.09, 0.22, 0.08, "triangle"));

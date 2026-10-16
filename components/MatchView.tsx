@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Avatar from "@/components/Avatar";
-import Board, { type AnimMove, type DieView } from "@/components/Board";
+import Board, { boardSpot, type AnimMove, type DieView } from "@/components/Board";
 import Confetti from "@/components/Confetti";
 import FxLayer, { type FxHandle } from "@/components/FxLayer";
 import Modal from "@/components/Modal";
@@ -61,6 +61,13 @@ export default function MatchView({ matchId }: { matchId: string }) {
   const [draftAnim, setDraftAnim] = useState<{ key: string; moves: AnimMove[] } | null>(null);
   const draftSeq = useRef(0);
   const [flip, setFlip] = useState(false);
+  // The Roll button glows for a few seconds when the turn arrives.
+  const [rollPing, setRollPing] = useState(false);
+  useEffect(() => {
+    if (!rollPing) return;
+    const t = window.setTimeout(() => setRollPing(false), 4500);
+    return () => window.clearTimeout(t);
+  }, [rollPing]);
   const versionRef = useRef(0);
   const statusRef = useRef<string | null>(null);
   const fxRef = useRef<FxHandle>(null);
@@ -211,7 +218,11 @@ export default function MatchView({ matchId }: { matchId: string }) {
     const mine = snap.status === "ACTIVE" && snap.seatToAct === snap.yourSeats[0];
     if (prevActRef.current === false && mine) {
       if (soundRef.current) sounds.turn();
-      fxRef.current?.play([{ kind: "your-turn" }]);
+      navigator.vibrate?.([25, 40, 25]);
+      const g = snap.game;
+      const sub = g?.phase === "CUBE_PENDING" ? "Accept or pass the double" : g?.phase === "ROLLED" ? "Make your move" : "Roll the dice";
+      fxRef.current?.play([{ kind: "your-turn", sub }]);
+      setRollPing(true);
     }
     prevActRef.current = mine;
   }, [snap]);
@@ -438,7 +449,12 @@ export default function MatchView({ matchId }: { matchId: string }) {
           rollKey={game!.dice ? `${game!.gameNumber}-${game!.turnNumber}-${game!.dice.join("")}` : undefined}
           anim={draft.length > 0 ? draftAnim : oppAnim}
         />
-        <FxLayer ref={fxRef} sound={soundOn} />
+        <FxLayer
+          ref={fxRef}
+          sound={soundOn}
+          locate={(seat, rel) => boardSpot(seat === viewer ? rel : 25 - rel, me?.orientation === "left")}
+          bar={boardSpot(25, me?.orientation === "left")}
+        />
       </div>
 
       <PlayerStrip info={bottom} seat={viewer} target={snap.targetPoints} cube={cubeOwner === "viewer" ? game!.cubeValue : null} />
@@ -478,7 +494,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
               <button className="btn" disabled={busy || !!myCubeBlock} onClick={() => setConfirm("double")}>
                 Double → {game!.cubeValue * 2}
               </button>
-              <button className="btn primary" disabled={busy} onClick={() => send("ROLL")}>
+              <button className={`btn primary${rollPing ? " btn-ping" : ""}`} disabled={busy} onClick={() => (setRollPing(false), send("ROLL"))}>
                 Roll
               </button>
             </div>

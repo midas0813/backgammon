@@ -28,7 +28,9 @@ describe("game effects", () => {
   });
 
   it("announces hits, cube moments, match point and Crawford", () => {
-    expect(effectsFor("TURN_COMMITTED", { seat: 1, moves: [{ from: 13, to: 7, hit: true }] }, ctx(), false)).toEqual([{ kind: "hit", mine: false }]);
+    expect(effectsFor("TURN_COMMITTED", { seat: 1, moves: [{ from: 13, to: 7, hit: true }] }, ctx(), false)).toEqual([
+      { kind: "hit", mine: false, seat: 1, spots: [7] },
+    ]);
     expect(effectsFor("CUBE_OFFERED", { from: 1, proposed: 2 }, ctx(), false)).toEqual([{ kind: "cube-offer", value: 2, toYou: true }]);
     expect(effectsFor("OPENING_ROLL_COMMITTED", { crawford: false }, ctx({ score: [4, 2] }), false)[0]).toMatchObject({ text: "Match point · Ann" });
     expect(effectsFor("OPENING_ROLL_COMMITTED", { crawford: false }, ctx({ score: [4, 4] }), false)[0]).toMatchObject({ tone: "red" });

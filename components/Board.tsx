@@ -68,6 +68,13 @@ function colX(rel: number): number {
   return RIGHT_X + (rel - 19) * COL + COL / 2;
 }
 const isTop = (rel: number) => rel >= 13;
+
+/** Where a viewer-relative point (or the bar, rel 25) sits on the board, as fractions of its size. */
+export function boardSpot(rel: number, mirror: boolean): { x: number; y: number } {
+  const x = rel === 25 ? BAR_CX / W : colX(rel) / W;
+  const y = rel === 25 ? 0.5 : (isTop(rel) ? TOP + R : BOTTOM - R) / H;
+  return { x: mirror ? 1 - x : x, y };
+}
 const pointY = (rel: number, i: number) => (isTop(rel) ? TOP + R + Math.min(i, 4) * 2 * R : BOTTOM - R - Math.min(i, 4) * 2 * R);
 const barY = (lower: boolean, i: number) => (lower ? MID + 48 + R + Math.min(i, 2) * 2 * R : MID - 48 - R - Math.min(i, 2) * 2 * R);
 const trayY = (lower: boolean, i: number) => (lower ? BOTTOM - 6 - (i + 1) * 13 : TOP + 6 + i * 13);

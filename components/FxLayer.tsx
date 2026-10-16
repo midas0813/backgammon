@@ -11,15 +11,21 @@ export interface FxHandle {
 
 const GOLD = ["#F4CF87", "#FFE6A8", "#D9A654", "#FFFFFF", "#65E2BC"];
 const MINT = ["#65E2BC", "#B6F5E1", "#F7F1E6", "#9DB7FF"];
+const EMBER = ["#FF6B81", "#FFA8B6", "#FFD3A1", "#FFFFFF"];
+
+type Spot = { x: number; y: number };
+// The particle canvas overhangs the board by 10% on every side.
+const toCanvas = (v: number) => (v + 0.1) / 1.2;
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 const DURATION: Record<Effect["kind"], number> = {
   doubles: 1700,
-  hit: 750,
+  hit: 1250,
   "cube-offer": 1500,
   "cube-take": 900,
   "cube-drop": 900,
   banner: 1900,
-  "your-turn": 900,
+  "your-turn": 1700,
   "game-win": 1800,
   "match-win": 2600,
 };
@@ -38,10 +44,10 @@ const FACES: [number, string][] = [
   [2, "bottom"],
 ];
 
-function Die3D({ value, delay = 0 }: { value: number; delay?: number }) {
+function Die3D({ value, delay = 0, mini = false }: { value: number; delay?: number; mini?: boolean }) {
   const [rx, ry] = FACE_ROT[value];
   return (
-    <div className="die3d-wrap" style={{ animationDelay: `${delay}ms` }}>
+    <div className={`die3d-wrap${mini ? " mini" : ""}`} style={{ animationDelay: `${delay}ms` }}>
       <div className="die3d" style={{ "--rx": `${rx}deg`, "--ry": `${ry}deg`, animationDelay: `${delay}ms` } as React.CSSProperties}>
         {FACES.map(([n, side]) => (
           <div key={side} className={`face ${side}`}>
@@ -65,7 +71,20 @@ function reducedMotion() {
  * Overlay over the board that plays effects one at a time. Never blocks the game for long: big
  * moments can be tapped away, and everything else ignores taps.
  */
-export default function FxLayer({ ref, sound }: { ref?: Ref<FxHandle>; sound: boolean }) {
+export default function FxLayer({
+  ref,
+  sound,
+  locate,
+  bar,
+}: {
+  ref?: Ref<FxHandle>;
+  sound: boolean;
+  /** Board position (fractions) of a point given in `seat`'s own numbering. */
+  locate?: (seat: 0 | 1, rel: number) => Spot;
+  bar?: Spot;
+}) {
+  const locateRef = useRef(locate);
+  locateRef.current = locate;
   const [current, setCurrent] = useState<{ id: number; e: Effect; calm: boolean } | null>(null);
   const queue = useRef<Effect[]>([]);
   const timer = useRef<number | undefined>(undefined);
@@ -118,8 +137,8 @@ export default function FxLayer({ ref, sound }: { ref?: Ref<FxHandle>; sound: bo
       void wrap.offsetWidth;
       wrap.classList.add(cls);
     };
-    const sparks = (colors: string[], power: number, count: number, y = 0.45) => {
-      if (!calm && canvas.current) stop = burst(canvas.current, { colors, power, count, y });
+    const sparks = (colors: string[], power: number, count: number, y = 0.45, x = 0.5) => {
+      if (!calm && canvas.current) stop = burst(canvas.current, { colors, power, count, y, x });
     };
     switch (e.kind) {
       case "doubles":
@@ -134,11 +153,14 @@ export default function FxLayer({ ref, sound }: { ref?: Ref<FxHandle>; sound: bo
           }, 520);
         }
         break;
-      case "hit":
+      case "hit": {
         if (s) sounds.hit();
-        navigator.vibrate?.(35);
-        shake("fx-shake");
+        navigator.vibrate?.(e.mine ? 35 : [50, 40, 70]);
+        shake(e.mine ? "fx-shake" : "fx-quake");
+        const spot = locateRef.current?.(e.seat, e.spots[0]);
+        if (spot) sparks(e.mine ? GOLD : EMBER, 0.75, 70, toCanvas(spot.y), toCanvas(spot.x));
         break;
+      }
       case "cube-offer":
         if (s) sounds.heartbeat();
         if (e.toYou) navigator.vibrate?.([30, 80, 30]);
@@ -148,8 +170,10 @@ export default function FxLayer({ ref, sound }: { ref?: Ref<FxHandle>; sound: bo
         shake("fx-shake");
         break;
       case "banner":
+        if (s) sounds.banner();
+        break;
       case "your-turn":
-        if (s && e.kind === "banner") sounds.banner();
+        window.setTimeout(() => sparks(MINT, 0.55, 46, 0.5), 260);
         break;
       case "game-win":
         if (s) sounds.banner();
@@ -192,12 +216,31 @@ export default function FxLayer({ ref, sound }: { ref?: Ref<FxHandle>; sound: bo
                 <span className="fx-skip">tap to continue</span>
               </div>
             ))}
-          {e.kind === "hit" && (
-            <>
-              <span className="fx-ring" />
-              <span className={`fx-chip ${e.mine ? "mint" : "red"}`}>{e.mine ? "HIT!" : "You've been hit"}</span>
-            </>
-          )}
+          {e.kind === "hit" &&
+            (() => {
+              const spots = e.spots.map((r) => locate?.(e.seat, r)).filter((s): s is Spot => !!s);
+              const first = spots[0] ?? { x: 0.5, y: 0.5 };
+              // The label sits toward the middle of the board from the impact so it never covers the edge.
+              const labelY = first.y < 0.5 ? first.y + 0.2 : first.y - 0.2;
+              return (
+                <>
+                  {!e.mine && <div className="fx-vignette hurt" />}
+                  {spots.map((s, i) => (
+                    <div key={i} className="fx-impact" style={{ left: `${s.x * 100}%`, top: `${s.y * 100}%`, animationDelay: `${i * 120}ms` }}>
+                      <i />
+                      <i />
+                      <i />
+                      <b />
+                    </div>
+                  ))}
+                  {bar && <div className={`fx-bar-glow ${e.mine ? "gold" : "red"}`} style={{ left: `${bar.x * 100}%` }} />}
+                  <div className={`fx-hit-label ${e.mine ? "gold" : "red"}`} style={{ left: `${clamp(first.x, 0.2, 0.8) * 100}%`, top: `${labelY * 100}%` }}>
+                    <strong>{e.spots.length > 1 ? `DOUBLE HIT!` : "HIT!"}</strong>
+                    <span>{e.mine ? "Sent to the bar" : "Your checker is on the bar"}</span>
+                  </div>
+                </>
+              );
+            })()}
           {e.kind === "cube-offer" && (
             <>
               <div className="fx-vignette" />
@@ -213,7 +256,20 @@ export default function FxLayer({ ref, sound }: { ref?: Ref<FxHandle>; sound: bo
           )}
           {e.kind === "cube-drop" && <span className="fx-chip">Double declined</span>}
           {e.kind === "banner" && <div className={`fx-banner ${e.tone}`}>{e.text}</div>}
-          {e.kind === "your-turn" && <span className="fx-chip mint">Your turn</span>}
+          {e.kind === "your-turn" && (
+            <div className="fx-turn">
+              <div className="fx-turn-ring" />
+              <div className="fx-turn-sweep" />
+              <div className="fx-turn-card">
+                <span className="fx-turn-dice">
+                  <Die3D value={1 + Math.floor(Math.random() * 6)} mini />
+                  <Die3D value={1 + Math.floor(Math.random() * 6)} delay={90} mini />
+                </span>
+                <strong>Your turn</strong>
+                <span>{e.sub}</span>
+              </div>
+            </div>
+          )}
           {e.kind === "game-win" && (
             <div className="fx-stamp solo">
               <strong>{e.label}</strong>

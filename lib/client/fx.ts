@@ -7,12 +7,13 @@ import { absIndex, type Board, type Seat } from "@/lib/engine/board";
  */
 export type Effect =
   | { kind: "doubles"; value: number; tier: "chip" | "big" | "huge"; label: string; sub: string; mine: boolean }
-  | { kind: "hit"; mine: boolean }
+  /** `spots`: where checkers were hit, in the hitter's relative numbering. */
+  | { kind: "hit"; mine: boolean; seat: Seat; spots: number[] }
   | { kind: "cube-offer"; value: number; toYou: boolean }
   | { kind: "cube-take"; value: number }
   | { kind: "cube-drop" }
   | { kind: "banner"; text: string; tone: "gold" | "mint" | "red" | "blue" }
-  | { kind: "your-turn" }
+  | { kind: "your-turn"; sub: string }
   | { kind: "game-win"; label: string; mine: boolean | null }
   | { kind: "match-win"; name: string; mine: boolean | null };
 
@@ -87,7 +88,8 @@ export function effectsFor(type: string, p: Record<string, unknown>, ctx: FxCont
         out.push({ kind: "banner", text: `Closed out! ${ctx.names[seat]} rolled ${d[0]}-${d[1]} and can't enter`, tone: "red" });
         break;
       }
-      if (moves.some((m) => m.hit)) out.push({ kind: "hit", mine: isMine(seat) });
+      const hits = moves.filter((m) => m.hit).map((m) => m.to);
+      if (hits.length) out.push({ kind: "hit", mine: isMine(seat), seat, spots: hits });
       if (latest && ctx.board) {
         const block = longestBlock(ctx.board, seat);
         if (block >= 6 && ctx.announcedBlock[seat] < 6) {
