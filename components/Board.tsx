@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useId, useState } from "react";
+import { createContext, useContext, useEffect, useId, useRef } from "react";
 import { absIndex, type Board as BoardState, type Seat } from "@/lib/engine/board";
 import { BOARD, type BoardTheme } from "@/lib/client/theme";
 
@@ -269,15 +269,15 @@ export default function Board(p: BoardProps) {
   const tap = (rel: number) => () => p.onTap?.(rel);
   // Each animation plays once. An earlier one handed back (e.g. after an undo) is ignored, otherwise
   // its checkers would remount and visibly repeat a move that is not happening now.
-  // (State adjusted during render, React's pattern for remembering earlier renders: no flash of the
-  // final position before the animation starts.)
-  const [anims, setAnims] = useState<{ seen: ReadonlySet<string>; active: string | null }>({ seen: new Set(), active: null });
-  const key = p.anim?.key ?? null;
-  const activeKey = key !== null && (!anims.seen.has(key) || anims.active === key) ? key : null;
-  if (activeKey !== anims.active || (activeKey !== null && !anims.seen.has(activeKey))) {
-    setAnims({ seen: activeKey !== null ? new Set([...anims.seen, activeKey]) : anims.seen, active: activeKey });
-  }
-  const anim = activeKey !== null ? p.anim! : null;
+  const seenAnims = useRef(new Set<string>());
+  const activeAnim = useRef<string | null>(null);
+  // eslint-disable-next-line react-hooks/refs -- intentional: remembers which move animations already played
+  const fresh = !!p.anim && (!seenAnims.current.has(p.anim.key) || activeAnim.current === p.anim.key);
+  const anim = fresh ? p.anim! : null;
+  useEffect(() => {
+    if (anim) seenAnims.current.add(anim.key);
+    activeAnim.current = anim?.key ?? null;
+  });
   const motions = anim ? computeMotions(board, viewer, anim.moves) : new Map<string, Motion>();
   const animKey = anim?.key ?? "";
 

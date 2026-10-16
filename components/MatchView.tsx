@@ -412,11 +412,8 @@ export default function MatchView({ matchId }: { matchId: string }) {
     }
     const rel = selected === null ? forgive(tapped, (r) => sources.has(r)) : tapped;
     if (sources.has(rel)) {
-      if (rel === selected) return setSelected(null);
-      // Only one place this checker can go: move it straight away.
-      const dests = new Set(next.filter((m) => m.from === rel).map((m) => m.to));
-      if (dests.size === 1) return place(rel, [...dests][0]);
-      setSelected(rel);
+      // Selecting a checker highlights where it can go; the player then picks the destination.
+      setSelected(rel === selected ? null : rel);
       return;
     }
     if (selected !== null) {
