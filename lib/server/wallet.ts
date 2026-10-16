@@ -1,15 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { TOKEN_SCALE } from "../fees";
 import { ApiError, notFound } from "./errors";
-import {
-  LedgerError,
-  completeWithdrawal,
-  creditDeposit,
-  releaseWithdrawal,
-  reserveWithdrawal,
-  userBalances,
-  userTransactions,
-} from "./ledger";
+import { LedgerError, completeWithdrawal, creditDeposit, releaseWithdrawal, reserveWithdrawal, userBalances, userTransactions } from "./ledger";
 import type { DepositMethod, NormalizedPaymentEvent, WithdrawalStatus } from "./payments/adapter";
 import { simulatedAdapter } from "./payments/simulated";
 import { tx, type DepositIntent, type Tx, type Withdrawal } from "./store";
@@ -45,9 +37,7 @@ export function getWallet(userId: string) {
   return tx(async (t) => {
     const deposits = await t.deposits.listByUser(userId);
     const withdrawals = await t.withdrawals.listByUser(userId);
-    const pendingDeposits = deposits
-      .filter((d) => d.status === "PENDING" || d.status === "CONFIRMED")
-      .reduce((s, d) => s + d.tokenUnits, 0);
+    const pendingDeposits = deposits.filter((d) => d.status === "PENDING" || d.status === "CONFIRMED").reduce((s, d) => s + d.tokenUnits, 0);
     return {
       scale: TOKEN_SCALE,
       tokenCode: "BGT",

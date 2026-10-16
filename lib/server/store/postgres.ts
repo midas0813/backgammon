@@ -407,10 +407,10 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
                   [id, f.after ?? 0, f.last],
                 )
               ).reverse()
-            : await q(
-                `select seq, type, state_version, server_time, payload from match_events where match_id = $1 and seq > $2 order by seq`,
-                [id, f.after ?? 0],
-              );
+            : await q(`select seq, type, state_version, server_time, payload from match_events where match_id = $1 and seq > $2 order by seq`, [
+                id,
+                f.after ?? 0,
+              ]);
         return rows.map((r) => ({
           seq: num(r.seq),
           type: String(r.type),
@@ -473,10 +473,11 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
         const params = [f.status, f.points ?? null, f.feeMin ?? null, f.feeMax ?? null, f.hostSeenSince, f.activeSince];
         const [c] = await q(`select count(*) as n from matches m where ${where}`, params);
         if (f.limit === 0) return { rows: [], total: num(c.n) };
-        const rows = await q(
-          `${LOBBY_SELECT} where ${where} order by m.created_at ${f.sort === "oldest" ? "asc" : "desc"} limit $7 offset $8`,
-          [...params, f.limit, f.offset],
-        );
+        const rows = await q(`${LOBBY_SELECT} where ${where} order by m.created_at ${f.sort === "oldest" ? "asc" : "desc"} limit $7 offset $8`, [
+          ...params,
+          f.limit,
+          f.offset,
+        ]);
         return { rows: rows.filter((r) => r.summary).map(toLobbyRow), total: num(c.n) };
       },
       async listAdmin(f) {
@@ -570,10 +571,14 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
     },
     chat: {
       async add(m) {
-        const [r] = await q(
-          `insert into match_chat (match_id, user_id, name, role, kind, body) values ($1, $2, $3, $4, $5, $6) returning *`,
-          [m.matchId, m.userId, m.name, m.role, m.kind, m.body],
-        );
+        const [r] = await q(`insert into match_chat (match_id, user_id, name, role, kind, body) values ($1, $2, $3, $4, $5, $6) returning *`, [
+          m.matchId,
+          m.userId,
+          m.name,
+          m.role,
+          m.kind,
+          m.body,
+        ]);
         return toChat(r);
       },
       async list(matchId, after, limit) {
@@ -696,10 +701,9 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
         if (lock) {
           await q(`insert into ledger_accounts (account) select unnest($1::text[]) on conflict do nothing`, [sorted]);
         }
-        const rows = await q(
-          `select account, balance from ledger_accounts where account = any($1::text[]) order by account ${lock ? "for update" : ""}`,
-          [sorted],
-        );
+        const rows = await q(`select account, balance from ledger_accounts where account = any($1::text[]) order by account ${lock ? "for update" : ""}`, [
+          sorted,
+        ]);
         const out: Record<string, number> = Object.fromEntries(accounts.map((a) => [a, 0]));
         for (const r of rows) out[String(r.account)] = num(r.balance);
         return out;
@@ -709,20 +713,22 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
         return r ? toTxn(r) : undefined;
       },
       async insert(txn, next) {
-        const [t] = await q(
-          `insert into ledger_transactions (key, type, memo, created_at) values ($1, $2, $3, $4) returning id::text as id`,
-          [txn.key, txn.type, txn.memo, txn.createdAt],
-        );
+        const [t] = await q(`insert into ledger_transactions (key, type, memo, created_at) values ($1, $2, $3, $4) returning id::text as id`, [
+          txn.key,
+          txn.type,
+          txn.memo,
+          txn.createdAt,
+        ]);
         await q(
           `insert into ledger_entries (txn_id, account, amount)
            select $1::bigint, a, b from unnest($2::text[], $3::bigint[]) as x(a, b)`,
           [t.id, txn.entries.map((e) => e.account), txn.entries.map((e) => String(e.amount))],
         );
         const accounts = Object.keys(next);
-        await q(
-          `update ledger_accounts set balance = v.b from unnest($1::text[], $2::bigint[]) as v(a, b) where account = v.a`,
-          [accounts, accounts.map((a) => String(next[a]))],
-        );
+        await q(`update ledger_accounts set balance = v.b from unnest($1::text[], $2::bigint[]) as v(a, b) where account = v.a`, [
+          accounts,
+          accounts.map((a) => String(next[a])),
+        ]);
         return { ...txn, id: `txn_${t.id}` };
       },
       async userTransactions(userId, limit) {
@@ -780,10 +786,7 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
         );
       },
       async count(matchId, since) {
-        const [r] = await q(`select count(*) as n from match_spectators where match_id = $1 and seen_at >= to_timestamp($2::float8 / 1000)`, [
-          matchId,
-          since,
-        ]);
+        const [r] = await q(`select count(*) as n from match_spectators where match_id = $1 and seen_at >= to_timestamp($2::float8 / 1000)`, [matchId, since]);
         return num(r.n);
       },
     },
@@ -824,13 +827,21 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
       },
       async notes(disputeId) {
         const rows = await q(`select * from dispute_notes where dispute_id = $1 order by id`, [disputeId]);
-        return rows.map((r) => ({ id: num(r.id), disputeId: String(r.dispute_id), authorId: String(r.author_id), note: String(r.note), createdAt: iso(r.created_at) }));
+        return rows.map((r) => ({
+          id: num(r.id),
+          disputeId: String(r.dispute_id),
+          authorId: String(r.author_id),
+          note: String(r.note),
+          createdAt: iso(r.created_at),
+        }));
       },
     },
     admin: {
       async activeRole(userId) {
         const [r] = await q(`select * from admin_roles where user_id = $1 and revoked_at is null`, [userId]);
-        return r ? { userId: String(r.user_id), role: r.role as AdminRole, grantedBy: (r.granted_by as string) ?? undefined, grantedAt: iso(r.granted_at) } : undefined;
+        return r
+          ? { userId: String(r.user_id), role: r.role as AdminRole, grantedBy: (r.granted_by as string) ?? undefined, grantedAt: iso(r.granted_at) }
+          : undefined;
       },
       async everHadRole(userId) {
         const [r] = await q(`select 1 from admin_roles where user_id = $1 limit 1`, [userId]);
@@ -838,7 +849,12 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
       },
       async listRoles() {
         const rows = await q(`select * from admin_roles where revoked_at is null order by granted_at`);
-        return rows.map((r) => ({ userId: String(r.user_id), role: r.role as AdminRole, grantedBy: (r.granted_by as string) ?? undefined, grantedAt: iso(r.granted_at) }));
+        return rows.map((r) => ({
+          userId: String(r.user_id),
+          role: r.role as AdminRole,
+          grantedBy: (r.granted_by as string) ?? undefined,
+          grantedAt: iso(r.granted_at),
+        }));
       },
       async grantRole(userId, role, by) {
         await q(`update admin_roles set revoked_at = now(), revoked_by = $2 where user_id = $1 and revoked_at is null`, [userId, by]);
@@ -861,7 +877,14 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
           [token],
         );
         return r
-          ? { token: String(r.token), userId: String(r.user_id), createdAt: num(r.c), lastSeenAt: num(r.l), ip: (r.ip as string) ?? undefined, userAgent: (r.user_agent as string) ?? undefined }
+          ? {
+              token: String(r.token),
+              userId: String(r.user_id),
+              createdAt: num(r.c),
+              lastSeenAt: num(r.l),
+              ip: (r.ip as string) ?? undefined,
+              userAgent: (r.user_agent as string) ?? undefined,
+            }
           : undefined;
       },
       async touchSession(token, at) {
@@ -887,14 +910,34 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
           [nonce, userId, at],
         );
         return r
-          ? { nonce: String(r.nonce), userId: String(r.user_id), purpose: String(r.purpose), message: String(r.message), details: parse(r.details), expiresAt: num(r.exp), usedAt: at }
+          ? {
+              nonce: String(r.nonce),
+              userId: String(r.user_id),
+              purpose: String(r.purpose),
+              message: String(r.message),
+              details: parse(r.details),
+              expiresAt: num(r.exp),
+              usedAt: at,
+            }
           : undefined;
       },
       async audit(e) {
         await q(
           `insert into admin_audit (at, actor_id, actor_role, action, target_type, target_id, reason, details, ip, user_agent, signature)
            values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)`,
-          [e.at, e.actorId ?? null, e.actorRole ?? null, e.action, e.targetType ?? null, e.targetId ?? null, e.reason ?? null, JSON.stringify(e.details), e.ip ?? null, e.userAgent ?? null, e.signature ?? null],
+          [
+            e.at,
+            e.actorId ?? null,
+            e.actorRole ?? null,
+            e.action,
+            e.targetType ?? null,
+            e.targetId ?? null,
+            e.reason ?? null,
+            JSON.stringify(e.details),
+            e.ip ?? null,
+            e.userAgent ?? null,
+            e.signature ?? null,
+          ],
         );
       },
       async listAudit(f) {
@@ -903,22 +946,20 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
            order by id desc limit $4`,
           [f.actorId ?? null, f.targetType ?? null, f.targetId ?? null, f.limit],
         );
-        return rows.map(
-          (r): AuditEntry => ({
-            id: num(r.id),
-            at: iso(r.at),
-            actorId: (r.actor_id as string) ?? undefined,
-            actorRole: (r.actor_role as string) ?? undefined,
-            action: String(r.action),
-            targetType: (r.target_type as string) ?? undefined,
-            targetId: (r.target_id as string) ?? undefined,
-            reason: (r.reason as string) ?? undefined,
-            details: parse(r.details),
-            ip: (r.ip as string) ?? undefined,
-            userAgent: (r.user_agent as string) ?? undefined,
-            signature: (r.signature as string) ?? undefined,
-          }),
-        );
+        return rows.map((r): AuditEntry => ({
+          id: num(r.id),
+          at: iso(r.at),
+          actorId: (r.actor_id as string) ?? undefined,
+          actorRole: (r.actor_role as string) ?? undefined,
+          action: String(r.action),
+          targetType: (r.target_type as string) ?? undefined,
+          targetId: (r.target_id as string) ?? undefined,
+          reason: (r.reason as string) ?? undefined,
+          details: parse(r.details),
+          ip: (r.ip as string) ?? undefined,
+          userAgent: (r.user_agent as string) ?? undefined,
+          signature: (r.signature as string) ?? undefined,
+        }));
       },
       async getSetting<T>(key: string) {
         const [r] = await q(`select value from app_settings where key = $1`, [key]);
@@ -937,17 +978,15 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
       },
       async listAnnouncements() {
         const rows = await q(`select * from announcements order by created_at desc limit 50`);
-        return rows.map(
-          (r): Announcement => ({
-            id: String(r.id),
-            message: String(r.message),
-            tone: r.tone as Announcement["tone"],
-            active: Boolean(r.active),
-            createdAt: iso(r.created_at),
-            createdBy: (r.created_by as string) ?? undefined,
-            expiresAt: r.expires_at ? iso(r.expires_at) : undefined,
-          }),
-        );
+        return rows.map((r): Announcement => ({
+          id: String(r.id),
+          message: String(r.message),
+          tone: r.tone as Announcement["tone"],
+          active: Boolean(r.active),
+          createdAt: iso(r.created_at),
+          createdBy: (r.created_by as string) ?? undefined,
+          expiresAt: r.expires_at ? iso(r.expires_at) : undefined,
+        }));
       },
       async putAnnouncement(a) {
         await q(
@@ -961,7 +1000,19 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
           `insert into admin_adjustments (id, user_id, account_kind, amount, reason, status, requested_by, requested_at, decided_by, decided_at, txn_key)
            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            on conflict (id) do update set status = excluded.status, decided_by = excluded.decided_by, decided_at = excluded.decided_at, txn_key = excluded.txn_key`,
-          [a.id, a.userId, a.accountKind, String(a.amount), a.reason, a.status, a.requestedBy, a.requestedAt, a.decidedBy ?? null, a.decidedAt ?? null, a.txnKey ?? null],
+          [
+            a.id,
+            a.userId,
+            a.accountKind,
+            String(a.amount),
+            a.reason,
+            a.status,
+            a.requestedBy,
+            a.requestedAt,
+            a.decidedBy ?? null,
+            a.decidedAt ?? null,
+            a.txnKey ?? null,
+          ],
         );
       },
       async getAdjustment(id, opts) {

@@ -60,9 +60,7 @@ function SupportInner({ history }: { history: { matchId: string; label: string }
   return (
     <section className="card" id="support">
       <h2>Help &amp; report a problem</h2>
-      <p className="muted small">
-        Something wrong with a game, a result or your account? Tell us what happened. Each report gets a reference ID.
-      </p>
+      <p className="muted small">Something wrong with a game, a result or your account? Tell us what happened. Each report gets a reference ID.</p>
       <form className="auth-form" onSubmit={submit}>
         <label>
           What is it about?

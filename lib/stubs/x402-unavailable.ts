@@ -11,4 +11,5 @@ export const registerExactEvmScheme = unavailable;
 export const registerUptoEvmScheme = unavailable;
 export const registerExactSvmScheme = unavailable;
 export const toClientEvmSigner = unavailable;
-export default {};
+const stub = {};
+export default stub;

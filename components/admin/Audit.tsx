@@ -14,7 +14,9 @@ export default function Audit() {
   const [type, setType] = useState("");
   const [actor, setActor] = useState("");
   useEffect(() => {
-    api<Data>(`/api/admin/audit?targetType=${type}&actorId=${actor}`).then(setD).catch(() => {});
+    api<Data>(`/api/admin/audit?targetType=${type}&actorId=${actor}`)
+      .then(setD)
+      .catch(() => {});
   }, [type, actor]);
   const go = (t?: string, id?: string) => {
     if (t === "user" && id) open("users", id);

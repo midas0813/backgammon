@@ -147,9 +147,11 @@ describe("moderation", () => {
     expect(r.suspendedUntil).toBeTruthy();
     expect(await tx((t) => t.sessions.get("11111111-1111-4111-8111-111111111111"))).toBeUndefined();
     expect(await codeOf(createMatch(p.id, "bot", 3))).toBe("INELIGIBLE");
-    expect(await codeOf(admin.suspendUser(ctx, owner.user.id, { reason, ...(await owner.sign({ action: "USER_SUSPEND", target: `user:${owner.user.id}`, reason })) }))).toBe(
-      "WRONG_PHASE",
-    );
+    expect(
+      await codeOf(
+        admin.suspendUser(ctx, owner.user.id, { reason, ...(await owner.sign({ action: "USER_SUSPEND", target: `user:${owner.user.id}`, reason })) }),
+      ),
+    ).toBe("WRONG_PHASE");
 
     const back = "Appeal accepted";
     await admin.unsuspendUser(ctx, p.id, { reason: back, ...(await owner.sign({ action: "USER_UNSUSPEND", target: `user:${p.id}`, reason: back })) });
@@ -269,9 +271,17 @@ describe("finance adjustments", () => {
       ...(await owner.sign({ action: "ADJUST_REQUEST", target: `user:${p.id}:PAID_AVAILABLE:2500`, reason })),
     });
     expect(
-      await codeOf(admin.decideAdjustment(ctx, adjustment.id, { approve: true, ...(await owner.sign({ action: "ADJUST_APPROVE", target: `adjustment:${adjustment.id}` })) })),
+      await codeOf(
+        admin.decideAdjustment(ctx, adjustment.id, {
+          approve: true,
+          ...(await owner.sign({ action: "ADJUST_APPROVE", target: `adjustment:${adjustment.id}` })),
+        }),
+      ),
     ).toBe("WRONG_PHASE");
-    await admin.decideAdjustment(fctx, adjustment.id, { approve: true, ...(await fin.sign({ action: "ADJUST_APPROVE", target: `adjustment:${adjustment.id}` })) });
+    await admin.decideAdjustment(fctx, adjustment.id, {
+      approve: true,
+      ...(await fin.sign({ action: "ADJUST_APPROVE", target: `adjustment:${adjustment.id}` })),
+    });
     expect((await tx((t) => userBalances(t, p.id))).available).toBe(2500);
     expect(await tx((t) => reconcile(t))).toEqual([]);
     const overview = await admin.financeOverview(fctx);

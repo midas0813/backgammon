@@ -24,7 +24,9 @@ export function pgliteDriver(db: PGlite): Driver {
         ),
       ),
     reset: async () => {
-      const tables = (await db.query<{ tablename: string }>(`select tablename from pg_tables where schemaname = 'public' and tablename <> 'app_schema_migrations'`)).rows;
+      const tables = (
+        await db.query<{ tablename: string }>(`select tablename from pg_tables where schemaname = 'public' and tablename <> 'app_schema_migrations'`)
+      ).rows;
       await db.exec(`truncate ${tables.map((r) => r.tablename).join(", ")} restart identity cascade`);
     },
   };

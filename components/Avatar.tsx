@@ -25,11 +25,7 @@ export default function Avatar({ name, src, size = 40, bot }: { name: string; sr
       .map((w) => w[0])
       .join("") || "?";
   return (
-    <span
-      className="avatar"
-      style={{ width: size, height: size, fontSize: size * 0.4, background: `linear-gradient(135deg, ${a}, ${b})` }}
-      aria-hidden
-    >
+    <span className="avatar" style={{ width: size, height: size, fontSize: size * 0.4, background: `linear-gradient(135deg, ${a}, ${b})` }} aria-hidden>
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt="" width={size} height={size} />

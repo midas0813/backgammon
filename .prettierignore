@@ -1,0 +1,11 @@
+.next
+node_modules
+public
+supabase
+agent
+.agents
+.claude
+test-results
+playwright-report
+package-lock.json
+*.md

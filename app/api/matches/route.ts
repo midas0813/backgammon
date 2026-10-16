@@ -13,8 +13,11 @@ export async function GET() {
  */
 export async function POST(req: Request) {
   const body = await readJson(req);
-  return handle((user) =>
-    body.mode === "quick" || body.mode === "private"
-      ? createTable(user.id, { ...body, visibility: body.mode === "private" ? "private" : "public" })
-      : createMatch(user.id, body.mode as "bot", Number(body.targetPoints)), { limit: "game" });
+  return handle(
+    (user) =>
+      body.mode === "quick" || body.mode === "private"
+        ? createTable(user.id, { ...body, visibility: body.mode === "private" ? "private" : "public" })
+        : createMatch(user.id, body.mode as "bot", Number(body.targetPoints)),
+    { limit: "game" },
+  );
 }

@@ -17,6 +17,7 @@ import type { MatchSnapshot } from "@/lib/server/matches";
 import { ClientApiError, api, sendIdempotent } from "@/lib/client/api";
 import { effectsFor, longestBlock, type Effect } from "@/lib/client/fx";
 import { useMe } from "@/lib/client/me";
+import { useLatest } from "@/lib/client/hooks";
 import { useMatchChannel } from "@/lib/client/realtime";
 import { opponentAnimation, type AnimSpec } from "@/lib/client/replay";
 import { sounds } from "@/lib/client/sound";
@@ -52,13 +53,13 @@ export default function MatchView({ matchId }: { matchId: string }) {
   const me = useMe();
   const router = useRouter();
   const soundOn = me?.sound ?? true;
-  const soundRef = useRef(soundOn);
-  soundRef.current = soundOn;
+  const soundRef = useLatest(soundOn);
   const [leaveAsk, setLeaveAsk] = useState(false);
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Move[]>([]);
-  const [selected, setSelected] = useState<number | null>(null);
+  // The checker the player picked; `selected` (below) also covers the forced pick of the bar.
+  const [picked, setSelected] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -88,18 +89,18 @@ export default function MatchView({ matchId }: { matchId: string }) {
   const chatCursor = useRef(0);
   const chatLoaded = useRef(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const chatOpenRef = useRef(false);
-  chatOpenRef.current = chatOpen;
+  const chatOpenRef = useLatest(chatOpen);
   const [unread, setUnread] = useState(0);
   const [reactions, setReactions] = useState<{ id: number; emoji: string; mine: boolean }[]>([]);
-  const [muteSpectators, setMuteSpectatorsState] = useState(false);
-  const muteRef = useRef(false);
-  muteRef.current = muteSpectators;
-  useEffect(() => {
+  // A per-device preference; the chat (where it shows) only renders after the match has loaded.
+  const [muteSpectators, setMuteSpectatorsState] = useState(() => {
     try {
-      setMuteSpectatorsState(localStorage.getItem(MUTE_KEY) === "1");
-    } catch {}
-  }, []);
+      return typeof window !== "undefined" && localStorage.getItem(MUTE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const muteRef = useLatest(muteSpectators);
   const setMuteSpectators = (v: boolean) => {
     setMuteSpectatorsState(v);
     try {
@@ -165,7 +166,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
       }
       cursorRef.current = s.eventCursor;
     },
-    [showToast],
+    [showToast, soundRef],
   );
 
   /** New chat messages: reactions float over the board; other messages count as unread or show a toast. */
@@ -192,7 +193,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
         showToast(`${last.name}: ${last.body}`);
       }
     },
-    [showToast],
+    [showToast, chatOpenRef, muteRef],
   );
 
   const refresh = useCallback(
@@ -232,15 +233,13 @@ export default function MatchView({ matchId }: { matchId: string }) {
         else if (e instanceof ClientApiError && e.status === 403) setLoadError(e.message);
       }
     },
-    [matchId, announce, showToast, takeChat],
+    [matchId, announce, showToast, takeChat, soundRef],
   );
 
   // Instant updates: any notice on the match channel means "fetch now".
-  const refreshRef = useRef(refresh);
-  refreshRef.current = refresh;
+  const refreshRef = useLatest(refresh);
   const live = useMatchChannel(matchId, () => refreshRef.current());
-  const liveRef = useRef(live);
-  liveRef.current = live;
+  const liveRef = useLatest(live);
 
   // A played animation is dropped afterwards so it can never be handed back to the board.
   useEffect(() => {
@@ -252,8 +251,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
   // How often to ask for news. Pass & play changes only through this device, so it needs no polling
   // beyond a slow safety check; a computer game polls quickly only while the computer is to act
   // (each poll also lets it make its next step).
-  const snapRef = useRef<Snapshot | null>(null);
-  snapRef.current = snap;
+  const snapRef = useLatest(snap);
   useEffect(() => {
     let timer: number | undefined;
     let stopped = false;
@@ -284,7 +282,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [refresh]);
+  }, [refresh, liveRef, snapRef]);
 
   // Leaving an active match asks first; it never resigns.
   const activeParticipant = !!snap && snap.status === "ACTIVE" && snap.yourSeats.length > 0;
@@ -331,27 +329,21 @@ export default function MatchView({ matchId }: { matchId: string }) {
       setRollPing(true);
     }
     prevActRef.current = mine;
-  }, [snap]);
+  }, [snap, soundRef]);
 
   const game = snap?.game ?? null;
   const local = (snap?.yourSeats.length ?? 0) === 2;
   // Pass-and-play shows the player to act at the bottom; online players always see their own side.
   const spectating = snap?.role === "spectator";
-  const viewer: Seat = !snap
-    ? 0
-    : local
-      ? (snap.seatToAct ?? game?.turn ?? 0)
-      : spectating
-        ? ((flip ? 1 : 0) as Seat)
-        : ((snap.yourSeats[0] ?? 0) as Seat);
+  const viewer: Seat = !snap ? 0 : local ? (snap.seatToAct ?? game?.turn ?? 0) : spectating ? ((flip ? 1 : 0) as Seat) : ((snap.yourSeats[0] ?? 0) as Seat);
   const opp: Seat = viewer === 0 ? 1 : 0;
   const iAct = !!snap && snap.seatToAct !== null && snap.yourSeats.includes(snap.seatToAct as Seat);
   const myMovePhase = iAct && game?.phase === "ROLLED";
 
   const sequences = useMemo(
     () => (myMovePhase && game?.dice ? legalSequences(game.board, game.turn, diceUses(game.dice)) : [[]]),
-    // Recompute only when the authoritative state changes.
-    [myMovePhase, snap?.stateVersion],
+    // Recompute only when the authoritative state changes (the game object is replaced only then).
+    [myMovePhase, game],
   );
   const draftBoard = useMemo(() => {
     if (!game) return null;
@@ -361,10 +353,8 @@ export default function MatchView({ matchId }: { matchId: string }) {
   const sources = useMemo(() => new Set(next.map((m) => m.from)), [next]);
   const complete = myMovePhase && next.length === 0;
 
-  // Must enter from the bar: select it automatically.
-  useEffect(() => {
-    if (myMovePhase && selected === null && sources.size === 1 && sources.has(25)) setSelected(25);
-  }, [myMovePhase, selected, sources]);
+  // Must enter from the bar: it is selected automatically.
+  const selected = picked ?? (myMovePhase && sources.size === 1 && sources.has(25) ? 25 : null);
 
   const targets = useMemo(() => {
     const t = new Map<number, string>();
@@ -376,9 +366,10 @@ export default function MatchView({ matchId }: { matchId: string }) {
     return t;
   }, [next, selected]);
 
+  const dice = game?.dice ?? null;
   const diceView: DieView[] | null = useMemo(() => {
-    if (!game?.dice) return null;
-    const uses = diceUses(game.dice);
+    if (!dice) return null;
+    const uses = diceUses(dice);
     const usedCount = new Map<number, number>();
     for (const m of draft) usedCount.set(m.die, (usedCount.get(m.die) ?? 0) + 1);
     return uses.map((v) => {
@@ -389,7 +380,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
       }
       return { value: v, used: false };
     });
-  }, [game?.dice, draft]);
+  }, [dice, draft]);
 
   /** Play one checker from `from` to `to` in the draft (several dice can reach "off": the smallest). */
   const place = (from: number, to: number) => {
@@ -585,7 +576,10 @@ export default function MatchView({ matchId }: { matchId: string }) {
         <div className="watch-bar">
           <span>
             <strong>Watching</strong>
-            <span className="muted"> · {snap.spectators} viewer{snap.spectators === 1 ? "" : "s"}</span>
+            <span className="muted">
+              {" "}
+              · {snap.spectators} viewer{snap.spectators === 1 ? "" : "s"}
+            </span>
           </span>
           <span className="row" style={{ gap: 4, flexWrap: "nowrap" }}>
             {snap.chat.react &&
@@ -638,7 +632,8 @@ export default function MatchView({ matchId }: { matchId: string }) {
           <div className="card">
             <h2>Match voided by support</h2>
             <p className="muted">
-              {snap.voided?.reason ? `Reason: “${snap.voided.reason}”. ` : ""}It no longer counts in anyone&apos;s stats. Nothing was at stake in this free match.
+              {snap.voided?.reason ? `Reason: “${snap.voided.reason}”. ` : ""}It no longer counts in anyone&apos;s stats. Nothing was at stake in this free
+              match.
             </p>
             <Link className="btn primary block" href="/play">
               Back to lobby
@@ -657,7 +652,9 @@ export default function MatchView({ matchId }: { matchId: string }) {
         ) : game!.phase === "CUBE_PENDING" && iAct ? (
           <CubeDecision snap={snap} viewer={snap.seatToAct as Seat} busy={busy} onSend={send} />
         ) : game!.phase === "CUBE_PENDING" ? (
-          <div className="status">Cube offered at {game!.pendingOffer?.proposed}. Waiting for {actorName} to accept or pass…</div>
+          <div className="status">
+            Cube offered at {game!.pendingOffer?.proposed}. Waiting for {actorName} to accept or pass…
+          </div>
         ) : iAct && game!.phase === "BEFORE_ROLL" ? (
           <>
             <div className="status">
@@ -696,7 +693,11 @@ export default function MatchView({ matchId }: { matchId: string }) {
               </div>
             )}
             <div className="grid2">
-              <button className="btn" disabled={busy || draft.length === 0} onClick={() => (setDraft((d) => d.slice(0, -1)), setDraftAnim(null), setSelected(null))}>
+              <button
+                className="btn"
+                disabled={busy || draft.length === 0}
+                onClick={() => (setDraft((d) => d.slice(0, -1)), setDraftAnim(null), setSelected(null))}
+              >
                 Undo
               </button>
               <button className="btn primary" disabled={busy || !complete} onClick={() => send("CONFIRM_TURN", { moves: draft })}>
@@ -705,9 +706,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
             </div>
           </>
         ) : (
-          <div className="status">
-            {game!.phase === "ROLLED" ? `${actorName} is moving…` : `Waiting for ${actorName} to roll…`}
-          </div>
+          <div className="status">{game!.phase === "ROLLED" ? `${actorName} is moving…` : `Waiting for ${actorName} to roll…`}</div>
         )}
         {message && !myMovePhase && <div className="status err">{message}</div>}
         {busy && <div className="status">Sending…</div>}
@@ -739,8 +738,8 @@ export default function MatchView({ matchId }: { matchId: string }) {
       {confirm === "double" && (
         <Modal title={`Offer the cube at ${game!.cubeValue * 2}?`} onClose={() => setConfirm(null)}>
           <p className="muted">
-            Your opponent can accept (game worth {game!.cubeValue * 2}, they own the cube) or pass (you win {game!.cubeValue}{" "}
-            point{game!.cubeValue > 1 ? "s" : ""}). An offer cannot be withdrawn.
+            Your opponent can accept (game worth {game!.cubeValue * 2}, they own the cube) or pass (you win {game!.cubeValue} point
+            {game!.cubeValue > 1 ? "s" : ""}). An offer cannot be withdrawn.
           </p>
           <div className="grid2">
             <button className="btn" onClick={() => setConfirm(null)}>
@@ -943,7 +942,17 @@ function PlayerStrip({
   );
 }
 
-function CubeDecision({ snap, viewer, busy, onSend }: { snap: Snapshot; viewer: Seat; busy: boolean; onSend: (t: string, p?: Record<string, unknown>) => void }) {
+function CubeDecision({
+  snap,
+  viewer,
+  busy,
+  onSend,
+}: {
+  snap: Snapshot;
+  viewer: Seat;
+  busy: boolean;
+  onSend: (t: string, p?: Record<string, unknown>) => void;
+}) {
   const g = snap.game!;
   const offer = g.pendingOffer!;
   const offerer = snap.seats[offer.from].name;
@@ -1011,9 +1020,7 @@ function MatchOver({ snap }: { snap: Snapshot }) {
   return (
     <div className="card accent">
       {(youWon || snap.yourSeats.length === 2) && <Confetti />}
-      <h2>
-        {snap.yourSeats.length === 1 ? (youWon ? "You won the match" : "You lost the match") : `${snap.seats[winner].name} wins the match`}
-      </h2>
+      <h2>{snap.yourSeats.length === 1 ? (youWon ? "You won the match" : "You lost the match") : `${snap.seats[winner].name} wins the match`}</h2>
       <div className="muted">
         Final score {snap.score[0]}–{snap.score[1]} ·{" "}
         {snap.endReason === "forfeit" ? "by forfeit" : snap.endReason === "abandoned" ? "by abandonment (left the table)" : `${snap.targetPoints}-point match`}
@@ -1051,6 +1058,7 @@ const CLOSED: Record<string, { title: string; text: string }> = {
 };
 
 function WaitingRoom({ snap, matchId, onChange }: { snap: Snapshot; matchId: string; onChange: () => void }) {
+  const router = useRouter();
   const [copied, setCopied] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const url = typeof window !== "undefined" ? `${window.location.origin}/match/${matchId}` : "";
@@ -1069,7 +1077,7 @@ function WaitingRoom({ snap, matchId, onChange }: { snap: Snapshot; matchId: str
         method: "POST",
         body: { mode: "bot", targetPoints: snap.targetPoints },
       });
-      window.location.assign(`/match/${id}`);
+      router.push(`/match/${id}`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed");
     }
@@ -1103,7 +1111,9 @@ function WaitingRoom({ snap, matchId, onChange }: { snap: Snapshot; matchId: str
               <span />
             </span>
             <span className="muted small">
-              {snap.mode === "quick" ? "Your table is listed in the lobby. We'll bring you to the board the moment someone sits down." : "Share the link below."}
+              {snap.mode === "quick"
+                ? "Your table is listed in the lobby. We'll bring you to the board the moment someone sits down."
+                : "Share the link below."}
             </span>
           </div>
         )}

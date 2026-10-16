@@ -13,14 +13,7 @@ import {
   pipCount,
   tryMove,
 } from "@/lib/engine/board";
-import {
-  applyAction,
-  cubeBlockReason,
-  currentSequences,
-  newMatch,
-  startMatch,
-  type MatchState,
-} from "@/lib/engine/match";
+import { applyAction, cubeBlockReason, currentSequences, newMatch, startMatch, type MatchState } from "@/lib/engine/match";
 import { boardFrom, expectCode, randomEnv, scriptedEnv } from "./helpers";
 
 describe("board setup", () => {
@@ -63,7 +56,12 @@ describe("legal turn enumeration", () => {
   it("rejects a sequence that abandons a usable die", () => {
     const seqs = legalSequences(initialBoard(), 0, [6, 1]);
     expect(matchSequence(seqs, [{ from: 24, to: 18, die: 6 }])).toBeNull();
-    expect(matchSequence(seqs, [{ from: 13, to: 7, die: 6 }, { from: 8, to: 7, die: 1 }])).not.toBeNull();
+    expect(
+      matchSequence(seqs, [
+        { from: 13, to: 7, die: 6 },
+        { from: 8, to: 7, die: 1 },
+      ]),
+    ).not.toBeNull();
   });
 
   it("blocks points with two opponents and hits a single opponent", () => {

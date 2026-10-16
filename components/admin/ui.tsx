@@ -130,7 +130,10 @@ export function DailyBars({ title, data, color }: { title: string; data: { day: 
     <figure className="a-chart">
       <figcaption>
         <span>
-          <strong>{title}</strong> <span className="muted small">· last {data.length} days · {total} total</span>
+          <strong>{title}</strong>{" "}
+          <span className="muted small">
+            · last {data.length} days · {total} total
+          </span>
         </span>
         <button className="btn sm ghost" onClick={() => setTable((v) => !v)}>
           {table ? "Chart" : "Table"}

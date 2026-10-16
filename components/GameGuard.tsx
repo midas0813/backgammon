@@ -45,7 +45,11 @@ export default function GameGuard() {
       await api(`/api/matches/${game.matchId}/leave`, { method: "POST" });
       unwatchTable(game.matchId);
       toast(
-        game.status === "WAITING" ? "Table closed. You can start a new game now." : online ? "Match forfeited. You can start a new game now." : "Game ended. You can start a new game now.",
+        game.status === "WAITING"
+          ? "Table closed. You can start a new game now."
+          : online
+            ? "Match forfeited. You can start a new game now."
+            : "Game ended. You can start a new game now.",
         { tone: "ok" },
       );
       close();
@@ -74,9 +78,7 @@ export default function GameGuard() {
 
   return (
     <Modal title="You're already in a game" onClose={close}>
-      <p className="muted">
-        {describe(game)} You can play one game at a time — finish it or leave it to start another.
-      </p>
+      <p className="muted">{describe(game)} You can play one game at a time — finish it or leave it to start another.</p>
       <button
         className="btn primary block"
         onClick={() => {

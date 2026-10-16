@@ -136,7 +136,14 @@ export function ChatSheet({
                 if (text.trim()) send({ kind: "text", text });
               }}
             >
-              <input value={text} maxLength={CHAT_MAX} onChange={(e) => setText(e.target.value)} placeholder="Message" aria-label="Message" enterKeyHint="send" />
+              <input
+                value={text}
+                maxLength={CHAT_MAX}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="Message"
+                aria-label="Message"
+                enterKeyHint="send"
+              />
               <button className="btn primary sm" disabled={sending || !text.trim()}>
                 Send
               </button>

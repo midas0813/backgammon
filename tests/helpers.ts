@@ -9,12 +9,7 @@ import { expect } from "vitest";
  * Build a board from player-relative placements. Checkers not placed (and not on bar) are put in `off`
  * so the 15-checker invariant always holds.
  */
-export function boardFrom(spec: {
-  white?: Record<number, number>;
-  black?: Record<number, number>;
-  bar?: [number, number];
-  off?: [number, number];
-}): Board {
+export function boardFrom(spec: { white?: Record<number, number>; black?: Record<number, number>; bar?: [number, number]; off?: [number, number] }): Board {
   const board: Board = { points: new Array(24).fill(0), bar: spec.bar ?? [0, 0], off: [0, 0] };
   const place = (seat: Seat, placements: Record<number, number> = {}) => {
     let placed = board.bar[seat];

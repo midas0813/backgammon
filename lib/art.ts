@@ -2,23 +2,7 @@
  * AI-generated image slots. Put each file in /public/images/<file>; until then a built-in SVG scene
  * renders instead. Full brief with prompts: docs/IMAGE_BRIEF.md.
  */
-export const STYLE =
-  "Cinematic, photoreal, dark navy (#0B1220) ambience, warm walnut wood and cream/ink-blue checkers, " +
-  "mint-green (#65E2BC) and soft gold (#F4CF87) rim lighting, shallow depth of field, premium and calm, " +
-  "no text, no letters, no logos, no watermarks, no human faces in focus.";
-
-export type ArtKey =
-  | "hero"
-  | "history"
-  | "modeQuick"
-  | "modeComputer"
-  | "modeRanked"
-  | "modeTournament"
-  | "fairDice"
-  | "wallet"
-  | "cta"
-  | "auth"
-  | "og";
+export type ArtKey = "hero" | "history" | "modeQuick" | "modeComputer" | "modeRanked" | "modeTournament" | "fairDice" | "wallet" | "cta" | "auth" | "og";
 
 export interface ArtSlot {
   file: string;
@@ -89,9 +73,7 @@ export const ART: Record<ArtKey, ArtSlot> = {
     height: 675,
     alt: "Several backgammon boards in a dim tournament hall",
     usedOn: "Landing — Tournaments card (shown as “coming soon”)",
-    prompt:
-      "Rows of backgammon boards on tables in a dim elegant tournament hall, bokeh lights, mint and gold accents, no people " +
-      "in focus, anticipation.",
+    prompt: "Rows of backgammon boards on tables in a dim elegant tournament hall, bokeh lights, mint and gold accents, no people " + "in focus, anticipation.",
     fallback: "tournament",
   },
   fairDice: {

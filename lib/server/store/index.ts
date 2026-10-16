@@ -81,9 +81,7 @@ function postgresJsDriver(url: string): Driver {
 /** On Vercel the filesystem is read-only, so running without a database cannot work. */
 function missingDatabaseStore(): Store {
   const fail = async (): Promise<never> => {
-    console.error(
-      "No database configured. Set DATABASE_URL, or connect Supabase to this Vercel project so POSTGRES_URL is provided.",
-    );
+    console.error("No database configured. Set DATABASE_URL, or connect Supabase to this Vercel project so POSTGRES_URL is provided.");
     throw new ApiError(503, "SERVICE_UNAVAILABLE", "The game server is not connected to its database yet.");
   };
   return { kind: "postgres", tx: fail, reset: fail };

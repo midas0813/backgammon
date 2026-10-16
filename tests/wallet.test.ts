@@ -4,6 +4,7 @@ import {
   SYSTEM,
   creditDeposit,
   reconcile,
+  releaseMatchReserve,
   reserveForMatch,
   settleFixedStake,
   settleTokensPerPoint,
@@ -54,6 +55,17 @@ describe("ledger settlement", () => {
     await tx((t) => settleTokensPerPoint(t, { matchKey: "m1", winner: W, loser: L, reserve: R, gross: G, fee: 0 }));
     expect(await tx((t) => userBalances(t, W))).toMatchObject({ available: 504 * T, matchReserved: 0 });
     expect(await tx((t) => userBalances(t, L))).toMatchObject({ available: 496 * T, matchReserved: 0 });
+    expect(await tx(reconcile)).toEqual([]);
+  });
+
+  it("a match called off before it starts releases the reserve exactly once", async () => {
+    await tx(async (t) => {
+      await creditDeposit(t, W, "d1", 50 * T);
+      await reserveForMatch(t, W, "m3", 20 * T);
+    });
+    await tx((t) => releaseMatchReserve(t, W, "m3", 20 * T));
+    await tx((t) => releaseMatchReserve(t, W, "m3", 20 * T)); // retried: no double refund
+    expect(await tx((t) => userBalances(t, W))).toMatchObject({ available: 50 * T, matchReserved: 0 });
     expect(await tx(reconcile)).toEqual([]);
   });
 

@@ -70,6 +70,7 @@ export default function WalletPage() {
     setW(await api<WalletData>("/api/wallet"));
   }, []);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async: state is set after the request returns
     load();
   }, [load]);
 
@@ -101,8 +102,8 @@ export default function WalletPage() {
     <main className="page">
       <h1>Wallet</h1>
       <div className="notice">
-        <strong>Simulated payments.</strong> Provider: <code>{w?.adapter ?? "…"}</code>. No card data is collected and no real transfer happens.
-        Development tokens have no cash value. 1 BGT = $1.00 USD.
+        <strong>Simulated payments.</strong> Provider: <code>{w?.adapter ?? "…"}</code>. No card data is collected and no real transfer happens. Development
+        tokens have no cash value. 1 BGT = $1.00 USD.
       </div>
 
       <section className="card wallet-connect">
@@ -200,11 +201,7 @@ export default function WalletPage() {
                     </>
                   )}
                   {lastEvent[d.id] && (
-                    <button
-                      className="btn sm"
-                      disabled={busy}
-                      onClick={() => simulate("DEPOSIT", d.id, "CONFIRMED", { replayEventId: lastEvent[d.id] })}
-                    >
+                    <button className="btn sm" disabled={busy} onClick={() => simulate("DEPOSIT", d.id, "CONFIRMED", { replayEventId: lastEvent[d.id] })}>
                       Replay last callback
                     </button>
                   )}
@@ -291,9 +288,7 @@ export default function WalletPage() {
                   <span className="muted small">{new Date(t.createdAt).toLocaleString()}</span>
                 </div>
                 <div className="small mono">
-                  {t.entries
-                    .map((e) => `${e.amount > 0 ? "+" : ""}${formatTokens(e.amount)} ${ACCOUNT_LABEL[e.account.split(":")[2]] ?? ""}`)
-                    .join(" · ")}
+                  {t.entries.map((e) => `${e.amount > 0 ? "+" : ""}${formatTokens(e.amount)} ${ACCOUNT_LABEL[e.account.split(":")[2]] ?? ""}`).join(" · ")}
                 </div>
                 <div className="muted small">
                   {t.id}

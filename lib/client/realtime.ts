@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useLatest } from "./hooks";
 
 const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -26,8 +27,7 @@ function getClient() {
  */
 export function useMatchChannel(matchId: string, onNotice: (event: string) => void) {
   const [live, setLive] = useState(false);
-  const handler = useRef(onNotice);
-  handler.current = onNotice;
+  const handler = useLatest(onNotice);
   useEffect(() => {
     if (!realtimeEnabled) return;
     let stopped = false;
@@ -48,6 +48,6 @@ export function useMatchChannel(matchId: string, onNotice: (event: string) => vo
       setLive(false);
       unsubscribe?.();
     };
-  }, [matchId]);
+  }, [matchId, handler]);
   return live;
 }

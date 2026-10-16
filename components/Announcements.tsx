@@ -20,10 +20,13 @@ function dismissed(): string[] {
 /** Operator announcements and the maintenance notice (set in the admin area). */
 export default function Announcements() {
   const [data, setData] = useState<Data | null>(null);
-  const [hidden, setHidden] = useState<string[]>([]);
+  // Nothing renders until announcements arrive, so reading browser storage up front is safe.
+  const [hidden, setHidden] = useState<string[]>(() => (typeof window === "undefined" ? [] : dismissed()));
   useEffect(() => {
-    setHidden(dismissed());
-    const load = () => api<Data>("/api/announcements").then(setData).catch(() => {});
+    const load = () =>
+      api<Data>("/api/announcements")
+        .then(setData)
+        .catch(() => {});
     load();
     const t = window.setInterval(load, 60_000);
     return () => window.clearInterval(t);

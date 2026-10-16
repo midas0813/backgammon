@@ -5,10 +5,7 @@ import { tx, type Dispute } from "./store";
 const CATEGORIES: Dispute["category"][] = ["GAME", "PAYMENT", "ACCOUNT", "OTHER"];
 
 /** POST /disputes (spec 03): a player reports a problem; returns a reference ID and status. */
-export async function createDispute(
-  userId: string,
-  body: { category?: unknown; reason?: unknown; matchId?: unknown; transactionId?: unknown },
-) {
+export async function createDispute(userId: string, body: { category?: unknown; reason?: unknown; matchId?: unknown; transactionId?: unknown }) {
   const category = CATEGORIES.includes(body.category as Dispute["category"]) ? (body.category as Dispute["category"]) : "OTHER";
   const reason = typeof body.reason === "string" ? body.reason.replace(/[\u0000-\u0008\u000b-\u001f]/g, " ").trim() : "";
   if (reason.length < 5 || reason.length > 2000) throw new ApiError(400, "INVALID_INPUT", "Please describe the problem (5–2000 characters)");

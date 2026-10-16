@@ -108,10 +108,7 @@ export const OFFLINE_GAME_MS = 24 * 60 * 60 * 1000;
 
 const online = (rec: Pick<MatchRecord, "mode">) => rec.mode === "quick" || rec.mode === "private";
 
-type Settlement =
-  | { kind: "expire" }
-  | { kind: "close"; reason: ClosedReason }
-  | { kind: "abandon"; loser: Seat };
+type Settlement = { kind: "expire" } | { kind: "close"; reason: ClosedReason } | { kind: "abandon"; loser: Seat };
 
 /** What, if anything, should happen to a match left alone. Pure: `seen` is each seat's last poll (ms). */
 export function settlementFor(rec: MatchRecord, seen: [number, number], now: number): Settlement | null {
@@ -265,10 +262,7 @@ export async function createMatch(
       createdAt: new Date().toISOString(),
       createdBy: userId,
       seats: [userId, mode === "local" ? userId : mode === "bot" ? BOT_USER_ID : null],
-      names: [
-        mode === "local" ? `${name} (White)` : name,
-        mode === "local" ? `${name} (Black)` : mode === "bot" ? BOT_NAME : "Waiting…",
-      ],
+      names: [mode === "local" ? `${name} (White)` : name, mode === "local" ? `${name} (Black)` : mode === "bot" ? BOT_NAME : "Waiting…"],
       lastSeen: [Date.now(), 0],
       version: 1,
       state: newMatch(targetPoints),
@@ -573,10 +567,7 @@ function snapshotOf(
       occupied: rec.seats[s] !== null,
       avatarUrl: rec.seats[s] ? avatarUrl(users[rec.seats[s]!]) : null,
       bot: rec.seats[s] === BOT_USER_ID,
-      online:
-        rec.mode === "local" || rec.seats[s] === BOT_USER_ID || mySeats.includes(s)
-          ? true
-          : now - seen[s] < ONLINE_MS,
+      online: rec.mode === "local" || rec.seats[s] === BOT_USER_ID || mySeats.includes(s) ? true : now - seen[s] < ONLINE_MS,
     })),
     yourSeats: mySeats,
     role: mySeats.length ? ("player" as const) : ("spectator" as const),
@@ -587,7 +578,8 @@ function snapshotOf(
     isHost: rec.createdBy === userId && mySeats.length > 0,
     closedReason: rec.closedReason ?? null,
     /** Set while the host has not come back since someone joined: the match is called off at this time. */
-    hostReturnBy: online(rec) && st.status === "ACTIVE" && rec.startedAt && seen[0] < rec.startedAt ? new Date(rec.startedAt + HOST_RETURN_MS).toISOString() : null,
+    hostReturnBy:
+      online(rec) && st.status === "ACTIVE" && rec.startedAt && seen[0] < rec.startedAt ? new Date(rec.startedAt + HOST_RETURN_MS).toISOString() : null,
     voided: rec.voided ? { reason: rec.voided.reason, at: rec.voided.at } : null,
     canJoin: st.status === "WAITING" && rec.mode !== "local" && rec.mode !== "bot" && mySeats.length === 0,
     canCancel: st.status === "WAITING" && rec.createdBy === userId,

@@ -91,12 +91,12 @@ export default function Landing() {
           <span className="eyebrow">What is backgammon?</span>
           <h2 className="l-h2 display">Five thousand years old. Still undefeated.</h2>
           <p>
-            Backgammon is one of the oldest board games in the world — its ancestors were played in Mesopotamia around 3000 BC. Two players
-            race fifteen checkers around a board of 24 triangles, moving by the roll of two dice.
+            Backgammon is one of the oldest board games in the world — its ancestors were played in Mesopotamia around 3000 BC. Two players race fifteen
+            checkers around a board of 24 triangles, moving by the roll of two dice.
           </p>
           <p>
-            The dice bring luck; everything else is skill. When to run, when to block, when to hit — and when to raise the stakes with the
-            doubling cube. Easy to learn in five minutes, deep enough for a lifetime.
+            The dice bring luck; everything else is skill. When to run, when to block, when to hit — and when to raise the stakes with the doubling cube. Easy
+            to learn in five minutes, deep enough for a lifetime.
           </p>
           <div className="l-facts">
             <div>
@@ -140,8 +140,8 @@ export default function Landing() {
           <div>
             <h3>The doubling cube</h3>
             <p className="muted">
-              Before you roll, offer to double the stakes. Your opponent either accepts — and takes control of the cube — or passes and
-              concedes the game. Win a gammon for ×2, a backgammon for ×3.
+              Before you roll, offer to double the stakes. Your opponent either accepts — and takes control of the cube — or passes and concedes the game. Win a
+              gammon for ×2, a backgammon for ×3.
             </p>
           </div>
         </Reveal>
@@ -195,8 +195,8 @@ export default function Landing() {
             <span className="eyebrow">Fair by design</span>
             <h3 className="display">Dice you can trust</h3>
             <p className="muted">
-              Every roll is generated on the server with a cryptographic random generator and saved before anyone sees it. Players only
-              propose moves — the server checks every rule, so no one can fake a roll, a move or a result.
+              Every roll is generated on the server with a cryptographic random generator and saved before anyone sees it. Players only propose moves — the
+              server checks every rule, so no one can fake a roll, a move or a result.
             </p>
           </div>
         </Reveal>
@@ -208,9 +208,8 @@ export default function Landing() {
             <span className="eyebrow">Wallet = account</span>
             <h3 className="display">No email. No password.</h3>
             <p className="muted">
-              Connect MetaMask, Coinbase Wallet or any browser wallet and sign one free message — that creates your account. Your stats,
-              avatar and tokens follow your address. Tokens (1 = $1) power stake games; purchases and payouts are simulated in this
-              preview build.
+              Connect MetaMask, Coinbase Wallet or any browser wallet and sign one free message — that creates your account. Your stats, avatar and tokens
+              follow your address. Tokens (1 = $1) power stake games; purchases and payouts are simulated in this preview build.
             </p>
             <div className="row">
               <WalletButton className="btn gold" />
@@ -245,8 +244,8 @@ export default function Landing() {
             <Link href="/wallet">Wallet</Link>
           </nav>
           <p className="muted small">
-            © {new Date().getFullYear()} {BRAND.name}. Free play is available to everyone. Token play will open only where permitted and only
-            for adults (18+). Please play responsibly.
+            © {new Date().getFullYear()} {BRAND.name}. Free play is available to everyone. Token play will open only where permitted and only for adults (18+).
+            Please play responsibly.
           </p>
         </div>
       </footer>

@@ -55,6 +55,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async: state is set after the request returns
     load();
     const t = window.setInterval(() => document.visibilityState === "visible" && load(), POLL_MS);
     return () => window.clearInterval(t);
@@ -251,7 +252,9 @@ export default function Home() {
               </svg>
             </span>
             <strong>Watch live</strong>
-            <span className="muted small">{pulse.live} match{pulse.live === 1 ? "" : "es"} in progress</span>
+            <span className="muted small">
+              {pulse.live} match{pulse.live === 1 ? "" : "es"} in progress
+            </span>
           </Link>
         </div>
         {error && <p className="err small">{error}</p>}

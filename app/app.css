@@ -96,7 +96,9 @@ a.mode-tile {
 }
 .toast-card.ok {
   border-color: rgb(101 226 188 / 0.55);
-  box-shadow: var(--shadow), 0 0 30px -8px rgb(101 226 188 / 0.6);
+  box-shadow:
+    var(--shadow),
+    0 0 30px -8px rgb(101 226 188 / 0.6);
 }
 .toast-card.warn {
   border-color: rgb(244 207 135 / 0.5);
@@ -130,8 +132,7 @@ a.mode-tile {
   border: 1px solid var(--border-soft);
   background:
     radial-gradient(420px 200px at 110% -10%, rgb(101 226 188 / 0.22), transparent 70%),
-    radial-gradient(360px 200px at -10% 120%, rgb(244 207 135 / 0.16), transparent 70%),
-    var(--glass);
+    radial-gradient(360px 200px at -10% 120%, rgb(244 207 135 / 0.16), transparent 70%), var(--glass);
   box-shadow: var(--shadow);
 }
 .home-hero::after {
@@ -312,8 +313,7 @@ a.mode-tile {
   border: 1px solid rgb(101 226 188 / 0.35);
   background:
     radial-gradient(circle, transparent 32%, rgb(101 226 188 / 0.18) 33%, transparent 34%),
-    radial-gradient(circle, transparent 64%, rgb(101 226 188 / 0.14) 65%, transparent 66%),
-    radial-gradient(circle, rgb(101 226 188 / 0.1), transparent 70%);
+    radial-gradient(circle, transparent 64%, rgb(101 226 188 / 0.14) 65%, transparent 66%), radial-gradient(circle, rgb(101 226 188 / 0.1), transparent 70%);
   overflow: hidden;
 }
 .radar::before {
@@ -651,7 +651,9 @@ a.mode-tile {
   gap: 4%;
   border-radius: 16%;
   background: radial-gradient(circle at 30% 25%, #fffdf7, #efe4cf 70%);
-  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08), inset 0 -6px 12px rgb(0 0 0 / 0.12);
+  box-shadow:
+    inset 0 0 0 1px rgb(0 0 0 / 0.08),
+    inset 0 -6px 12px rgb(0 0 0 / 0.12);
   backface-visibility: hidden;
 }
 .die3d .face i {
@@ -1393,7 +1395,10 @@ html[data-reduced-motion="true"]::view-transition-group(*) {
 .play-tile.primary {
   min-height: 168px;
   border-color: rgb(101 226 188 / 0.5);
-  box-shadow: var(--shadow), 0 0 0 1px rgb(101 226 188 / 0.25), 0 16px 44px -18px rgb(101 226 188 / 0.55);
+  box-shadow:
+    var(--shadow),
+    0 0 0 1px rgb(101 226 188 / 0.25),
+    0 16px 44px -18px rgb(101 226 188 / 0.55);
 }
 .play-tile:disabled {
   cursor: wait;
@@ -1460,7 +1465,9 @@ html[data-reduced-motion="true"]::view-transition-group(*) {
   border-radius: 50%;
   background: rgb(255 255 255 / 0.14);
   backdrop-filter: blur(6px);
-  transition: transform var(--dur) var(--ease-spring), background var(--dur-fast);
+  transition:
+    transform var(--dur) var(--ease-spring),
+    background var(--dur-fast);
 }
 .play-tile.primary .play-tile-arrow {
   background: var(--action);

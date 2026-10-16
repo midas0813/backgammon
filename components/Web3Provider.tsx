@@ -10,15 +10,14 @@ import {
 } from "@rainbow-me/rainbowkit";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { createSiweMessage } from "viem/siwe";
 import { WagmiProvider, useAccount, useDisconnect } from "wagmi";
 import { base } from "wagmi/chains";
 import { refreshMe, setMe, useMe, type Profile } from "@/lib/client/me";
 import { wagmiConfig } from "@/lib/client/wagmi";
 
-const STATEMENT =
-  "Sign in to Backgammon. This free signature proves you own this wallet. It does not send a transaction, cost gas or move funds.";
+const STATEMENT = "Sign in to Backgammon. This free signature proves you own this wallet. It does not send a transaction, cost gas or move funds.";
 
 export async function signOutEverywhere() {
   await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
@@ -37,58 +36,60 @@ function AccountGuard() {
   return null;
 }
 
+const inTenMinutes = () => new Date(Date.now() + 10 * 60 * 1000);
+
+/** Navigation and wallet disconnect for the sign-in adapter, kept current by <Auth>. */
+const authHooks: { router: ReturnType<typeof useRouter> | null; disconnect: () => void } = { router: null, disconnect: () => {} };
+
+/** Sign-In with Ethereum for RainbowKit: one adapter for the app's lifetime. */
+const adapter = createAuthenticationAdapter({
+  getNonce: async () => {
+    const res = await fetch("/api/auth/nonce", { cache: "no-store" });
+    if (!res.ok) throw new Error("Could not start sign-in");
+    return res.text();
+  },
+  createMessage: ({ nonce, address, chainId }) =>
+    createSiweMessage({
+      domain: window.location.host,
+      address,
+      statement: STATEMENT,
+      uri: window.location.origin,
+      version: "1",
+      chainId,
+      nonce,
+      issuedAt: new Date(),
+      expirationTime: inTenMinutes(),
+    }),
+  verify: async ({ message, signature }) => {
+    const res = await fetch("/api/auth/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, signature }),
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { isNew: boolean; profile: Profile };
+    setMe(data.profile);
+    // New wallet = new account: let the player pick a name and photo first.
+    if (data.isNew) authHooks.router?.push("/welcome");
+    else authHooks.router?.refresh();
+    return true;
+  },
+  signOut: async () => {
+    await signOutEverywhere();
+    authHooks.disconnect();
+  },
+});
+
 function Auth({ children }: { children: React.ReactNode }) {
   const me = useMe();
   const router = useRouter();
-  const routerRef = useRef(router);
-  routerRef.current = router;
   const { disconnect } = useDisconnect();
-  const disconnectRef = useRef(disconnect);
-  disconnectRef.current = disconnect;
+  useEffect(() => {
+    authHooks.router = router;
+    authHooks.disconnect = disconnect;
+  }, [router, disconnect]);
 
   const status: AuthenticationStatus = !me ? "loading" : me.registered ? "authenticated" : "unauthenticated";
-
-  const adapter = useMemo(
-    () =>
-      createAuthenticationAdapter({
-        getNonce: async () => {
-          const res = await fetch("/api/auth/nonce", { cache: "no-store" });
-          if (!res.ok) throw new Error("Could not start sign-in");
-          return res.text();
-        },
-        createMessage: ({ nonce, address, chainId }) =>
-          createSiweMessage({
-            domain: window.location.host,
-            address,
-            statement: STATEMENT,
-            uri: window.location.origin,
-            version: "1",
-            chainId,
-            nonce,
-            issuedAt: new Date(),
-            expirationTime: new Date(Date.now() + 10 * 60 * 1000),
-          }),
-        verify: async ({ message, signature }) => {
-          const res = await fetch("/api/auth/verify", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message, signature }),
-          });
-          if (!res.ok) return false;
-          const data = (await res.json()) as { isNew: boolean; profile: Profile };
-          setMe(data.profile);
-          // New wallet = new account: let the player pick a name and photo first.
-          if (data.isNew) routerRef.current.push("/welcome");
-          else routerRef.current.refresh();
-          return true;
-        },
-        signOut: async () => {
-          await signOutEverywhere();
-          disconnectRef.current();
-        },
-      }),
-    [],
-  );
 
   return (
     <RainbowKitAuthenticationProvider adapter={adapter} status={status}>

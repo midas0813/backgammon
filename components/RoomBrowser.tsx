@@ -56,7 +56,6 @@ export default function RoomBrowser({
   const [data, setData] = useState<PublicTables | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const seen = useRef(new Set<string>());
   const gridRef = useRef<HTMLDivElement>(null);
 
   const query = `/api/tables?view=${view}&sort=${sort}&page=${page}&fee=${fee}${points ? `&points=${points}` : ""}`;
@@ -74,17 +73,20 @@ export default function RoomBrowser({
   }, [query]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async: state is set after the request returns
     load();
     const t = window.setInterval(() => document.visibilityState === "visible" && load(), POLL_MS);
     return () => window.clearInterval(t);
   }, [load]);
 
   // New filter → back to page 1 and the top of the grid.
-  const change = <T,>(set: (v: T) => void) => (v: T) => {
-    set(v);
-    setPage(0);
-    gridRef.current?.scrollTo({ top: 0 });
-  };
+  const change =
+    <T,>(set: (v: T) => void) =>
+    (v: T) => {
+      set(v);
+      setPage(0);
+      gridRef.current?.scrollTo({ top: 0 });
+    };
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -98,16 +100,18 @@ export default function RoomBrowser({
   }, [onClose]);
 
   const tables = data?.view === view ? data.tables : [];
-  const fresh = new Set(tables.filter((t) => !seen.current.has(t.matchId)).map((t) => t.matchId));
-  useEffect(() => {
-    for (const t of tables) seen.current.add(t.matchId);
-  });
 
   const feeLabel = (units: number) => (units === 0 ? "Free" : `${formatTokens(units)} tokens`);
 
   return createPortal(
     <div className="rb-backdrop" onClick={onClose}>
-      <section className="rb" role="dialog" aria-modal="true" aria-label={view === "open" ? "Find a game" : "Live matches"} onClick={(e) => e.stopPropagation()}>
+      <section
+        className="rb"
+        role="dialog"
+        aria-modal="true"
+        aria-label={view === "open" ? "Find a game" : "Live matches"}
+        onClick={(e) => e.stopPropagation()}
+      >
         <header className="rb-head">
           <div className="rb-tabs" role="tablist">
             <button role="tab" aria-selected={view === "open"} onClick={() => change(setView)("open")}>
@@ -180,7 +184,9 @@ export default function RoomBrowser({
               <span className="radar" aria-hidden />
               <strong>{view === "open" ? "No open tables match these filters" : "No live matches to watch right now"}</strong>
               <span className="muted small">
-                {view === "open" ? "Open your own table and the next player can join you. This list updates live." : "Matches appear here as soon as players start them."}
+                {view === "open"
+                  ? "Open your own table and the next player can join you. This list updates live."
+                  : "Matches appear here as soon as players start them."}
               </span>
               {view === "open" && (
                 <button className="btn primary" onClick={onCreate}>
@@ -193,7 +199,7 @@ export default function RoomBrowser({
               {tables.map((t, i) => {
                 const mine = myIds.has(t.matchId);
                 return (
-                  <article key={t.matchId} className={`room-card${fresh.has(t.matchId) ? " enter" : ""}`} style={{ animationDelay: `${(i % 8) * 35}ms` }}>
+                  <article key={t.matchId} className="room-card enter" style={{ animationDelay: `${(i % 8) * 35}ms` }}>
                     <div className="room-top">
                       <span className="room-badge">{t.targetPoints}-pt</span>
                       <span className={`room-badge ${t.entryFee ? "paid" : "free"}`}>{feeLabel(t.entryFee)}</span>
@@ -216,9 +222,7 @@ export default function RoomBrowser({
                     {view === "open" ? (
                       <div className="room-info">
                         <strong className="ellipsis">{t.host.name}</strong>
-                        <span className="muted small">
-                          {t.hostOnline ? `waiting ${age(t.createdAt, now)}` : "host away · we'll alert them when you join"}
-                        </span>
+                        <span className="muted small">{t.hostOnline ? `waiting ${age(t.createdAt, now)}` : "host away · we'll alert them when you join"}</span>
                       </div>
                     ) : (
                       <div className="room-info">

@@ -80,8 +80,5 @@ export function errorResponse(e: unknown): Response {
     return Response.json({ error: { code: e.code, message: e.message, referenceId, ...e.extra } }, { status: e.status, headers });
   }
   console.error(`[${referenceId}]`, e);
-  return Response.json(
-    { error: { code: "SERVICE_UNAVAILABLE", message: "Something went wrong. Please retry.", referenceId } },
-    { status: 500 },
-  );
+  return Response.json({ error: { code: "SERVICE_UNAVAILABLE", message: "Something went wrong. Please retry.", referenceId } }, { status: 500 });
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Brand } from "@/components/BrandMark";
 import WalletButton from "@/components/WalletButton";
 import { ClientApiError, api } from "@/lib/client/api";
@@ -27,19 +27,37 @@ const SECTIONS = [
   { id: "matches", label: "Matches", perm: "matches.view", icon: "M4 4h16v16H4zM4 12h16M12 4v16" },
   { id: "reports", label: "Reports", perm: "disputes.view", icon: "M4 4h16v12H8l-4 4z" },
   { id: "finance", label: "Finance", perm: "finance.view", icon: "M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" },
-  { id: "settings", label: "Settings", perm: "dashboard.view", icon: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" },
+  {
+    id: "settings",
+    label: "Settings",
+    perm: "dashboard.view",
+    icon: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z",
+  },
   { id: "admins", label: "Admins", perm: "admins.manage", icon: "M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z" },
   { id: "audit", label: "Audit log", perm: "dashboard.view", icon: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" },
 ];
 
-function readHash(): [string, string | undefined] {
-  const [s, id] = window.location.hash.replace(/^#/, "").split("/");
+function parseHash(hash: string): [string, string | undefined] {
+  const [s, id] = hash.replace(/^#/, "").split("/");
   return [s || "dashboard", id || undefined];
+}
+
+/** The section in the address bar (#users/<id>), followed as it changes. */
+function useHash() {
+  return useSyncExternalStore(
+    (cb) => {
+      window.addEventListener("hashchange", cb);
+      return () => window.removeEventListener("hashchange", cb);
+    },
+    () => window.location.hash,
+    () => "",
+  );
 }
 
 export default function AdminApp() {
   const [session, setSession] = useState<Session | null>(null);
-  const [route, setRoute] = useState<[string, string | undefined]>(["dashboard", undefined]);
+  const hash = useHash();
+  const route = useMemo(() => parseHash(hash), [hash]);
   const [unlockError, setUnlockError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [expired, setExpired] = useState(false);
@@ -52,11 +70,8 @@ export default function AdminApp() {
     }
   }, []);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async: state is set after the request returns
     load();
-    setRoute(readHash());
-    const on = () => setRoute(readHash());
-    window.addEventListener("hashchange", on);
-    return () => window.removeEventListener("hashchange", on);
   }, [load]);
 
   // An expired admin session shows the unlock screen again instead of broken sections.
@@ -77,7 +92,8 @@ export default function AdminApp() {
     window.location.hash = id ? `${s}/${id}` : s;
     window.scrollTo({ top: 0 });
   }, []);
-  const ctx = useMemo(() => (session?.admin ? { me: session.admin, sign, open } : null), [session?.admin, sign, open]);
+  const admin = session?.admin ?? null;
+  const ctx = useMemo(() => (admin ? { me: admin, sign, open } : null), [admin, sign, open]);
 
   const unlock = async () => {
     setBusy(true);
@@ -96,7 +112,12 @@ export default function AdminApp() {
     }
   };
 
-  if (!session) return <div className="a-gate"><div className="skeleton" style={{ width: 360, height: 220, borderRadius: 18 }} /></div>;
+  if (!session)
+    return (
+      <div className="a-gate">
+        <div className="skeleton" style={{ width: 360, height: 220, borderRadius: 18 }} />
+      </div>
+    );
 
   if (!ctx) {
     return (
@@ -147,7 +168,17 @@ export default function AdminApp() {
           <nav aria-label="Admin sections">
             {sections.map((s) => (
               <a key={s.id} href={`#${s.id}`} aria-current={section === s.id ? "page" : undefined}>
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <svg
+                  viewBox="0 0 24 24"
+                  width="18"
+                  height="18"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
                   <path d={s.icon} />
                 </svg>
                 {s.label}

@@ -9,7 +9,6 @@ import {
   type AdminSession,
   type Announcement,
   type AuditEntry,
-  type Avatar,
   type ChatMessage,
   type DepositIntent,
   type Dispute,
@@ -130,7 +129,22 @@ export function createMemoryStore(file: string | null): Store {
       data.disputes ??= {};
       data.seen ??= {};
       data.spectators ??= {};
-      for (const k of ["adminRoles", "adminSessions", "adminChallenges", "audit", "settings", "announcements", "disputeNotes", "adjustments", "matchEvents", "matchActions", "results", "counters", "rateLimits", "chat"] as const) {
+      for (const k of [
+        "adminRoles",
+        "adminSessions",
+        "adminChallenges",
+        "audit",
+        "settings",
+        "announcements",
+        "disputeNotes",
+        "adjustments",
+        "matchEvents",
+        "matchActions",
+        "results",
+        "counters",
+        "rateLimits",
+        "chat",
+      ] as const) {
         (data as unknown as Record<string, object>)[k] ??= {};
       }
     }
@@ -170,7 +184,10 @@ export function createMemoryStore(file: string | null): Store {
     };
     const values = <V>(c: Coll): V[] => {
       const ids = new Set([...Object.keys(base[c]), ...(pending[c]?.keys() ?? [])]);
-      return [...ids].map((id) => getRaw<V>(c, id)).filter((v): v is V => v !== undefined).map(clone);
+      return [...ids]
+        .map((id) => getRaw<V>(c, id))
+        .filter((v): v is V => v !== undefined)
+        .map(clone);
     };
     const row = (m: MatchRecord, spectatorsSince: number) =>
       lobbyRow(
@@ -200,7 +217,13 @@ export function createMemoryStore(file: string | null): Store {
           const guests = values<User>("users")
             .filter((u) => !u.walletAddress)
             .filter((u) => (get<number>("seen", u.id) ?? Date.parse(u.createdAt)) < before)
-            .filter((u) => !matches.some((m) => (m.mode === "quick" || m.mode === "private") && (m.state.status === "WAITING" || m.state.status === "ACTIVE") && m.seats.includes(u.id)))
+            .filter(
+              (u) =>
+                !matches.some(
+                  (m) =>
+                    (m.mode === "quick" || m.mode === "private") && (m.state.status === "WAITING" || m.state.status === "ACTIVE") && m.seats.includes(u.id),
+                ),
+            )
             .slice(0, limit);
           for (const u of guests) {
             for (const m of matches.filter((m) => m.seats[0] === u.id && (m.mode === "local" || m.mode === "bot" || m.seats[1] === null))) {
@@ -228,7 +251,11 @@ export function createMemoryStore(file: string | null): Store {
         },
         countCreatedSince: async (at) => values<User>("users").filter((u) => Date.parse(u.createdAt) >= at).length,
         countRegistered: async () => values<User>("users").filter((u) => u.walletAddress).length,
-        dailyNew: async (days) => daily(days, values<User>("users").map((u) => Date.parse(u.createdAt))),
+        dailyNew: async (days) =>
+          daily(
+            days,
+            values<User>("users").map((u) => Date.parse(u.createdAt)),
+          ),
       },
       sessions: {
         get: async (token) => get("sessions", token),
@@ -320,8 +347,7 @@ export function createMemoryStore(file: string | null): Store {
             .sort((a, b) => b.updatedAt - a.updatedAt)
             .slice(0, f.limit);
         },
-        countCompletedSince: async (at) =>
-          values<MatchRecord>("matches").filter((m) => m.completedAt && Date.parse(m.completedAt) >= at).length,
+        countCompletedSince: async (at) => values<MatchRecord>("matches").filter((m) => m.completedAt && Date.parse(m.completedAt) >= at).length,
         dailyCompleted: async (days) =>
           daily(
             days,
@@ -555,15 +581,13 @@ export function createMemoryStore(file: string | null): Store {
         listAudit: async (f) =>
           values<AuditEntry>("audit")
             .filter(
-              (e) =>
-                (!f.actorId || e.actorId === f.actorId) &&
-                (!f.targetType || e.targetType === f.targetType) &&
-                (!f.targetId || e.targetId === f.targetId),
+              (e) => (!f.actorId || e.actorId === f.actorId) && (!f.targetType || e.targetType === f.targetType) && (!f.targetId || e.targetId === f.targetId),
             )
             .sort((a, b) => (b.id ?? 0) - (a.id ?? 0))
             .slice(0, f.limit),
-        getSetting: async <T,>(key: string) => get<T>("settings", key),
-        allSettings: async () => Object.fromEntries(Object.keys({ ...base.settings, ...Object.fromEntries(pending.settings ?? []) }).map((k) => [k, get("settings", k)])),
+        getSetting: async <T>(key: string) => get<T>("settings", key),
+        allSettings: async () =>
+          Object.fromEntries(Object.keys({ ...base.settings, ...Object.fromEntries(pending.settings ?? []) }).map((k) => [k, get("settings", k)])),
         putSetting: async (key, value) => put("settings", key, value),
         listAnnouncements: async () => values<Announcement>("announcements").sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
         putAnnouncement: async (a) => put("announcements", a.id, a),
@@ -604,5 +628,3 @@ export function createMemoryStore(file: string | null): Store {
     },
   };
 }
-
-export type { Avatar };

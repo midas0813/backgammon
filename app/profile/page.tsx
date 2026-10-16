@@ -9,7 +9,7 @@ import WalletButton, { shortAddress } from "@/components/WalletButton";
 import { signOutEverywhere } from "@/components/Web3Provider";
 import SupportCard from "@/components/SupportCard";
 import ThemePicker from "@/components/ThemePicker";
-import { ClientApiError, api } from "@/lib/client/api";
+import { api } from "@/lib/client/api";
 import { uploadAvatar } from "@/lib/client/avatar";
 import { setMe, useMe, type Profile } from "@/lib/client/me";
 
@@ -189,7 +189,12 @@ export default function ProfilePage() {
             </label>
             <label>
               Bio
-              <textarea value={form.bio} maxLength={160} onChange={(e) => setForm({ ...form, bio: e.target.value })} placeholder="Favourite opening? Cube style?" />
+              <textarea
+                value={form.bio}
+                maxLength={160}
+                onChange={(e) => setForm({ ...form, bio: e.target.value })}
+                placeholder="Favourite opening? Cube style?"
+              />
               <span className="small" style={{ alignSelf: "flex-end" }}>
                 {form.bio.length}/160
               </span>
@@ -280,7 +285,8 @@ export default function ProfilePage() {
                       vs {h.opponent}
                     </span>
                     <span className="muted small">
-                      {new Date(h.date).toLocaleDateString()} · {h.targetPoints}-pt{h.reason === "forfeit" ? " · forfeit" : h.reason === "abandoned" ? " · abandoned" : ""}
+                      {new Date(h.date).toLocaleDateString()} · {h.targetPoints}-pt
+                      {h.reason === "forfeit" ? " · forfeit" : h.reason === "abandoned" ? " · abandoned" : ""}
                     </span>
                   </span>
                 </span>
@@ -345,8 +351,8 @@ export default function ProfilePage() {
             </div>
             <p className="muted small">
               This address is your account. Signed in on {CHAIN_NAMES[me.chainId ?? 0] ?? "an EVM network"}
-              {me.registeredAt ? ` · member since ${new Date(me.registeredAt).toLocaleDateString()}` : ""}. Keep your wallet&apos;s recovery
-              phrase safe — without the wallet you can&apos;t sign in.
+              {me.registeredAt ? ` · member since ${new Date(me.registeredAt).toLocaleDateString()}` : ""}. Keep your wallet&apos;s recovery phrase safe —
+              without the wallet you can&apos;t sign in.
             </p>
           </>
         ) : (

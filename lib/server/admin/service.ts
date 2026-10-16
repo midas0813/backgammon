@@ -136,7 +136,8 @@ export async function suspendUser(ctx: AdminContext, userId: string, body: { rea
   need(ctx, "users.moderate");
   const reason = cleanReason(body.reason);
   const days = body.days === null || body.days === undefined || body.days === "" ? null : Number(body.days);
-  if (days !== null && (!Number.isInteger(days) || days < 1 || days > 3650)) throw new ApiError(400, "INVALID_INPUT", "Days must be 1–3650, or empty for no end date");
+  if (days !== null && (!Number.isInteger(days) || days < 1 || days > 3650))
+    throw new ApiError(400, "INVALID_INPUT", "Days must be 1–3650, or empty for no end date");
   const signature = await stepUp(ctx, body, { action: "USER_SUSPEND", target: `user:${userId}`, reason });
   return tx(async (t) => {
     const u = await targetUser(t, ctx, userId);
@@ -245,7 +246,16 @@ export function matchDetail(_ctx: AdminContext, matchId: string) {
         wallet: id && users[id] ? (users[id].walletAddress ?? null) : null,
         bot: id === "bot",
       })),
-      game: m.state.game ? { board: m.state.game.board, phase: m.state.game.phase, turn: m.state.game.turn, dice: m.state.game.dice, cubeValue: m.state.game.cubeValue, gameNumber: m.state.game.gameNumber } : null,
+      game: m.state.game
+        ? {
+            board: m.state.game.board,
+            phase: m.state.game.phase,
+            turn: m.state.game.turn,
+            dice: m.state.game.dice,
+            cubeValue: m.state.game.cubeValue,
+            gameNumber: m.state.game.gameNumber,
+          }
+        : null,
       events: await t.matches.events(matchId, {}),
       chat: await chatForAdmin(t, matchId),
       audit: await t.admin.listAudit({ targetType: "match", targetId: matchId, limit: 20 }),
@@ -283,7 +293,13 @@ export function removeChatMessage(ctx: AdminContext, matchId: string, body: { me
     const m = await t.chat.get(id);
     if (!m || m.matchId !== matchId) throw notFound("Message");
     await t.chat.remove(id, ctx.userId);
-    await writeAudit(t, ctx, { action: "CHAT_REMOVE", targetType: "match", targetId: matchId, reason, details: { messageId: id, author: m.name, body: m.body } });
+    await writeAudit(t, ctx, {
+      action: "CHAT_REMOVE",
+      targetType: "match",
+      targetId: matchId,
+      reason,
+      details: { messageId: id, author: m.name, body: m.body },
+    });
     t.afterCommit(() => publish(matchId, "chat", { removed: id }));
     return { removed: id };
   });
@@ -475,7 +491,14 @@ export async function grantRole(ctx: AdminContext, body: { wallet?: unknown; rol
     if (isSuspended(target)) throw new ApiError(409, "WRONG_PHASE", "This account is suspended");
     const before = await t.admin.activeRole(target.id);
     await t.admin.grantRole(target.id, role, ctx.userId);
-    await writeAudit(t, ctx, { action: "ROLE_GRANT", targetType: "user", targetId: target.id, reason, signature, details: { from: before?.role ?? null, to: role } });
+    await writeAudit(t, ctx, {
+      action: "ROLE_GRANT",
+      targetType: "user",
+      targetId: target.id,
+      reason,
+      signature,
+      details: { from: before?.role ?? null, to: role },
+    });
     return { userId: target.id, role };
   });
 }
@@ -511,8 +534,21 @@ export function financeOverview(ctx: AdminContext) {
       systemAccounts: Object.entries(dump.balances)
         .filter(([a]) => a.startsWith("system:"))
         .map(([account, balance]) => ({ account, balance })),
-      deposits: (await t.deposits.listAll({ limit: 50 })).map((d) => ({ id: d.id, userId: d.userId, method: d.method, tokenUnits: d.tokenUnits, status: d.status, createdAt: d.createdAt })),
-      withdrawals: (await t.withdrawals.listAll({ limit: 50 })).map((w) => ({ id: w.id, userId: w.userId, amountUnits: w.amountUnits, status: w.status, createdAt: w.createdAt })),
+      deposits: (await t.deposits.listAll({ limit: 50 })).map((d) => ({
+        id: d.id,
+        userId: d.userId,
+        method: d.method,
+        tokenUnits: d.tokenUnits,
+        status: d.status,
+        createdAt: d.createdAt,
+      })),
+      withdrawals: (await t.withdrawals.listAll({ limit: 50 })).map((w) => ({
+        id: w.id,
+        userId: w.userId,
+        amountUnits: w.amountUnits,
+        status: w.status,
+        createdAt: w.createdAt,
+      })),
       adjustments: adjustments.map((a) => ({
         ...a,
         userName: users[a.userId]?.name ?? "Unknown",
@@ -551,7 +587,14 @@ export async function requestAdjustment(
       requestedAt: new Date().toISOString(),
     };
     await t.admin.putAdjustment(a);
-    await writeAudit(t, ctx, { action: "ADJUST_REQUEST", targetType: "adjustment", targetId: a.id, reason, signature, details: { userId, accountKind, amount } });
+    await writeAudit(t, ctx, {
+      action: "ADJUST_REQUEST",
+      targetType: "adjustment",
+      targetId: a.id,
+      reason,
+      signature,
+      details: { userId, accountKind, amount },
+    });
     return { adjustment: a };
   });
 }
@@ -590,7 +633,13 @@ export async function decideAdjustment(ctx: AdminContext, id: string, body: { ap
       }
     }
     await t.admin.putAdjustment(a);
-    await writeAudit(t, ctx, { action, targetType: "adjustment", targetId: id, signature, details: { userId: a.userId, amount: a.amount, accountKind: a.accountKind } });
+    await writeAudit(t, ctx, {
+      action,
+      targetType: "adjustment",
+      targetId: id,
+      signature,
+      details: { userId: a.userId, amount: a.amount, accountKind: a.accountKind },
+    });
     return { adjustment: a };
   });
 }

@@ -2,19 +2,7 @@
  * Match and game state machine (spec 02-backend "State machines" and "Cube").
  * Pure: dice come from an injected `roll` function so tests can be deterministic.
  */
-import {
-  Board,
-  Move,
-  Seat,
-  applyMove,
-  assertInvariants,
-  classifyOutcome,
-  diceUses,
-  initialBoard,
-  legalSequences,
-  matchSequence,
-  other,
-} from "./board";
+import { Board, Move, Seat, applyMove, assertInvariants, classifyOutcome, diceUses, initialBoard, legalSequences, matchSequence, other } from "./board";
 
 export const RULES_VERSION = "bg-rules-1.0";
 export const CUBE_CAP = 128; // proposed house rule; offer to 256 is rejected
@@ -96,7 +84,10 @@ export type ErrorCode =
   | "CONFIRMATION_REQUIRED";
 
 export class GameError extends Error {
-  constructor(public code: ErrorCode, message: string) {
+  constructor(
+    public code: ErrorCode,
+    message: string,
+  ) {
     super(message);
   }
 }

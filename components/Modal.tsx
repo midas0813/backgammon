@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { createPortal } from "react-dom";
+import { useMounted } from "@/lib/client/hooks";
 
 /**
  * Rendered into <body>: inside an animated page container the fixed backdrop would be positioned
  * against that container and painted under the header and bottom tabs.
  */
 export default function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useMounted();
   useEffect(() => {
     const h = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", h);

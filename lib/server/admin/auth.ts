@@ -35,7 +35,17 @@ export type Permission =
 
 const READ: Permission[] = ["dashboard.view", "users.view", "matches.view", "disputes.view"];
 export const PERMISSIONS: Record<AdminRole, Permission[]> = {
-  owner: [...READ, "users.moderate", "matches.manage", "disputes.manage", "finance.view", "finance.adjust", "settings.manage", "admins.manage", "audit.view.all"],
+  owner: [
+    ...READ,
+    "users.moderate",
+    "matches.manage",
+    "disputes.manage",
+    "finance.view",
+    "finance.adjust",
+    "settings.manage",
+    "admins.manage",
+    "audit.view.all",
+  ],
   operator: [...READ, "users.moderate", "matches.manage", "disputes.manage"],
   finance: [...READ, "finance.view", "finance.adjust"],
   viewer: [...READ],
@@ -115,7 +125,13 @@ function challengeMessage(user: User, nonce: string, d: ChallengeDetails, issued
 }
 
 export function cleanReason(v: unknown, required = true): string {
-  const r = typeof v === "string" ? v.replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 300) : "";
+  const r =
+    typeof v === "string"
+      ? v
+          .replace(/[\u0000-\u001f]/g, " ")
+          .trim()
+          .slice(0, 300)
+      : "";
   if (required && r.length < 3) throw new ApiError(400, "INVALID_INPUT", "Please give a reason (at least 3 characters)");
   return r;
 }
@@ -131,9 +147,7 @@ export async function createChallenge(user: User, d: ChallengeDetails): Promise<
   const expires = new Date(issued.getTime() + CHALLENGE_MS);
   const details = { action: d.action, target: d.target ?? "", reason: d.reason ?? "" };
   const message = challengeMessage(user, nonce, d, issued, expires);
-  await tx((t) =>
-    t.admin.putChallenge({ nonce, userId: user.id, purpose: d.action, message, details, expiresAt: expires.getTime() } satisfies AdminChallenge),
-  );
+  await tx((t) => t.admin.putChallenge({ nonce, userId: user.id, purpose: d.action, message, details, expiresAt: expires.getTime() } satisfies AdminChallenge));
   return { nonce, message, expiresAt: expires.toISOString() };
 }
 
@@ -166,12 +180,16 @@ export async function adminSignIn(user: User, body: { nonce?: unknown; signature
     let role = await t.admin.activeRole(user.id);
     if (!role && !(await t.admin.everHadRole(user.id)) && bootstrapWallets().has(user.walletAddress!.toLowerCase())) {
       await t.admin.grantRole(user.id, "owner", null);
-      await writeAudit(t, { userId: user.id, role: "owner", ...meta }, {
-        action: "ADMIN_BOOTSTRAP_OWNER",
-        targetType: "user",
-        targetId: user.id,
-        details: { wallet: user.walletAddress },
-      });
+      await writeAudit(
+        t,
+        { userId: user.id, role: "owner", ...meta },
+        {
+          action: "ADMIN_BOOTSTRAP_OWNER",
+          targetType: "user",
+          targetId: user.id,
+          details: { wallet: user.walletAddress },
+        },
+      );
       role = await t.admin.activeRole(user.id);
     }
     if (!role) return null;
@@ -226,7 +244,11 @@ export async function adminSignOut(ctx: AdminContext) {
 }
 
 /** Check the step-up signature for a risky action. Returns the signature for the audit record. */
-export async function stepUp(ctx: AdminContext, body: { nonce?: unknown; signature?: unknown }, expect: { action: StepUpAction; target: string; reason?: string }) {
+export async function stepUp(
+  ctx: AdminContext,
+  body: { nonce?: unknown; signature?: unknown },
+  expect: { action: StepUpAction; target: string; reason?: string },
+) {
   const user = await tx((t) => t.users.get(ctx.userId));
   if (!user) throw new ApiError(401, "UNAUTHENTICATED", "Admin session ended");
   return consume(user, body, expect);

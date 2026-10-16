@@ -22,7 +22,10 @@ export const ALREADY_IN_GAME_EVENT = "bg:already-in-game";
 export const isHandled = (e: unknown) => e instanceof ClientApiError && e.code === "ALREADY_IN_GAME";
 
 export class ClientApiError extends Error {
-  constructor(public status: number, public body: ApiErrorBody) {
+  constructor(
+    public status: number,
+    public body: ApiErrorBody,
+  ) {
     super(body.message);
   }
   get code() {
@@ -55,9 +58,7 @@ export async function api<T>(path: string, init?: { method?: string; body?: unkn
 }
 
 export const newActionId = () =>
-  typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
 /**
  * Send an action with one stable actionId; on a network failure retry with the same ID, which the

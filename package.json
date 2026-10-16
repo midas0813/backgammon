@@ -8,7 +8,11 @@
     "start": "next start",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "test:pg": "BG_STORE=pglite vitest run --no-file-parallelism"
+    "test:pg": "BG_STORE=pglite vitest run --no-file-parallelism",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "knip": "knip"
   },
   "dependencies": {
     "@rainbow-me/rainbowkit": "2.2.11",
@@ -26,6 +30,10 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "eslint": "10.10.0",
+    "eslint-config-next": "16.4.0",
+    "knip": "6.39.0",
+    "prettier": "3.9.9",
     "typescript": "^5",
     "vitest": "^4.1.11"
   },

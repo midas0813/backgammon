@@ -1,8 +1,9 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { api } from "@/lib/client/api";
+import { useLatest } from "@/lib/client/hooks";
 import { useMe } from "@/lib/client/me";
 import { sounds } from "@/lib/client/sound";
 import { onTablesChange, unwatchTable, watchedTables } from "@/lib/client/tables";
@@ -17,10 +18,8 @@ export default function TableWatcher() {
   const router = useRouter();
   const pathname = usePathname();
   const me = useMe();
-  const pathRef = useRef(pathname);
-  pathRef.current = pathname;
-  const soundRef = useRef(true);
-  soundRef.current = me?.sound ?? true;
+  const pathRef = useLatest(pathname);
+  const soundRef = useLatest(me?.sound ?? true);
 
   useEffect(() => {
     let timer: number | undefined;
@@ -71,6 +70,6 @@ export default function TableWatcher() {
       off();
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [router]);
+  }, [router, pathRef, soundRef]);
   return null;
 }

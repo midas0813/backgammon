@@ -6,15 +6,7 @@
 export type DepositMethod = "CARD" | "STABLECOIN";
 
 export type DepositStatus = "CREATED" | "PENDING" | "CONFIRMED" | "CREDITED" | "EXPIRED" | "FAILED" | "REVIEW";
-export type WithdrawalStatus =
-  | "REQUESTED"
-  | "PENDING_REVIEW"
-  | "APPROVED"
-  | "PROCESSING"
-  | "PAID"
-  | "REJECTED"
-  | "CANCELLED"
-  | "FAILED";
+export type WithdrawalStatus = "REQUESTED" | "PENDING_REVIEW" | "APPROVED" | "PROCESSING" | "PAID" | "REJECTED" | "CANCELLED" | "FAILED";
 
 export interface NormalizedPaymentEvent {
   eventId: string; // unique per provider event; used for deduplication

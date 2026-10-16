@@ -11,7 +11,13 @@ export async function GET() {
       {
         wallet: user.walletAddress ?? null,
         admin: admin
-          ? { name: admin.name, wallet: admin.wallet, role: admin.role, permissions: PERMISSIONS[admin.role], since: new Date(admin.sessionCreatedAt).toISOString() }
+          ? {
+              name: admin.name,
+              wallet: admin.wallet,
+              role: admin.role,
+              permissions: PERMISSIONS[admin.role],
+              since: new Date(admin.sessionCreatedAt).toISOString(),
+            }
           : null,
       },
       { headers: { "Cache-Control": "no-store" } },

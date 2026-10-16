@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useId, useRef } from "react";
+import { createContext, useContext, useId, useState } from "react";
 import { absIndex, type Board as BoardState, type Seat } from "@/lib/engine/board";
 import { BOARD, type BoardTheme } from "@/lib/client/theme";
 
@@ -129,11 +129,7 @@ function computeMotions(board: BoardState, viewer: Seat, moves: AnimMove[]): Map
     return [TRAY_X + TRAY_W / 2, trayY(loc.lower, index) + 5];
   };
   const countAt = (seat: Seat, loc: Loc) =>
-    loc.kind === "point"
-      ? countAtViewer(board, viewer, seat, loc.rel)
-      : loc.kind === "bar"
-        ? board.bar[seat]
-        : board.off[seat];
+    loc.kind === "point" ? countAtViewer(board, viewer, seat, loc.rel) : loc.kind === "bar" ? board.bar[seat] : board.off[seat];
   const arrivals = new Map<string, number>();
 
   // Later arrivals sit on top, so assign stack indexes from the last path backwards.
@@ -185,7 +181,14 @@ function Checker({
   const style = motion ? ({ "--dx": `${motion.dx}px`, "--dy": `${motion.dy}px`, "--delay": `${motion.delay}ms` } as React.CSSProperties) : undefined;
   return (
     <g className={`checker ${motion ? "arrive" : ""} ${className ?? ""}`} style={style} filter={`url(#${gid}shadow)`}>
-      <circle cx={cx} cy={cy} r={R - 1} fill={`url(#${gid}${white ? "cw" : "cb"})`} stroke={white ? BOARD.whiteCheckerOutline : BOARD.blackCheckerOutline} strokeWidth={2} />
+      <circle
+        cx={cx}
+        cy={cy}
+        r={R - 1}
+        fill={`url(#${gid}${white ? "cw" : "cb"})`}
+        stroke={white ? BOARD.whiteCheckerOutline : BOARD.blackCheckerOutline}
+        strokeWidth={2}
+      />
       <circle cx={cx} cy={cy} r={R - 8} fill="none" stroke={white ? BOARD.whiteCheckerOutline : BOARD.blackCheckerOutline} strokeOpacity={0.55} />
       <circle cx={cx} cy={cy} r={R - 12} fill="none" stroke={white ? "#fff" : "#8DA2BC"} strokeOpacity={0.18} />
       {label && (
@@ -205,11 +208,36 @@ function Die({ x, y, value, used, rollKey, delay }: { x: number; y: number; valu
     Rr = 0.75;
   const layouts: Record<number, [number, number][]> = {
     1: [[C, C]],
-    2: [[L, L], [Rr, Rr]],
-    3: [[L, L], [C, C], [Rr, Rr]],
-    4: [[L, L], [Rr, L], [L, Rr], [Rr, Rr]],
-    5: [[L, L], [Rr, L], [C, C], [L, Rr], [Rr, Rr]],
-    6: [[L, L], [Rr, L], [L, C], [Rr, C], [L, Rr], [Rr, Rr]],
+    2: [
+      [L, L],
+      [Rr, Rr],
+    ],
+    3: [
+      [L, L],
+      [C, C],
+      [Rr, Rr],
+    ],
+    4: [
+      [L, L],
+      [Rr, L],
+      [L, Rr],
+      [Rr, Rr],
+    ],
+    5: [
+      [L, L],
+      [Rr, L],
+      [C, C],
+      [L, Rr],
+      [Rr, Rr],
+    ],
+    6: [
+      [L, L],
+      [Rr, L],
+      [L, C],
+      [Rr, C],
+      [L, Rr],
+      [Rr, Rr],
+    ],
   };
   return (
     <g
@@ -241,14 +269,15 @@ export default function Board(p: BoardProps) {
   const tap = (rel: number) => () => p.onTap?.(rel);
   // Each animation plays once. An earlier one handed back (e.g. after an undo) is ignored, otherwise
   // its checkers would remount and visibly repeat a move that is not happening now.
-  const seenAnims = useRef(new Set<string>());
-  const activeAnim = useRef<string | null>(null);
-  const fresh = !!p.anim && (!seenAnims.current.has(p.anim.key) || activeAnim.current === p.anim.key);
-  const anim = fresh ? p.anim! : null;
-  useEffect(() => {
-    if (anim) seenAnims.current.add(anim.key);
-    activeAnim.current = anim?.key ?? null;
-  });
+  // (State adjusted during render, React's pattern for remembering earlier renders: no flash of the
+  // final position before the animation starts.)
+  const [anims, setAnims] = useState<{ seen: ReadonlySet<string>; active: string | null }>({ seen: new Set(), active: null });
+  const key = p.anim?.key ?? null;
+  const activeKey = key !== null && (!anims.seen.has(key) || anims.active === key) ? key : null;
+  if (activeKey !== anims.active || (activeKey !== null && !anims.seen.has(activeKey))) {
+    setAnims({ seen: activeKey !== null ? new Set([...anims.seen, activeKey]) : anims.seen, active: activeKey });
+  }
+  const anim = activeKey !== null ? p.anim! : null;
   const motions = anim ? computeMotions(board, viewer, anim.moves) : new Map<string, Motion>();
   const animKey = anim?.key ?? "";
 
@@ -278,7 +307,16 @@ export default function Board(p: BoardProps) {
           />
         )}
         {selected && (
-          <rect x={cx - COL / 2 + 1} y={top ? TOP : BOTTOM - TRI_H - 14} width={COL - 2} height={TRI_H + 14} fill="none" stroke="#F7F1E6" strokeWidth={3} rx={6} />
+          <rect
+            x={cx - COL / 2 + 1}
+            y={top ? TOP : BOTTOM - TRI_H - 14}
+            width={COL - 2}
+            height={TRI_H + 14}
+            fill="none"
+            stroke="#F7F1E6"
+            strokeWidth={3}
+            rx={6}
+          />
         )}
         <text
           x={cx}
@@ -376,7 +414,16 @@ export default function Board(p: BoardProps) {
     }
     if (n > 0) {
       trays.push(
-        <text key={`offn${seat}`} x={TRAY_X + TRAY_W / 2} y={lower ? BOTTOM - 14 - n * 13 : TOP + 22 + n * 13} {...unflip(mirror, TRAY_X + TRAY_W / 2)} textAnchor="middle" fontSize={14} fontWeight={800} fill="#EDF3F9">
+        <text
+          key={`offn${seat}`}
+          x={TRAY_X + TRAY_W / 2}
+          y={lower ? BOTTOM - 14 - n * 13 : TOP + 22 + n * 13}
+          {...unflip(mirror, TRAY_X + TRAY_W / 2)}
+          textAnchor="middle"
+          fontSize={14}
+          fontWeight={800}
+          fill="#EDF3F9"
+        >
           {n}
         </text>,
       );
@@ -435,92 +482,112 @@ export default function Board(p: BoardProps) {
         </filter>
       </defs>
       <MirrorCtx.Provider value={mirror}>
-      <g transform={mirror ? `matrix(-1 0 0 1 ${W} 0)` : undefined}>
-
-      <rect x={0} y={0} width={W} height={H} rx={18} fill={`url(#${gid}frame)`} />
-      <rect x={F - 4} y={TOP - 6} width={W - 2 * F + 8} height={PLAY_H + 12} rx={12} fill={`url(#${gid}felt)`} />
-      <rect x={F - 4} y={TOP - 6} width={W - 2 * F + 8} height={PLAY_H + 12} rx={12} fill={`url(#${gid}grain)`} />
-      <rect x={0.5} y={0.5} width={W - 1} height={H - 1} rx={18} fill="none" stroke="#fff" strokeOpacity={0.12} />
-      {points}
-      <rect x={BAR_X} y={TOP - 4} width={BAR_W} height={PLAY_H + 8} fill={`url(#${gid}bar)`} rx={5} />
-      <rect x={TRAY_X} y={TOP} width={TRAY_W} height={PLAY_H / 2 - 8} fill={`url(#${gid}bar)`} rx={8} />
-      <rect
-        x={TRAY_X}
-        y={MID + 8}
-        width={TRAY_W}
-        height={PLAY_H / 2 - 8}
-        fill={`url(#${gid}bar)`}
-        rx={8}
-        className={offTarget !== undefined ? "pulse" : undefined}
-        stroke={offTarget !== undefined ? BOARD.legalDestination : "none"}
-        strokeWidth={4}
-      />
-      {offTarget !== undefined && (
-        <text x={TRAY_X + TRAY_W / 2} y={MID + 34} {...unflip(mirror, TRAY_X + TRAY_W / 2)} textAnchor="middle" fontSize={13} fontWeight={800} fill={BOARD.legalDestination}>
-          OFF
-        </text>
-      )}
-      {trays}
-      {checkers}
-      {barCheckers}
-
-      <g key={`cube${p.cube.value}`} className={`cube ${p.cube.value > 1 ? "pop" : ""}`} aria-label={`Cube ${p.cube.value}`} opacity={p.cube.disabled ? 0.45 : 1}>
-        <rect x={cubeX + 1} y={cubeY + 3} width={40} height={40} rx={7} fill="#000" opacity={0.35} />
-        <rect x={cubeX} y={cubeY} width={40} height={40} rx={7} fill="#F7F1E6" stroke="#0B1220" strokeWidth={2} />
-        <text x={cubeX + 20} y={cubeY + 27} {...unflip(mirror, cubeX + 20)} textAnchor="middle" fontSize={p.cube.value >= 100 ? 15 : 19} fontWeight={800} fill="#0B1220">
-          {p.cube.value}
-        </text>
-      </g>
-
-      {p.dice && (
-        <g>
-          {p.dice.map((d, i) => (
-            <Die
-              key={`${p.rollKey ?? "d"}-${i}`}
-              rollKey={p.rollKey ? `${p.rollKey}-${i}` : undefined}
-              delay={i * 90}
-              x={diceX + (i % 2) * 48}
-              y={MID - 20 + (p.dice!.length > 2 ? (i < 2 ? -22 : 22) : 0)}
-              value={d.value}
-              used={d.used}
-            />
-          ))}
-        </g>
-      )}
-
-      {/* Destination labels (shape + text, not colour alone) */}
-      {[...p.targets.entries()]
-        .filter(([rel]) => rel !== 0)
-        .map(([rel, label]) => {
-          const cx = colX(rel);
-          const y = isTop(rel) ? TOP + TRI_H + 22 : BOTTOM - TRI_H - 22;
-          return (
-            <g key={`lbl${rel}`} className="tag">
-              <rect x={cx - 17} y={y - 14} width={34} height={22} rx={11} fill={BOARD.legalDestination} />
-              <text x={cx} y={y + 2} {...unflip(mirror, cx)} textAnchor="middle" fontSize={13} fontWeight={800} fill="#0B1220">
-                {label}
-              </text>
-            </g>
-          );
-        })}
-
-      {/* Tap targets: each point spans its full half-height so precise checker taps are not required. */}
-      {p.onTap &&
-        Array.from({ length: 24 }, (_, i) => i + 1).map((rel) => (
+        <g transform={mirror ? `matrix(-1 0 0 1 ${W} 0)` : undefined}>
+          <rect x={0} y={0} width={W} height={H} rx={18} fill={`url(#${gid}frame)`} />
+          <rect x={F - 4} y={TOP - 6} width={W - 2 * F + 8} height={PLAY_H + 12} rx={12} fill={`url(#${gid}felt)`} />
+          <rect x={F - 4} y={TOP - 6} width={W - 2 * F + 8} height={PLAY_H + 12} rx={12} fill={`url(#${gid}grain)`} />
+          <rect x={0.5} y={0.5} width={W - 1} height={H - 1} rx={18} fill="none" stroke="#fff" strokeOpacity={0.12} />
+          {points}
+          <rect x={BAR_X} y={TOP - 4} width={BAR_W} height={PLAY_H + 8} fill={`url(#${gid}bar)`} rx={5} />
+          <rect x={TRAY_X} y={TOP} width={TRAY_W} height={PLAY_H / 2 - 8} fill={`url(#${gid}bar)`} rx={8} />
           <rect
-            key={`hit${rel}`}
-            x={colX(rel) - COL / 2}
-            y={isTop(rel) ? TOP : MID}
-            width={COL}
-            height={PLAY_H / 2}
-            fill="transparent"
-            onClick={tap(rel)}
-            style={{ cursor: "pointer" }}
+            x={TRAY_X}
+            y={MID + 8}
+            width={TRAY_W}
+            height={PLAY_H / 2 - 8}
+            fill={`url(#${gid}bar)`}
+            rx={8}
+            className={offTarget !== undefined ? "pulse" : undefined}
+            stroke={offTarget !== undefined ? BOARD.legalDestination : "none"}
+            strokeWidth={4}
           />
-        ))}
-      {p.onTap && <rect x={BAR_X} y={MID} width={BAR_W} height={PLAY_H / 2} fill="transparent" onClick={tap(25)} style={{ cursor: "pointer" }} />}
-      {p.onTap && <rect x={TRAY_X} y={MID} width={TRAY_W} height={PLAY_H / 2} fill="transparent" onClick={tap(0)} style={{ cursor: "pointer" }} />}
-      </g>
+          {offTarget !== undefined && (
+            <text
+              x={TRAY_X + TRAY_W / 2}
+              y={MID + 34}
+              {...unflip(mirror, TRAY_X + TRAY_W / 2)}
+              textAnchor="middle"
+              fontSize={13}
+              fontWeight={800}
+              fill={BOARD.legalDestination}
+            >
+              OFF
+            </text>
+          )}
+          {trays}
+          {checkers}
+          {barCheckers}
+
+          <g
+            key={`cube${p.cube.value}`}
+            className={`cube ${p.cube.value > 1 ? "pop" : ""}`}
+            aria-label={`Cube ${p.cube.value}`}
+            opacity={p.cube.disabled ? 0.45 : 1}
+          >
+            <rect x={cubeX + 1} y={cubeY + 3} width={40} height={40} rx={7} fill="#000" opacity={0.35} />
+            <rect x={cubeX} y={cubeY} width={40} height={40} rx={7} fill="#F7F1E6" stroke="#0B1220" strokeWidth={2} />
+            <text
+              x={cubeX + 20}
+              y={cubeY + 27}
+              {...unflip(mirror, cubeX + 20)}
+              textAnchor="middle"
+              fontSize={p.cube.value >= 100 ? 15 : 19}
+              fontWeight={800}
+              fill="#0B1220"
+            >
+              {p.cube.value}
+            </text>
+          </g>
+
+          {p.dice && (
+            <g>
+              {p.dice.map((d, i) => (
+                <Die
+                  key={`${p.rollKey ?? "d"}-${i}`}
+                  rollKey={p.rollKey ? `${p.rollKey}-${i}` : undefined}
+                  delay={i * 90}
+                  x={diceX + (i % 2) * 48}
+                  y={MID - 20 + (p.dice!.length > 2 ? (i < 2 ? -22 : 22) : 0)}
+                  value={d.value}
+                  used={d.used}
+                />
+              ))}
+            </g>
+          )}
+
+          {/* Destination labels (shape + text, not colour alone) */}
+          {[...p.targets.entries()]
+            .filter(([rel]) => rel !== 0)
+            .map(([rel, label]) => {
+              const cx = colX(rel);
+              const y = isTop(rel) ? TOP + TRI_H + 22 : BOTTOM - TRI_H - 22;
+              return (
+                <g key={`lbl${rel}`} className="tag">
+                  <rect x={cx - 17} y={y - 14} width={34} height={22} rx={11} fill={BOARD.legalDestination} />
+                  <text x={cx} y={y + 2} {...unflip(mirror, cx)} textAnchor="middle" fontSize={13} fontWeight={800} fill="#0B1220">
+                    {label}
+                  </text>
+                </g>
+              );
+            })}
+
+          {/* Tap targets: each point spans its full half-height so precise checker taps are not required. */}
+          {p.onTap &&
+            Array.from({ length: 24 }, (_, i) => i + 1).map((rel) => (
+              <rect
+                key={`hit${rel}`}
+                x={colX(rel) - COL / 2}
+                y={isTop(rel) ? TOP : MID}
+                width={COL}
+                height={PLAY_H / 2}
+                fill="transparent"
+                onClick={tap(rel)}
+                style={{ cursor: "pointer" }}
+              />
+            ))}
+          {p.onTap && <rect x={BAR_X} y={MID} width={BAR_W} height={PLAY_H / 2} fill="transparent" onClick={tap(25)} style={{ cursor: "pointer" }} />}
+          {p.onTap && <rect x={TRAY_X} y={MID} width={TRAY_W} height={PLAY_H / 2} fill="transparent" onClick={tap(0)} style={{ cursor: "pointer" }} />}
+        </g>
       </MirrorCtx.Provider>
     </svg>
   );

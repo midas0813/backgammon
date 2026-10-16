@@ -85,7 +85,11 @@ export async function sendChat(userId: string, matchId: string, body: { kind?: u
     assertActive(user);
     const rights = chatRights(rec, userId);
     if (!(kind === "emoji" ? rights.react : rights.send)) {
-      throw new ApiError(403, "NOT_PARTICIPANT", rec.seats.includes(userId) ? "Chat is not available in this match" : "The host turned this off for spectators");
+      throw new ApiError(
+        403,
+        "NOT_PARTICIPANT",
+        rec.seats.includes(userId) ? "Chat is not available in this match" : "The host turned this off for spectators",
+      );
     }
     const seat = rec.seats.indexOf(userId);
     const m = await t.chat.add({

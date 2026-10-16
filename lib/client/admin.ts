@@ -47,7 +47,6 @@ export function useAdminSigner(expectedWallet: string | null) {
   );
 }
 
-export const fmtDate = (iso: string | null | undefined) =>
-  iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—";
+export const fmtDate = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—");
 export const shortId = (id: string | null | undefined) => (id ? `${id.slice(0, 8)}…` : "—");
 export const shortWallet = (a: string | null | undefined) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "—");

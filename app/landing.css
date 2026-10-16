@@ -158,8 +158,7 @@
 }
 @media (max-width: 760px) {
   .l-hero-overlay {
-    background:
-      linear-gradient(180deg, rgb(11 18 32 / 0.55) 0%, rgb(11 18 32 / 0.55) 30%, rgb(11 18 32 / 0.94) 62%, var(--bg) 100%);
+    background: linear-gradient(180deg, rgb(11 18 32 / 0.55) 0%, rgb(11 18 32 / 0.55) 30%, rgb(11 18 32 / 0.94) 62%, var(--bg) 100%);
   }
   .l-stats > div {
     padding: 8px 10px;
@@ -281,7 +280,9 @@
   border-radius: 28px;
   overflow: hidden;
   aspect-ratio: 4 / 3;
-  box-shadow: 0 40px 80px -30px rgb(0 0 0 / 0.8), 0 0 0 1px var(--border-soft);
+  box-shadow:
+    0 40px 80px -30px rgb(0 0 0 / 0.8),
+    0 0 0 1px var(--border-soft);
   transform: perspective(1200px) rotateY(-4deg);
 }
 
@@ -510,7 +511,9 @@
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: radial-gradient(ellipse at center, rgb(11 18 32 / 0.55), rgb(11 18 32 / 0.92) 75%), linear-gradient(180deg, var(--bg), transparent 25%, transparent 75%, var(--bg));
+  background:
+    radial-gradient(ellipse at center, rgb(11 18 32 / 0.55), rgb(11 18 32 / 0.92) 75%),
+    linear-gradient(180deg, var(--bg), transparent 25%, transparent 75%, var(--bg));
 }
 .l-cta-content {
   display: flex;

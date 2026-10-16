@@ -214,7 +214,9 @@
 }
 button.a-tile {
   cursor: pointer;
-  transition: border-color var(--dur-fast), transform var(--dur-fast) var(--ease-out);
+  transition:
+    border-color var(--dur-fast),
+    transform var(--dur-fast) var(--ease-out);
 }
 button.a-tile:hover {
   border-color: rgb(101 226 188 / 0.45);

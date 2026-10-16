@@ -1,10 +1,7 @@
 "use client";
 
 /** A one-shot particle burst on a canvas (sparks with gravity). Returns a stop function. */
-export function burst(
-  canvas: HTMLCanvasElement,
-  opts: { colors: string[]; count?: number; x?: number; y?: number; power?: number; ms?: number },
-): () => void {
+export function burst(canvas: HTMLCanvasElement, opts: { colors: string[]; count?: number; x?: number; y?: number; power?: number; ms?: number }): () => void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return () => {};
   const dpr = Math.min(2, window.devicePixelRatio || 1);

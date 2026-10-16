@@ -9,8 +9,7 @@ export default function CountUp({ value, format = (n) => String(n), ms = 700 }: 
   useEffect(() => {
     const from = fromRef.current;
     fromRef.current = value;
-    const reduced =
-      document.documentElement.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reduced = document.documentElement.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (from === value || reduced) {
       setShown(value);
       return;

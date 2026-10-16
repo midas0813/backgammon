@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import type { Effect } from "@/lib/client/fx";
+import { useLatest } from "@/lib/client/hooks";
 import { burst } from "@/lib/client/particles";
 import { sounds } from "@/lib/client/sound";
 
@@ -63,9 +64,7 @@ function Die3D({ value, delay = 0, mini = false }: { value: number; delay?: numb
 }
 
 function reducedMotion() {
-  return (
-    document.documentElement.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  );
+  return document.documentElement.dataset.reducedMotion === "true" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 /**
@@ -84,8 +83,7 @@ export default function FxLayer({
   locate?: (seat: 0 | 1, rel: number) => Spot;
   bar?: Spot;
 }) {
-  const locateRef = useRef(locate);
-  locateRef.current = locate;
+  const locateRef = useLatest(locate);
   const [current, setCurrent] = useState<{ id: number; e: Effect; calm: boolean } | null>(null);
   const queue = useRef<Effect[]>([]);
   const timer = useRef<number | undefined>(undefined);
@@ -93,10 +91,9 @@ export default function FxLayer({
   const busy = useRef(false);
   const host = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
-  const soundRef = useRef(sound);
-  soundRef.current = sound;
+  const soundRef = useLatest(sound);
 
-  const advance = useCallback(() => {
+  const advance = useCallback(function step() {
     window.clearTimeout(timer.current);
     const e = queue.current.shift();
     if (!e) {
@@ -107,7 +104,7 @@ export default function FxLayer({
     busy.current = true;
     const calm = reducedMotion();
     setCurrent({ id: nextId.current++, e, calm });
-    timer.current = window.setTimeout(advance, calm ? Math.min(1200, duration(e)) : duration(e));
+    timer.current = window.setTimeout(step, calm ? Math.min(1200, duration(e)) : duration(e));
   }, []);
 
   useImperativeHandle(
@@ -188,7 +185,7 @@ export default function FxLayer({
         break;
     }
     return () => stop?.();
-  }, [current]);
+  }, [current, locateRef, soundRef]);
 
   const e = current?.e;
   const calm = current?.calm ?? false;

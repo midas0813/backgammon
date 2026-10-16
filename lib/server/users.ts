@@ -88,7 +88,10 @@ export function assertActive(user: User | undefined) {
 
 export function cleanName(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  const name = value.trim().replace(/[^\p{L}\p{N} _.-]/gu, "").slice(0, 20);
+  const name = value
+    .trim()
+    .replace(/[^\p{L}\p{N} _.-]/gu, "")
+    .slice(0, 20);
   return name.length >= 2 ? name : null;
 }
 
@@ -114,8 +117,16 @@ export async function updatePreferences(
     if (typeof prefs.sound === "boolean") user.sound = prefs.sound;
     if (typeof prefs.highContrast === "boolean") user.highContrast = prefs.highContrast;
     if (prefs.orientation === "left" || prefs.orientation === "right") user.boardOrientation = prefs.orientation;
-    if (typeof prefs.bio === "string") user.bio = prefs.bio.replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 160);
-    if (typeof prefs.country === "string") user.country = prefs.country.replace(/[^\p{L} .'-]/gu, "").trim().slice(0, 40);
+    if (typeof prefs.bio === "string")
+      user.bio = prefs.bio
+        .replace(/[\u0000-\u001f]/g, " ")
+        .trim()
+        .slice(0, 160);
+    if (typeof prefs.country === "string")
+      user.country = prefs.country
+        .replace(/[^\p{L} .'-]/gu, "")
+        .trim()
+        .slice(0, 40);
     await t.users.put(user);
     return profileIn(t, userId);
   });

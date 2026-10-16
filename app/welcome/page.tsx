@@ -15,14 +15,15 @@ export default function WelcomePage() {
   const me = useMe();
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [name, setName] = useState("");
+  // null until edited: shows the account name.
+  const [edited, setName] = useState<string | null>(null);
+  const name = edited ?? me?.name ?? "";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (me && !me.registered) router.replace("/signup");
-    if (me && !name) setName(me.name);
-  }, [me, name, router]);
+  }, [me, router]);
 
   if (!me?.registered || !me.walletAddress) {
     return (

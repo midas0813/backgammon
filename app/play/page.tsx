@@ -58,7 +58,18 @@ function PlayTile({
         <strong>{busy ? "Starting…" : title}</strong>
         <span>{text}</span>
       </span>
-      <svg className="play-tile-arrow" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <svg
+        className="play-tile-arrow"
+        viewBox="0 0 24 24"
+        width="22"
+        height="22"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
         <path d="M9 6l6 6-6 6" />
       </svg>
     </button>
@@ -90,7 +101,9 @@ export default function LobbyPage() {
   useEffect(() => {
     load(true);
     const t = window.setInterval(() => document.visibilityState === "visible" && load(), POLL_MS);
+    // Links like /play?find=1 open a window; read after hydration because the server has no URL state here.
     const q = new URLSearchParams(window.location.search);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time read of browser-only state after hydration
     if (q.get("create")) setCreating(true);
     else if (q.get("find")) setBrowsing("open");
     else if (q.get("watch")) setBrowsing("live");
@@ -265,7 +278,10 @@ function CreateTable({ initialPoints, onClose, onCreated }: { initialPoints: num
     setBusy(true);
     setError(null);
     try {
-      const { matchId } = await api<{ matchId: string }>("/api/tables", { method: "POST", body: { targetPoints: points, visibility, allowSpectators, spectatorChat, spectatorEmoji } });
+      const { matchId } = await api<{ matchId: string }>("/api/tables", {
+        method: "POST",
+        body: { targetPoints: points, visibility, allowSpectators, spectatorChat, spectatorEmoji },
+      });
       watchTable(matchId);
       onCreated(matchId);
     } catch (e) {

@@ -29,5 +29,4 @@ export function computeFee(valueUnits: number): number {
   return Math.floor((valueUnits * bps + 5000) / 10000);
 }
 
-export const formatTokens = (units: number) =>
-  (units / TOKEN_SCALE).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+export const formatTokens = (units: number) => (units / TOKEN_SCALE).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

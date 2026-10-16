@@ -21,7 +21,9 @@ function UserList() {
   const [data, setData] = useState<List | null>(null);
   useEffect(() => {
     const t = window.setTimeout(() => {
-      api<List>(`/api/admin/users?q=${encodeURIComponent(q)}`).then(setData).catch(() => {});
+      api<List>(`/api/admin/users?q=${encodeURIComponent(q)}`)
+        .then(setData)
+        .catch(() => {});
     }, 250);
     return () => window.clearTimeout(t);
   }, [q]);

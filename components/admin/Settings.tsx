@@ -15,6 +15,8 @@ export default function Settings() {
   const [settings, setSettings] = useState<Dash["settings"] | null>(null);
   const [draft, setDraft] = useState<Dash["settings"] | null>(null);
   const [anns, setAnns] = useState<Anns | null>(null);
+  // When the list was loaded, for "still running" (read once per load, not on every render).
+  const [now, setNow] = useState(0);
   const [confirm, setConfirm] = useState(false);
   const [msg, setMsg] = useState({ message: "", tone: "info", hours: "" });
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +25,10 @@ export default function Settings() {
       setSettings(d.settings);
       setDraft(d.settings);
     });
-    api<Anns>("/api/admin/announcements").then(setAnns);
+    api<Anns>("/api/admin/announcements").then((a) => {
+      setAnns(a);
+      setNow(Date.now());
+    });
   }, []);
   useEffect(load, [load]);
   if (!settings || !draft) return <div className="skeleton" style={{ height: 240, borderRadius: 12 }} />;
@@ -32,7 +37,10 @@ export default function Settings() {
   const publish = async () => {
     setError(null);
     try {
-      await api("/api/admin/announcements", { method: "POST", body: { message: msg.message, tone: msg.tone, hours: msg.hours ? Number(msg.hours) : undefined } });
+      await api("/api/admin/announcements", {
+        method: "POST",
+        body: { message: msg.message, tone: msg.tone, hours: msg.hours ? Number(msg.hours) : undefined },
+      });
       setMsg({ message: "", tone: "info", hours: "" });
       load();
     } catch (e) {
@@ -72,10 +80,16 @@ export default function Settings() {
           <span>
             <strong>Spectators</strong>
             <span className="muted small" style={{ display: "block" }}>
-              When off, nobody can watch other players' matches and the lobby hides “Watch now”.
+              When off, nobody can watch other players&apos; matches and the lobby hides “Watch now”.
             </span>
           </span>
-          <input type="checkbox" role="switch" disabled={!manage} checked={draft.spectators} onChange={(e) => setDraft({ ...draft, spectators: e.target.checked })} />
+          <input
+            type="checkbox"
+            role="switch"
+            disabled={!manage}
+            checked={draft.spectators}
+            onChange={(e) => setDraft({ ...draft, spectators: e.target.checked })}
+          />
         </label>
         {manage ? (
           <div className="a-actions">
@@ -98,14 +112,26 @@ export default function Settings() {
         <p className="muted small">Shown at the top of Home and the Lobby. Up to three are shown at once.</p>
         {manage && (
           <>
-            <textarea rows={2} maxLength={280} placeholder="e.g. Friday night tournament starts at 20:00 UTC!" value={msg.message} onChange={(e) => setMsg({ ...msg, message: e.target.value })} />
+            <textarea
+              rows={2}
+              maxLength={280}
+              placeholder="e.g. Friday night tournament starts at 20:00 UTC!"
+              value={msg.message}
+              onChange={(e) => setMsg({ ...msg, message: e.target.value })}
+            />
             <div className="a-actions">
               <select value={msg.tone} onChange={(e) => setMsg({ ...msg, tone: e.target.value })}>
                 <option value="info">Info</option>
                 <option value="ok">Good news</option>
                 <option value="warn">Warning</option>
               </select>
-              <input className="a-small-input" inputMode="numeric" placeholder="Hours (optional)" value={msg.hours} onChange={(e) => setMsg({ ...msg, hours: e.target.value })} />
+              <input
+                className="a-small-input"
+                inputMode="numeric"
+                placeholder="Hours (optional)"
+                value={msg.hours}
+                onChange={(e) => setMsg({ ...msg, hours: e.target.value })}
+              />
               <button className="btn sm primary" disabled={msg.message.trim().length < 3} onClick={publish}>
                 Publish
               </button>
@@ -118,7 +144,7 @@ export default function Settings() {
         ) : (
           <ul className="a-list">
             {anns.announcements.map((a) => {
-              const live = a.active && (!a.expiresAt || Date.parse(a.expiresAt) > Date.now());
+              const live = a.active && (!a.expiresAt || Date.parse(a.expiresAt) > now);
               return (
                 <li key={a.id} className="spread">
                   <span>

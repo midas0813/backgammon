@@ -19,14 +19,23 @@ function ReportList() {
   const [status, setStatus] = useState("OPEN");
   const [data, setData] = useState<List | null>(null);
   useEffect(() => {
-    setData(null);
-    api<List>(`/api/admin/reports?status=${status}`).then(setData).catch(() => {});
+    api<List>(`/api/admin/reports?status=${status}`)
+      .then(setData)
+      .catch(() => {});
   }, [status]);
   return (
     <div className="a-stack">
       <div className="a-filters" role="group" aria-label="Status">
         {STATUSES.map((s) => (
-          <button key={s} className="chip" aria-pressed={status === s} onClick={() => setStatus(s)}>
+          <button
+            key={s}
+            className="chip"
+            aria-pressed={status === s}
+            onClick={() => {
+              setStatus(s);
+              setData(null);
+            }}
+          >
             {s ? s.replace("_", " ").toLowerCase() : "all"}
           </button>
         ))}
@@ -180,7 +189,12 @@ function ReportDetail({ id }: { id: string }) {
       {manage && (
         <section className="a-card">
           <h3 className="a-h3">Resolution</h3>
-          <textarea rows={3} placeholder="What was found and what was done (required to close)…" value={resolution} onChange={(e) => setResolution(e.target.value)} />
+          <textarea
+            rows={3}
+            placeholder="What was found and what was done (required to close)…"
+            value={resolution}
+            onChange={(e) => setResolution(e.target.value)}
+          />
           <div className="a-actions">
             <button className="btn sm primary" disabled={busy} onClick={() => update({ status: "RESOLVED", resolution })}>
               Resolve

@@ -72,7 +72,12 @@ export default function Admins() {
         <h3 className="a-h3">Add or change an admin</h3>
         <p className="muted small">The person must have signed in with this wallet at least once. Giving someone a new role replaces their old one.</p>
         <div className="a-actions">
-          <input className="a-search mono" placeholder="0x… wallet address" value={grant.wallet} onChange={(e) => setGrant({ ...grant, wallet: e.target.value.trim() })} />
+          <input
+            className="a-search mono"
+            placeholder="0x… wallet address"
+            value={grant.wallet}
+            onChange={(e) => setGrant({ ...grant, wallet: e.target.value.trim() })}
+          />
           <select value={grant.role} onChange={(e) => setGrant({ ...grant, role: e.target.value })}>
             {Object.keys(ROLE_INFO).map((r) => (
               <option key={r} value={r}>

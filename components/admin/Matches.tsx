@@ -21,8 +21,10 @@ function MatchList() {
   const [status, setStatus] = useState("ACTIVE");
   const [data, setData] = useState<List | null>(null);
   useEffect(() => {
-    setData(null);
-    const load = () => api<List>(`/api/admin/matches?status=${status}`).then(setData).catch(() => {});
+    const load = () =>
+      api<List>(`/api/admin/matches?status=${status}`)
+        .then(setData)
+        .catch(() => {});
     load();
     const t = window.setInterval(load, 10000);
     return () => window.clearInterval(t);
@@ -31,7 +33,15 @@ function MatchList() {
     <div className="a-stack">
       <div className="a-filters" role="group" aria-label="Status">
         {STATUSES.map((s) => (
-          <button key={s} className="chip" aria-pressed={status === s} onClick={() => setStatus(s)}>
+          <button
+            key={s}
+            className="chip"
+            aria-pressed={status === s}
+            onClick={() => {
+              setStatus(s);
+              setData(null);
+            }}
+          >
             {s ? s.toLowerCase() : "all"}
           </button>
         ))}

@@ -21,7 +21,10 @@ const MAY_BE_NEGATIVE = new Set<string>([SYSTEM.externalClearing, SYSTEM.freeIss
 export const userAccount = (userId: string, kind: UserAccountKind) => `user:${userId}:${kind}`;
 
 export class LedgerError extends Error {
-  constructor(public code: "INSUFFICIENT_BALANCE" | "UNBALANCED" | "INVALID_AMOUNT", message: string) {
+  constructor(
+    public code: "INSUFFICIENT_BALANCE" | "UNBALANCED" | "INVALID_AMOUNT",
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -105,10 +108,7 @@ export function releaseMatchReserve(t: Tx, userId: string, matchKey: string, uni
 }
 
 /** Tokens-per-point settlement: loser pays G from reserve R, winner pays fee F on G. One per match. */
-export function settleTokensPerPoint(
-  t: Tx,
-  a: { matchKey: string; winner: string; loser: string; reserve: number; gross: number; fee: number },
-) {
+export function settleTokensPerPoint(t: Tx, a: { matchKey: string; winner: string; loser: string; reserve: number; gross: number; fee: number }) {
   if (a.gross > a.reserve) throw new LedgerError("INVALID_AMOUNT", "Transfer cannot exceed reserve");
   return post(t, `settle:${a.matchKey}`, "MATCH_SETTLEMENT_PER_POINT", [
     { account: userAccount(a.loser, "PAID_MATCH_RESERVED"), amount: -a.reserve },

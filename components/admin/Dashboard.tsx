@@ -38,7 +38,10 @@ export default function Dashboard() {
     <div className="a-stack">
       {d.settings.maintenance.enabled && (
         <div className="a-banner warn">
-          <strong>Maintenance mode is on.</strong> New matches are blocked. <button className="link" onClick={() => open("settings")}>Settings →</button>
+          <strong>Maintenance mode is on.</strong> New matches are blocked.{" "}
+          <button className="link" onClick={() => open("settings")}>
+            Settings →
+          </button>
         </div>
       )}
       <section>
@@ -66,8 +69,18 @@ export default function Dashboard() {
           {d.finance && (
             <>
               <Tile label="Deposits pending" value={d.finance.pendingDeposits} onClick={() => open("finance")} />
-              <Tile label="Deposits in review" value={d.finance.reviewDeposits} tone={d.finance.reviewDeposits ? "warn" : undefined} onClick={() => open("finance")} />
-              <Tile label="Adjustments to approve" value={d.finance.pendingAdjustments} tone={d.finance.pendingAdjustments ? "warn" : undefined} onClick={() => open("finance")} />
+              <Tile
+                label="Deposits in review"
+                value={d.finance.reviewDeposits}
+                tone={d.finance.reviewDeposits ? "warn" : undefined}
+                onClick={() => open("finance")}
+              />
+              <Tile
+                label="Adjustments to approve"
+                value={d.finance.pendingAdjustments}
+                tone={d.finance.pendingAdjustments ? "warn" : undefined}
+                onClick={() => open("finance")}
+              />
             </>
           )}
         </div>

@@ -72,14 +72,14 @@ describe("wallet accounts (Sign-In with Ethereum)", () => {
 
     await resolveSession(T2);
     message = await siweMessage(T2, alice.address, { domain: "evil.example" });
-    await expect(
-      verifySiwe({ sessionToken: T2, host: HOST }, { message, signature: await alice.signMessage({ message }) }),
-    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    await expect(verifySiwe({ sessionToken: T2, host: HOST }, { message, signature: await alice.signMessage({ message }) })).rejects.toMatchObject({
+      code: "INVALID_INPUT",
+    });
 
     message = await siweMessage(T2, alice.address, { chainId: 56 });
-    await expect(
-      verifySiwe({ sessionToken: T2, host: HOST }, { message, signature: await alice.signMessage({ message }) }),
-    ).rejects.toMatchObject({ code: "UNSUPPORTED_CHAIN" });
+    await expect(verifySiwe({ sessionToken: T2, host: HOST }, { message, signature: await alice.signMessage({ message }) })).rejects.toMatchObject({
+      code: "UNSUPPORTED_CHAIN",
+    });
   });
 
   it("sign-out ends the session; the next request is a fresh guest", async () => {

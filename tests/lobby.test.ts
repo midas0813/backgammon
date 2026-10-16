@@ -112,7 +112,6 @@ describe("lobby tables", () => {
 
   it("cancelled tables leave the lobby", async () => {
     const host = await ensureUser(undefined);
-    const other = await ensureUser(undefined);
     const { matchId } = await createTable(host.id, { targetPoints: 3 });
     await cancelMatch(host.id, matchId);
     expect((await publicTables({})).tables).toEqual([]);
@@ -130,7 +129,11 @@ describe("room browser", () => {
     }
     // Give a few tables an entry fee so the fee bands have something to find.
     await tx(async (t) => {
-      for (const [i, fee] of [[0, 500], [1, 2500], [2, 9000]] as const) {
+      for (const [i, fee] of [
+        [0, 500],
+        [1, 2500],
+        [2, 9000],
+      ] as const) {
         const rec = (await t.matches.get(ids[i]))!;
         rec.entryFee = fee;
         await t.matches.put(rec);
@@ -173,9 +176,7 @@ describe("spectators", () => {
     expect(view.role).toBe("spectator");
     expect(view.yourSeats).toEqual([]);
     expect((await getSnapshot(host.id, matchId)).spectators).toBe(1);
-    expect(
-      await codeOf(submitAction(viewer.id, matchId, { actionId: "x", expectedVersion: view.stateVersion, actionType: "ROLL" })),
-    ).toBe("NOT_PARTICIPANT");
+    expect(await codeOf(submitAction(viewer.id, matchId, { actionId: "x", expectedVersion: view.stateVersion, actionType: "ROLL" }))).toBe("NOT_PARTICIPANT");
 
     expect(await codeOf(setSpectatorSettings(viewer.id, matchId, { allow: false }))).toBe("NOT_PARTICIPANT");
     expect(await codeOf(setSpectatorSettings(guest.id, matchId, { allow: false }))).toBe("NOT_PARTICIPANT"); // host only
