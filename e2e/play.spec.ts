@@ -133,7 +133,9 @@ test("the admin area stays locked without an admin wallet", async ({ browser }) 
   await p.close();
 });
 
-test("lobby looks right", async ({ browser }) => {
+test("lobby looks right", async ({ browser, browserName }) => {
+  // Pictures are compared in Chromium (desktop and phone) only; fonts render differently elsewhere.
+  test.skip(browserName !== "chromium", "screenshot baselines are recorded in Chromium");
   const p = await player(browser);
   await openLobby(p.page);
   await p.page.waitForTimeout(800);

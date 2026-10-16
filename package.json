@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "test:pg": "BG_STORE=pglite vitest run --no-file-parallelism",
     "lint": "eslint .",
     "format": "prettier --write .",

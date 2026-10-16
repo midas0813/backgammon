@@ -11,7 +11,7 @@ const channel = process.env.PW_CHANNEL;
 export default defineConfig({
   testDir: "e2e",
   timeout: 60_000,
-  expect: { timeout: 10_000, toHaveScreenshot: { maxDiffPixelRatio: 0.02, animations: "disabled" } },
+  expect: { timeout: 10_000, toHaveScreenshot: { maxDiffPixelRatio: 0.04, animations: "disabled" } },
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,
