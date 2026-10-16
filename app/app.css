@@ -2094,3 +2094,57 @@ html[data-reduced-motion="true"]::view-transition-group(*) {
     animation: fade-in 300ms ease both;
   }
 }
+
+/* ---- Easier tapping on phones (F1) ------------------------------------------------------------ */
+/* Destinations for the selected checker as large buttons, so a narrow point never needs a precise tap. */
+.dest-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 8px;
+}
+.btn.dest {
+  min-height: 48px;
+  font-weight: 750;
+  border-color: rgb(101 226 188 / 0.55);
+}
+@media (max-width: 560px) {
+  /* Edge to edge: every pixel of width goes to the points. */
+  .game {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .game > :not(.board-wrap) {
+    margin-left: 8px;
+    margin-right: 8px;
+  }
+  .game > .board-wrap {
+    border-radius: 0;
+  }
+}
+/* Phones turned sideways: the board takes the full height on the left, everything else on the right. */
+@media (orientation: landscape) and (max-height: 540px) {
+  .game {
+    --board-w: calc((100dvh - 12px) * 722 / 572);
+    max-width: none;
+    display: grid;
+    grid-template-columns: var(--board-w) minmax(0, 1fr);
+    column-gap: 12px;
+    align-content: start;
+    padding: 6px calc(8px + env(safe-area-inset-right)) 6px calc(6px + env(safe-area-inset-left));
+  }
+  .game > * {
+    grid-column: 2;
+    min-width: 0;
+    margin-left: 0;
+    margin-right: 0;
+  }
+  .game > .board-wrap {
+    grid-column: 1;
+    grid-row: 1 / span 30;
+    align-self: start;
+    width: var(--board-w);
+  }
+  .game .strip .stats {
+    font-size: 12px;
+  }
+}

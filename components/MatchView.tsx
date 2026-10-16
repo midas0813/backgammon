@@ -391,20 +391,41 @@ export default function MatchView({ matchId }: { matchId: string }) {
     });
   }, [game?.dice, draft]);
 
-  const onTap = (rel: number) => {
+  /** Play one checker from `from` to `to` in the draft (several dice can reach "off": the smallest). */
+  const place = (from: number, to: number) => {
+    const options = next.filter((m) => m.from === from && m.to === to).sort((a, b) => a.die - b.die);
+    if (!options.length) return;
+    setDraft((d) => [...d, options[0]]);
+    setDraftAnim({ key: `draft-${++draftSeq.current}`, moves: [{ ...options[0], seat: game!.turn }] });
+    if (soundRef.current) sounds.move();
+    setSelected(null);
+  };
+
+  /**
+   * A tap that lands just beside a point counts for the neighbour when only that one makes sense
+   * (points are narrow on phones). Never across the 12/13 corner, which are far apart on screen.
+   */
+  const forgive = (rel: number, ok: (r: number) => boolean) => {
+    if (ok(rel)) return rel;
+    const near = [rel - 1, rel + 1].filter((r) => r >= 1 && r <= 24 && !(Math.min(r, rel) === 12 && Math.max(r, rel) === 13) && ok(r));
+    return near.length === 1 ? near[0] : rel;
+  };
+
+  const onTap = (tapped: number) => {
     if (!myMovePhase || busy) return;
     setMessage(null);
-    if (selected !== null && targets.has(rel)) {
-      // Several dice can reach "off": use the smallest legal one.
-      const options = next.filter((m) => m.from === selected && m.to === rel).sort((a, b) => a.die - b.die);
-      setDraft((d) => [...d, options[0]]);
-      setDraftAnim({ key: `draft-${++draftSeq.current}`, moves: [{ ...options[0], seat: game!.turn }] });
-      if (soundRef.current) sounds.move();
-      setSelected(null);
-      return;
+    if (selected !== null) {
+      const rel = forgive(tapped, (r) => targets.has(r) || (r === selected && tapped !== 0));
+      if (targets.has(rel)) return place(selected, rel);
+      if (rel === selected) return setSelected(null);
     }
+    const rel = selected === null ? forgive(tapped, (r) => sources.has(r)) : tapped;
     if (sources.has(rel)) {
-      setSelected(rel === selected ? null : rel);
+      if (rel === selected) return setSelected(null);
+      // Only one place this checker can go: move it straight away.
+      const dests = new Set(next.filter((m) => m.from === rel).map((m) => m.to));
+      if (dests.size === 1) return place(rel, [...dests][0]);
+      setSelected(rel);
       return;
     }
     if (selected !== null) {
@@ -659,9 +680,21 @@ export default function MatchView({ matchId }: { matchId: string }) {
                 (complete
                   ? "Turn complete. Confirm to commit, or undo."
                   : selected !== null
-                    ? "Tap a highlighted destination."
+                    ? "Tap a highlighted point, or a button below."
                     : `${local ? `${actorName}: ` : ""}Select a checker to move.`)}
             </div>
+            {selected !== null && targets.size > 0 && (
+              <div className="dest-buttons" role="group" aria-label="Move the selected checker to">
+                {[...targets.entries()]
+                  .sort((a, b) => b[0] - a[0])
+                  .map(([to, die]) => (
+                    <button key={to} className="btn dest" onClick={() => place(selected, to)}>
+                      {to === 0 ? "Bear off" : `→ ${to}`}
+                      <span className="muted small"> · {die}</span>
+                    </button>
+                  ))}
+              </div>
+            )}
             <div className="grid2">
               <button className="btn" disabled={busy || draft.length === 0} onClick={() => (setDraft((d) => d.slice(0, -1)), setDraftAnim(null), setSelected(null))}>
                 Undo
