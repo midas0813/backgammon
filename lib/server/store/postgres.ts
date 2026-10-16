@@ -372,29 +372,24 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
             m.entryFee ?? 0,
           ],
         );
+        // Rows go in as one JSON document: drivers differ in how they send typed arrays (postgres.js
+        // sent a one-element boolean array as a plain boolean); JSON is read the same everywhere.
         if (m.events.length) {
           await q(
             `insert into match_events (match_id, seq, type, state_version, server_time, payload)
              select $1, x.seq, x.type, x.v, x.t, x.p
-             from unnest($2::int[], $3::text[], $4::int[], $5::timestamptz[], $6::jsonb[]) as x(seq, type, v, t, p)
+             from jsonb_to_recordset($2::jsonb) as x(seq int, type text, v int, t timestamptz, p jsonb)
              on conflict do nothing`,
-            [
-              m.id,
-              m.events.map((e) => e.seq),
-              m.events.map((e) => e.type),
-              m.events.map((e) => e.stateVersion),
-              m.events.map((e) => e.serverTime),
-              m.events.map((e) => JSON.stringify(e.payload)),
-            ],
+            [m.id, JSON.stringify(m.events.map((e) => ({ seq: e.seq, type: e.type, v: e.stateVersion, t: e.serverTime, p: e.payload })))],
           );
         }
         const actions = Object.entries(m.actions);
         if (actions.length) {
           await q(
             `insert into match_actions (match_id, action_id, fingerprint, response)
-             select $1, x.a, x.f, x.r from unnest($2::text[], $3::text[], $4::jsonb[]) as x(a, f, r)
+             select $1, x.a, x.f, x.r from jsonb_to_recordset($2::jsonb) as x(a text, f text, r jsonb)
              on conflict do nothing`,
-            [m.id, actions.map(([id]) => id), actions.map(([, a]) => a.fingerprint), actions.map(([, a]) => JSON.stringify(a.response))],
+            [m.id, JSON.stringify(actions.map(([id, a]) => ({ a: id, f: a.fingerprint, r: a.response ?? null })))],
           );
         }
       },
@@ -504,23 +499,29 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
         await q(
           `insert into match_results (match_id, user_id, mode, won, points, games, gammons, opponent, score_for, score_against,
              target_points, end_reason, completed_at)
-           select * from unnest($1::text[], $2::uuid[], $3::text[], $4::boolean[], $5::int[], $6::int[], $7::int[], $8::text[],
-             $9::int[], $10::int[], $11::int[], $12::text[], $13::timestamptz[])
+           select x.match_id, x.user_id, x.mode, x.won, x.points, x.games, x.gammons, x.opponent, x.score_for, x.score_against,
+             x.target_points, x.end_reason, x.completed_at
+           from jsonb_to_recordset($1::jsonb) as x(match_id text, user_id uuid, mode text, won boolean, points int, games int,
+             gammons int, opponent text, score_for int, score_against int, target_points int, end_reason text, completed_at timestamptz)
            on conflict do nothing`,
           [
-            rows.map((r) => r.matchId),
-            rows.map((r) => r.userId),
-            rows.map((r) => r.mode),
-            rows.map((r) => r.won),
-            rows.map((r) => r.points),
-            rows.map((r) => r.games),
-            rows.map((r) => r.gammons),
-            rows.map((r) => r.opponent),
-            rows.map((r) => r.score[0]),
-            rows.map((r) => r.score[1]),
-            rows.map((r) => r.targetPoints),
-            rows.map((r) => r.endReason),
-            rows.map((r) => r.completedAt),
+            JSON.stringify(
+              rows.map((r) => ({
+                match_id: r.matchId,
+                user_id: r.userId,
+                mode: r.mode,
+                won: r.won,
+                points: r.points,
+                games: r.games,
+                gammons: r.gammons,
+                opponent: r.opponent,
+                score_for: r.score[0],
+                score_against: r.score[1],
+                target_points: r.targetPoints,
+                end_reason: r.endReason,
+                completed_at: r.completedAt,
+              })),
+            ),
           ],
         );
       },
