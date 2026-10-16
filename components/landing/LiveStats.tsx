@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 interface Stats {
-  players: number;
+  online: number;
   liveMatches: number;
   gamesPlayed: number;
 }
@@ -44,7 +44,7 @@ export default function LiveStats() {
   const items = [
     { label: "Live matches", value: s?.liveMatches ?? 0, live: true },
     { label: "Games played", value: s?.gamesPlayed ?? 0 },
-    { label: "Players", value: s?.players ?? 0 },
+    { label: "Online now", value: s?.online ?? 0, live: true },
   ];
   return (
     <dl className="l-stats">

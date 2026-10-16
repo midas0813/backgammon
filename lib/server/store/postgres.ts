@@ -256,6 +256,9 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
       async touchSeen(id, at) {
         await q(`update app_users set last_seen_at = greatest(coalesce(last_seen_at, '-infinity'), to_timestamp($2::float8 / 1000)) where id = $1`, [id, at]);
       },
+      async markAway(id, at) {
+        await q(`update app_users set last_seen_at = least(coalesce(last_seen_at, 'infinity'), to_timestamp($2::float8 / 1000)) where id = $1`, [id, at]);
+      },
       async countSeenSince(at) {
         const [r] = await q(`select count(*) as n from app_users where last_seen_at >= to_timestamp($1::float8 / 1000)`, [at]);
         return num(r.n);

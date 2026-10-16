@@ -215,6 +215,7 @@ export function createMemoryStore(file: string | null): Store {
         put: async (u) => put("users", u.id, u),
         count: async () => values("users").length,
         touchSeen: async (id, at) => put("seen", id, Math.max(get<number>("seen", id) ?? 0, at)),
+        markAway: async (id, at) => put("seen", id, Math.min(get<number>("seen", id) ?? at, at)),
         countSeenSince: async (at) => values<number>("seen").filter((v) => v >= at).length,
         deleteInactiveGuests: async (before, limit) => {
           const matches = values<MatchRecord>("matches");

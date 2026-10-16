@@ -3,6 +3,7 @@ import { Inter, Playfair_Display } from "next/font/google";
 import AppHeader from "@/components/AppHeader";
 import GameGuard from "@/components/GameGuard";
 import OfflineBanner from "@/components/OfflineBanner";
+import OnlineHeartbeat from "@/components/OnlineHeartbeat";
 import { artExists } from "@/components/Art";
 import BottomNav from "@/components/BottomNav";
 import TableWatcher from "@/components/TableWatcher";
@@ -40,6 +41,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <TableWatcher />
           <GameGuard />
           <OfflineBanner />
+          <OnlineHeartbeat />
         </Web3Provider>
       </body>
     </html>

@@ -179,3 +179,19 @@ describe("guest clean-up (C2)", () => {
     expect(await tx((t) => t.matches.get(table.matchId))).toBeDefined();
   });
 });
+
+describe("players online", () => {
+  it("counts players whose app checked in within the last minute, and drops those who closed it", async () => {
+    const { ONLINE_WINDOW_MS } = await import("@/lib/server/lobby");
+    const a = await ensureUser(undefined);
+    const b = await ensureUser(undefined);
+    const now = Date.now();
+    await tx(async (t) => {
+      await t.users.touchSeen(a.id, now);
+      await t.users.touchSeen(b.id, now);
+    });
+    expect(await tx((t) => t.users.countSeenSince(now - ONLINE_WINDOW_MS))).toBe(2);
+    await tx((t) => t.users.markAway(b.id, now - ONLINE_WINDOW_MS - 1000));
+    expect(await tx((t) => t.users.countSeenSince(now - ONLINE_WINDOW_MS))).toBe(1);
+  });
+});

@@ -329,6 +329,8 @@ export interface Tx {
     count(): Promise<number>;
     /** Record activity (for "players online"); callers throttle. */
     touchSeen(id: string, at: number): Promise<void>;
+    /** The player closed the app: no longer counted online (last activity set to `at`, in the past). */
+    markAway(id: string, at: number): Promise<void>;
     countSeenSince(at: number): Promise<number>;
     /**
      * Remove up to `limit` guests (no wallet) last active before `before` (ms) who are not in an

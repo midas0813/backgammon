@@ -11,7 +11,11 @@ import { avatarUrl } from "./users";
  * Tables are public (mode "quick", listed) or private (mode "private", invite link only).
  */
 export { TABLE_EXPIRY_MS };
-export const ONLINE_WINDOW_MS = 2 * 60 * 1000;
+/**
+ * "Online" = the app checked in within this window. Open pages send a heartbeat every 25 s while
+ * visible (components/OnlineHeartbeat) and say goodbye when closed, so the count is live.
+ */
+export const ONLINE_WINDOW_MS = 60 * 1000;
 /** "Playing" and "live" count only matches with a move this recently. */
 export const LIVE_WINDOW_MS = 10 * 60 * 1000;
 const ALLOWED_POINTS = [1, 3, 5, 7];
