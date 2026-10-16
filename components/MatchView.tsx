@@ -551,7 +551,6 @@ export default function MatchView({ matchId }: { matchId: string }) {
               className="btn danger"
               onClick={() => {
                 setConfirm(null);
-                setMenuOpen(false);
                 send("FORFEIT_MATCH", { confirm: true });
               }}
             >
@@ -580,7 +579,14 @@ export default function MatchView({ matchId }: { matchId: string }) {
             </label>
           )}
           {snap.status === "ACTIVE" && snap.yourSeats.length > 0 && (
-            <button className="btn danger block" onClick={() => setConfirm("forfeit")}>
+            <button
+              className="btn danger block"
+              onClick={() => {
+                // Close the menu first so the confirmation is not hidden behind it.
+                setMenuOpen(false);
+                setConfirm("forfeit");
+              }}
+            >
               Forfeit match…
             </button>
           )}
