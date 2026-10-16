@@ -226,6 +226,27 @@ export function createMemoryStore(file: string | null): Store {
             .sort((a, b) => (status === "WAITING" ? a.createdAt.localeCompare(b.createdAt) : b.updatedAt - a.updatedAt))
             .slice(0, limit);
         },
+        listPublic: async (f) => {
+          const since = Date.now() - SPECTATOR_WINDOW_MS;
+          const all = values<MatchRecord>("matches")
+            .filter((m) => m.mode === "quick" && m.state.status === f.status)
+            .map((m) =>
+              lobbyRow(
+                m,
+                get<[number, number]>("presence", m.id)?.[0] ?? 0,
+                Object.values(get<Record<string, number>>("spectators", m.id) ?? {}).filter((v) => v >= since).length,
+              ),
+            )
+            .filter(
+              (r) =>
+                (f.status === "WAITING" ? r.hostSeenAt >= f.hostSeenSince : r.allowSpectators && r.updatedAt >= f.activeSince) &&
+                (!f.points || r.targetPoints === f.points) &&
+                (f.feeMin === undefined || r.entryFee >= f.feeMin) &&
+                (f.feeMax === undefined || r.entryFee <= f.feeMax),
+            )
+            .sort((a, b) => (f.sort === "oldest" ? a.createdAt.localeCompare(b.createdAt) : b.createdAt.localeCompare(a.createdAt)));
+          return { rows: all.slice(f.offset, f.offset + f.limit), total: all.length };
+        },
         listAdmin: async (f) => {
           const since = Date.now() - SPECTATOR_WINDOW_MS;
           return values<MatchRecord>("matches")

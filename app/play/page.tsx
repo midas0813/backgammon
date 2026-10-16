@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Announcements from "@/components/Announcements";
-import Avatar from "@/components/Avatar";
 import CountUp from "@/components/CountUp";
 import Modal from "@/components/Modal";
+import RoomBrowser, { type RoomView } from "@/components/RoomBrowser";
 import { ClientApiError, api } from "@/lib/client/api";
 import { watchTable, unwatchTable } from "@/lib/client/tables";
 import { toast } from "@/lib/client/toast";
@@ -14,7 +14,7 @@ import type { Lobby } from "@/lib/server/lobby";
 
 type Poll = Lobby | { unchanged: true; version: string };
 
-const POLL_MS = 2000;
+const POLL_MS = 4000;
 const LENGTHS = [1, 3, 5, 7];
 const MODE_LABEL: Record<string, string> = { quick: "Public table", private: "Invite", local: "Pass & play", bot: "vs Computer" };
 
@@ -23,34 +23,56 @@ function age(iso: string) {
   return s < 45 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min` : `${Math.round(s / 3600)} h`;
 }
 
-const Icon = ({ d }: { d: string }) => (
-  <span className="mode-icon" aria-hidden>
-    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d={d} />
-    </svg>
-  </span>
-);
-
-/** Rows that appeared since the last poll get an entrance animation. */
-function useFresh(ids: string[]) {
-  const seen = useRef<Set<string> | null>(null);
-  const fresh = new Set<string>();
-  if (seen.current) for (const id of ids) if (!seen.current.has(id)) fresh.add(id);
-  useEffect(() => {
-    seen.current = new Set(ids);
-  });
-  return fresh;
+/** A full-width play option with its artwork behind the text. */
+function PlayTile({
+  image,
+  title,
+  text,
+  onClick,
+  busy,
+  primary,
+  badge,
+}: {
+  image: string;
+  title: string;
+  text: string;
+  onClick: () => void;
+  busy?: boolean;
+  primary?: boolean;
+  badge?: React.ReactNode;
+}) {
+  return (
+    <button className={`play-tile${primary ? " primary" : ""}`} onClick={onClick} disabled={busy}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        className="play-tile-img"
+        src={`/images/play/${image}-lg.webp`}
+        srcSet={`/images/play/${image}-sm.webp 640w, /images/play/${image}-lg.webp 1200w`}
+        sizes="(max-width: 680px) 100vw, 640px"
+        alt=""
+        draggable={false}
+      />
+      <span className="play-tile-shade" aria-hidden />
+      <span className="play-tile-text">
+        {badge}
+        <strong>{busy ? "Starting…" : title}</strong>
+        <span>{text}</span>
+      </span>
+      <svg className="play-tile-arrow" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M9 6l6 6-6 6" />
+      </svg>
+    </button>
+  );
 }
 
 export default function LobbyPage() {
   const router = useRouter();
   const [data, setData] = useState<Lobby | null>(null);
   const [points, setPoints] = useState(3);
-  const [filter, setFilter] = useState<number | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [finding, setFinding] = useState(false);
+  const [browsing, setBrowsing] = useState<RoomView | null>(null);
   const versionRef = useRef<string | null>(null);
 
   const load = useCallback(async (force = false) => {
@@ -70,22 +92,25 @@ export default function LobbyPage() {
     const t = window.setInterval(() => document.visibilityState === "visible" && load(), POLL_MS);
     const q = new URLSearchParams(window.location.search);
     if (q.get("create")) setCreating(true);
-    else if (q.get("find")) setFinding(true);
+    else if (q.get("find")) setBrowsing("open");
+    else if (q.get("watch")) setBrowsing("live");
     return () => window.clearInterval(t);
   }, [load]);
 
-  const go = async (key: string, fn: () => Promise<{ matchId: string; joined?: boolean; watch?: boolean }>) => {
+  const go = async (key: string, fn: () => Promise<{ matchId: string }>) => {
     setBusy(key);
     setError(null);
     try {
       const r = await fn();
-      if (r.watch && !r.joined) watchTable(r.matchId);
       router.push(`/match/${r.matchId}`);
     } catch (e) {
       if (e instanceof ClientApiError && e.code === "EVENT_FULL") {
         toast("Someone just took that seat — try another table.", { tone: "warn" });
-        load(true);
-      } else setError(e instanceof Error ? e.message : "Something went wrong");
+      } else {
+        const msg = e instanceof Error ? e.message : "Something went wrong";
+        if (browsing) toast(msg, { tone: "warn" });
+        else setError(msg);
+      }
       setBusy(null);
     }
   };
@@ -102,10 +127,7 @@ export default function LobbyPage() {
       setError(e instanceof Error ? e.message : "Could not cancel");
     }
   };
-
-  const open = (data?.open ?? []).filter((t) => !filter || t.targetPoints === filter);
-  const freshOpen = useFresh(open.map((t) => t.matchId));
-  const freshLive = useFresh((data?.live ?? []).map((t) => t.matchId));
+  const myIds = useMemo(() => new Set((data?.mine ?? []).map((m) => m.matchId)), [data]);
 
   return (
     <main className="page lobby">
@@ -121,51 +143,54 @@ export default function LobbyPage() {
             <CountUp value={data?.counts.online ?? 0} /> online
           </span>
           <span className="pulse-chip">
-            <CountUp value={data?.counts.live ?? 0} /> live
-          </span>
-          <span className="pulse-chip">
-            <CountUp value={data?.counts.open ?? 0} /> open
+            <CountUp value={data?.counts.playing ?? 0} /> playing
           </span>
         </div>
       </section>
 
-      <section className="card">
-        <div className="spread">
-          <h2>Play</h2>
-          <div className="seg compact" role="group" aria-label="Match length">
-            {LENGTHS.map((p) => (
-              <button key={p} className="chip" aria-pressed={points === p} onClick={() => setPoints(p)}>
-                {p} pt
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="mode-grid">
-          <button className="mode-tile primary" disabled={!!busy} onClick={() => setFinding(true)}>
-            <Icon d="M13 2 3 14h8l-1 8 10-12h-8z" />
-            <strong>Find a game</strong>
-            <span className="muted small">
-              {data ? `${data.counts.open} open table${data.counts.open === 1 ? "" : "s"} to choose from` : "See every open table"}
-            </span>
-          </button>
-          <button className="mode-tile" disabled={!!busy} onClick={() => setCreating(true)}>
-            <Icon d="M12 5v14M5 12h14" />
-            <strong>Create table</strong>
-            <span className="muted small">Public or invite-only, your rules</span>
-          </button>
-          <button className="mode-tile" disabled={!!busy} onClick={vsComputer}>
-            <Icon d="M5 8h14v11H5zM12 4v4M9 13h.01M15 13h.01M9 16h6" />
-            <strong>{busy === "bot" ? "Starting…" : "vs Computer"}</strong>
-            <span className="muted small">No waiting</span>
-          </button>
-          <button className="mode-tile" disabled={!!busy} onClick={passAndPlay}>
-            <Icon d="M7 3h10v18H7zM11 18h2" />
-            <strong>{busy === "local" ? "Starting…" : "Pass & play"}</strong>
-            <span className="muted small">Two players, one device</span>
-          </button>
-        </div>
-        {error && <p className="err small">{error}</p>}
+      <section className="play-tiles" aria-label="Play">
+        <PlayTile
+          primary
+          image="find-game"
+          title="Find a game"
+          text={data ? `${data.counts.open} open table${data.counts.open === 1 ? "" : "s"} · pick one and play` : "Browse open tables"}
+          badge={
+            data && data.counts.open > 0 ? (
+              <span className="play-tile-badge">
+                <span className="live-dot" aria-hidden /> {data.counts.open} waiting
+              </span>
+            ) : undefined
+          }
+          onClick={() => setBrowsing("open")}
+        />
+        <PlayTile image="create-room" title="Create table" text="Public or invite-only · your rules" onClick={() => setCreating(true)} />
+        <PlayTile image="vs-computer" title="vs Computer" text={`${points}-point match · starts instantly`} busy={busy === "bot"} onClick={vsComputer} />
+        <PlayTile image="pass-and-play" title="Pass & play" text="Two players on one device" busy={busy === "local"} onClick={passAndPlay} />
       </section>
+
+      <section className="lobby-length">
+        <span className="muted small">Match length for new games</span>
+        <div className="seg compact" role="group" aria-label="Match length">
+          {LENGTHS.map((p) => (
+            <button key={p} className="chip" aria-pressed={points === p} onClick={() => setPoints(p)}>
+              {p} pt
+            </button>
+          ))}
+        </div>
+      </section>
+      {error && <p className="err small">{error}</p>}
+
+      <button className="watch-row" onClick={() => setBrowsing("live")}>
+        <span className="live-dot" aria-hidden />
+        <span>
+          <strong>Watch live</strong>
+          <span className="muted small">
+            {" "}
+            · {data?.counts.live ?? 0} public match{(data?.counts.live ?? 0) === 1 ? "" : "es"} in progress
+          </span>
+        </span>
+        <span aria-hidden>→</span>
+      </button>
 
       {data && data.mine.length > 0 && (
         <section className="card accent">
@@ -201,121 +226,24 @@ export default function LobbyPage() {
         </section>
       )}
 
-      <section className="card">
-        <div className="spread">
-          <h2>Open tables</h2>
-          <div className="seg compact five" role="group" aria-label="Filter by match length">
-            <button className="chip" aria-pressed={filter === null} onClick={() => setFilter(null)}>
-              All
-            </button>
-            {LENGTHS.map((p) => (
-              <button key={p} className="chip" aria-pressed={filter === p} onClick={() => setFilter(p)}>
-                {p}
-              </button>
-            ))}
-          </div>
-        </div>
-        {!data ? (
-          <div className="skeleton" style={{ height: 64, borderRadius: 12 }} />
-        ) : open.length === 0 ? (
-          <div className="empty-row">
-            <span className="radar small" aria-hidden />
-            <span className="muted small">
-              No open {filter ? `${filter}-pt ` : ""}tables right now. Create one, or tap Find a game and the next player is seated with you.
-            </span>
-          </div>
-        ) : (
-          <ul className="list">
-            {open.map((t, i) => (
-              <li key={t.matchId} className={freshOpen.has(t.matchId) ? "enter" : undefined} style={{ animationDelay: `${i * 40}ms` }}>
-                <span className="row" style={{ flexWrap: "nowrap", minWidth: 0 }}>
-                  <span className="avatar-wrap">
-                    <Avatar name={t.host.name} src={t.host.avatarUrl} size={36} />
-                    <span className={`presence ${t.hostOnline ? "on" : "away"}`} aria-label={t.hostOnline ? "online" : "away"} />
-                  </span>
-                  <span style={{ minWidth: 0 }}>
-                    <span className="ellipsis" style={{ display: "block", fontWeight: 650 }}>
-                      {t.host.name}
-                    </span>
-                    <span className="muted small">
-                      {t.targetPoints}-pt · Free · waiting {age(t.createdAt)}
-                    </span>
-                  </span>
-                </span>
-                <button className="btn sm primary" disabled={!!busy} onClick={() => join(t.matchId)}>
-                  {busy === `join:${t.matchId}` ? "Joining…" : "Join"}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="card">
-        <div className="card-title">
-          <span className="badge live">Live</span>
-          <h2>Watch now</h2>
-        </div>
-        {!data ? (
-          <div className="skeleton" style={{ height: 64, borderRadius: 12 }} />
-        ) : data.live.length === 0 ? (
-          <p className="muted small" style={{ margin: 0 }}>
-            No public matches in progress. When players start one, it shows up here to watch.
-          </p>
-        ) : (
-          <ul className="list">
-            {data.live.map((m, i) => (
-              <li key={m.matchId} className={freshLive.has(m.matchId) ? "enter" : undefined} style={{ animationDelay: `${i * 40}ms` }}>
-                <span className="row" style={{ flexWrap: "nowrap", minWidth: 0 }}>
-                  <span className="avatar-pair">
-                    <Avatar name={m.players[0].name} src={m.players[0].avatarUrl} size={30} />
-                    <Avatar name={m.players[1].name} src={m.players[1].avatarUrl} size={30} />
-                  </span>
-                  <span style={{ minWidth: 0 }}>
-                    <span className="ellipsis" style={{ display: "block", fontWeight: 650 }}>
-                      {m.players[0].name} vs {m.players[1].name}
-                    </span>
-                    <span className="muted small">
-                      <span className="mono score-tick" key={`${m.score[0]}-${m.score[1]}`}>
-                        {m.score[0]}–{m.score[1]}
-                      </span>{" "}
-                      to {m.targetPoints} · game {m.gameNumber}
-                      {m.cube > 1 ? ` · cube ${m.cube}` : ""}
-                    </span>
-                  </span>
-                </span>
-                <span className="row" style={{ gap: 8, flexWrap: "nowrap" }}>
-                  {m.spectators > 0 && (
-                    <span className="muted small eye-count" style={{ whiteSpace: "nowrap" }} aria-label={`${m.spectators} watching`}>
-                      👁 {m.spectators}
-                    </span>
-                  )}
-                  <Link className="btn sm" href={`/match/${m.matchId}`} transitionTypes={["nav-forward"]}>
-                    Watch
-                  </Link>
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
       <div className="row">
         <span className="badge">Ranked · coming soon</span>
         <span className="badge">Tournaments · coming soon</span>
         <span className="badge">Token stakes · not enabled</span>
       </div>
 
-      {finding && (
-        <FindGame
-          data={data}
+      {browsing && (
+        <RoomBrowser
+          initialView={browsing}
+          myIds={myIds}
           busy={busy}
           onJoin={join}
+          onWatch={(id) => router.push(`/match/${id}`)}
           onCreate={() => {
-            setFinding(false);
+            setBrowsing(null);
             setCreating(true);
           }}
-          onClose={() => setFinding(false)}
+          onClose={() => setBrowsing(null)}
         />
       )}
       {creating && <CreateTable initialPoints={points} onClose={() => setCreating(false)} onCreated={(id) => router.push(`/match/${id}`)} />}
@@ -400,84 +328,6 @@ function CreateTable({ initialPoints, onClose, onCreated }: { initialPoints: num
         </button>
         <button className="btn primary" disabled={busy} onClick={submit}>
           {busy ? "Opening…" : "Open table"}
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
-/** Every open table right now (refreshed with the lobby); the player picks one to join. */
-function FindGame({
-  data,
-  busy,
-  onJoin,
-  onCreate,
-  onClose,
-}: {
-  data: Lobby | null;
-  busy: string | null;
-  onJoin: (id: string) => void;
-  onCreate: () => void;
-  onClose: () => void;
-}) {
-  const [filter, setFilter] = useState<number | null>(null);
-  const tables = (data?.open ?? []).filter((t) => !filter || t.targetPoints === filter);
-  return (
-    <Modal title="Find a game" onClose={onClose}>
-      <p className="muted small" style={{ margin: 0 }}>
-        Open tables right now. Pick one to join; the match starts as soon as you sit down.
-        {data ? ` ${data.counts.online} online · ${data.counts.live} live.` : ""}
-      </p>
-      <div className="seg compact five" role="group" aria-label="Filter by match length">
-        <button className="chip" aria-pressed={filter === null} onClick={() => setFilter(null)}>
-          All
-        </button>
-        {LENGTHS.map((p) => (
-          <button key={p} className="chip" aria-pressed={filter === p} onClick={() => setFilter(p)}>
-            {p} pt
-          </button>
-        ))}
-      </div>
-      {!data ? (
-        <div className="skeleton" style={{ height: 120, borderRadius: 12 }} />
-      ) : tables.length === 0 ? (
-        <div className="searching">
-          <span className="radar" aria-hidden />
-          <span className="muted small">
-            No open {filter ? `${filter}-pt ` : ""}tables right now. This list updates live, or open your own table and others can join you.
-          </span>
-        </div>
-      ) : (
-        <ul className="list find-list">
-          {tables.map((t) => (
-            <li key={t.matchId}>
-              <span className="row" style={{ flexWrap: "nowrap", minWidth: 0 }}>
-                <span className="avatar-wrap">
-                  <Avatar name={t.host.name} src={t.host.avatarUrl} size={36} />
-                  <span className={`presence ${t.hostOnline ? "on" : "away"}`} aria-label={t.hostOnline ? "online" : "away"} />
-                </span>
-                <span style={{ minWidth: 0 }}>
-                  <span className="ellipsis" style={{ display: "block", fontWeight: 650 }}>
-                    {t.host.name}
-                  </span>
-                  <span className="muted small">
-                    {t.targetPoints}-pt · Free · waiting {age(t.createdAt)}
-                  </span>
-                </span>
-              </span>
-              <button className="btn sm primary" disabled={!!busy} onClick={() => onJoin(t.matchId)}>
-                {busy === `join:${t.matchId}` ? "Joining…" : "Join"}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="grid2">
-        <button className="btn" onClick={onClose}>
-          Close
-        </button>
-        <button className="btn primary" onClick={onCreate}>
-          Create a table
         </button>
       </div>
     </Modal>

@@ -136,13 +136,14 @@ function toLobbyRow(r: Row): LobbyRow {
     cube: num(s.cube),
     gameNumber: num(s.gameNumber),
     allowSpectators: Boolean(r.allow_spectators),
+    entryFee: num(r.entry_fee),
     hostSeenAt: num(r.host_seen_ms),
     spectators: num(r.spectators),
   };
 }
 
 const LOBBY_SELECT = `
-  select m.id, m.mode, m.status, m.target_points, m.created_at, m.allow_spectators, m.summary,
+  select m.id, m.mode, m.status, m.target_points, m.created_at, m.allow_spectators, m.summary, m.entry_fee,
          (extract(epoch from m.updated_at) * 1000)::float8 as updated_ms,
          coalesce((select (extract(epoch from p.seen_at) * 1000)::float8 from match_presence p
                    where p.match_id = m.id and p.seat = 0), 0) as host_seen_ms,
@@ -300,11 +301,11 @@ function makeTx(q: Query): Tx {
       async put(m) {
         await q(
           `insert into matches (id, mode, status, target_points, created_by, seat0, seat1, version, created_at, updated_at, data,
-             summary, allow_spectators, completed_at)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10::jsonb, $11::jsonb, $12, $13)
+             summary, allow_spectators, completed_at, entry_fee)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10::jsonb, $11::jsonb, $12, $13, $14)
            on conflict (id) do update set status = excluded.status, seat0 = excluded.seat0, seat1 = excluded.seat1,
              version = excluded.version, updated_at = now(), data = excluded.data, summary = excluded.summary,
-             allow_spectators = excluded.allow_spectators, completed_at = excluded.completed_at`,
+             allow_spectators = excluded.allow_spectators, completed_at = excluded.completed_at, entry_fee = excluded.entry_fee`,
           [
             m.id,
             m.mode,
@@ -319,6 +320,7 @@ function makeTx(q: Query): Tx {
             JSON.stringify(summarize(m)),
             m.allowSpectators !== false,
             m.completedAt ?? null,
+            m.entryFee ?? 0,
           ],
         );
       },
@@ -343,6 +345,25 @@ function makeTx(q: Query): Tx {
           [status, limit],
         );
         return rows.filter((r) => r.summary).map(toLobbyRow);
+      },
+      async listPublic(f) {
+        // Shared filter for the count and the page, so "N tables" always matches what can be paged.
+        const where = `m.mode = 'quick' and m.status = $1
+           and ($2::int is null or m.target_points = $2)
+           and ($3::bigint is null or m.entry_fee >= $3)
+           and ($4::bigint is null or m.entry_fee <= $4)
+           and (case when $1 = 'WAITING'
+                  then exists (select 1 from match_presence p where p.match_id = m.id and p.seat = 0
+                               and p.seen_at >= to_timestamp($5::float8 / 1000))
+                  else m.allow_spectators and m.updated_at >= to_timestamp($6::float8 / 1000) end)`;
+        const params = [f.status, f.points ?? null, f.feeMin ?? null, f.feeMax ?? null, f.hostSeenSince, f.activeSince];
+        const [c] = await q(`select count(*) as n from matches m where ${where}`, params);
+        if (f.limit === 0) return { rows: [], total: num(c.n) };
+        const rows = await q(
+          `${LOBBY_SELECT} where ${where} order by m.created_at ${f.sort === "oldest" ? "asc" : "desc"} limit $7 offset $8`,
+          [...params, f.limit, f.offset],
+        );
+        return { rows: rows.filter((r) => r.summary).map(toLobbyRow), total: num(c.n) };
       },
       async listAdmin(f) {
         const rows = await q(

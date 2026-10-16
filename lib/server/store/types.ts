@@ -151,6 +151,8 @@ export interface MatchRecord {
   actions: Record<string, { fingerprint: string; response: unknown }>;
   /** Host's choice; undefined (older matches) means allowed. */
   allowSpectators?: boolean;
+  /** Entry fee in token minor units; 0 or undefined = free. */
+  entryFee?: number;
   completedAt?: string;
   /** Why a WAITING table closed without the host cancelling it. */
   closedReason?: "expired";
@@ -172,11 +174,24 @@ export interface LobbyRow {
   cube: number;
   gameNumber: number;
   allowSpectators: boolean;
+  entryFee: number;
   hostSeenAt: number; // ms, 0 when never seen
   spectators: number; // seen within the store's spectator window
 }
 
 export const SPECTATOR_WINDOW_MS = 20_000;
+
+export interface PublicTableFilter {
+  status: "WAITING" | "ACTIVE";
+  points?: number;
+  feeMin?: number;
+  feeMax?: number;
+  hostSeenSince: number;
+  activeSince: number;
+  sort: "newest" | "oldest";
+  offset: number;
+  limit: number;
+}
 
 export interface DepositIntent {
   id: string;
@@ -269,6 +284,12 @@ export interface Tx {
     /** Public tables (mode quick) in a status, newest activity first for ACTIVE, oldest first for WAITING. */
     listLobby(status: "WAITING" | "ACTIVE", limit: number): Promise<LobbyRow[]>;
     stats(): Promise<{ live: number; waiting: number; games: number }>;
+    /**
+     * Public tables (mode quick) for the room browser, filtered and paged. WAITING tables only count
+     * when the host was seen at or after `hostSeenSince`; ACTIVE ones only when watchable and updated
+     * at or after `activeSince`.
+     */
+    listPublic(f: PublicTableFilter): Promise<{ rows: LobbyRow[]; total: number }>;
     /** Admin: any mode, optionally by status and/or player; newest activity first. */
     listAdmin(f: { status?: string; userId?: string; limit: number }): Promise<LobbyRow[]>;
     countCompletedSince(at: number): Promise<number>;

@@ -42,3 +42,7 @@ yarn-error.log*
 next-env.d.ts
 .data/
 .data-test/
+
+# Original artwork (large); optimised WebP copies are committed instead
+public/images/play/*.png
+/public/images/Backgammon Nights in the City.png

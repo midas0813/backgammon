@@ -28,6 +28,7 @@ export function lobbyRow(m: MatchRecord, hostSeenAt: number, spectators: number)
     cube: s.cube,
     gameNumber: s.gameNumber,
     allowSpectators: m.allowSpectators !== false,
+    entryFee: m.entryFee ?? 0,
     hostSeenAt,
     spectators,
   };

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { homeData, startOfLocalDay } from "@/lib/server/home";
-import { MAX_OPEN_TABLES, TABLE_EXPIRY_MS, createTable, findGame, lobby, tableStatus } from "@/lib/server/lobby";
+import { MAX_OPEN_TABLES, PAGE_SIZE, TABLE_EXPIRY_MS, createTable, findGame, lobby, publicTables, tableStatus } from "@/lib/server/lobby";
+import { tx } from "@/lib/server/store";
 import { cancelMatch, getSnapshot, joinMatch, setAllowSpectators, setEnvForTests, submitAction } from "@/lib/server/matches";
 import { ensureUser } from "@/lib/server/users";
 import { randomEnv } from "./helpers";
@@ -21,19 +22,20 @@ describe("lobby tables", () => {
     const pub = await createTable(host.id, { targetPoints: 3, visibility: "public" });
     const priv = await createTable(host.id, { targetPoints: 5, visibility: "private" });
 
-    const seen = await lobby(guest.id);
-    expect(seen.open.map((t) => t.matchId)).toEqual([pub.matchId]);
-    expect(seen.open[0].host.name).toBe(host.name);
-    expect((await lobby(host.id)).open).toEqual([]); // never your own
+    const seen = await publicTables({});
+    expect(seen.tables.map((t) => t.matchId)).toEqual([pub.matchId]); // private tables are never listed
+    expect(seen.tables[0].host.name).toBe(host.name);
+    expect((await lobby(guest.id)).counts.open).toBe(1);
+    expect((await lobby(host.id)).counts.open).toBe(0); // your own table is not "open to join" for you
     expect((await lobby(host.id)).mine.map((m) => m.matchId).sort()).toEqual([pub.matchId, priv.matchId].sort());
-    expect((await lobby(guest.id, { points: 5 })).open).toEqual([]);
+    expect((await publicTables({ points: "5" })).tables).toEqual([]);
 
     await joinMatch(guest.id, pub.matchId);
-    const watcher = await ensureUser(undefined);
-    const after = await lobby(watcher.id);
-    expect(after.open).toEqual([]);
-    expect(after.live.map((l) => l.matchId)).toEqual([pub.matchId]);
-    expect(after.counts.live).toBe(1);
+    expect((await publicTables({})).tables).toEqual([]);
+    const live = await publicTables({ view: "live" });
+    expect(live.tables.map((l) => l.matchId)).toEqual([pub.matchId]);
+    expect(live.tables[0].opponent?.name).toBe(guest.name);
+    expect((await lobby(guest.id)).counts.live).toBe(1);
   });
 
   it("two players joining at once: exactly one gets the seat", async () => {
@@ -57,11 +59,11 @@ describe("lobby tables", () => {
     const host = await ensureUser(undefined);
     const other = await ensureUser(undefined);
     const { matchId } = await createTable(host.id, { targetPoints: 3 });
-    expect((await lobby(other.id)).open.map((t) => t.matchId)).toEqual([matchId]);
+    expect((await publicTables({})).tables.map((t) => t.matchId)).toEqual([matchId]);
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       vi.setSystemTime(Date.now() + 3 * 60 * 1000); // host quiet for 3 minutes: hidden, still open
-      expect((await lobby(other.id)).open).toEqual([]);
+      expect((await publicTables({})).tables).toEqual([]);
       expect((await tableStatus(host.id, [matchId])).tables[0].status).toBe("WAITING");
       vi.setSystemTime(Date.now() + TABLE_EXPIRY_MS + 1000); // long gone: closed as expired
       await lobby(other.id);
@@ -88,7 +90,48 @@ describe("lobby tables", () => {
     const other = await ensureUser(undefined);
     const { matchId } = await createTable(host.id, { targetPoints: 3 });
     await cancelMatch(host.id, matchId);
-    expect((await lobby(other.id)).open).toEqual([]);
+    expect((await publicTables({})).tables).toEqual([]);
+  });
+});
+
+describe("room browser", () => {
+  it("filters by length and entry fee, sorts, and pages through many tables", async () => {
+    const lengths = [1, 3, 5, 7];
+    const ids: string[] = [];
+    // 40 hosts with one table each (the per-player limit is 3).
+    for (let i = 0; i < 40; i++) {
+      const host = await ensureUser(undefined);
+      ids.push((await createTable(host.id, { targetPoints: lengths[i % 4] })).matchId);
+    }
+    // Give a few tables an entry fee so the fee bands have something to find.
+    await tx(async (t) => {
+      for (const [i, fee] of [[0, 500], [1, 2500], [2, 9000]] as const) {
+        const rec = (await t.matches.get(ids[i]))!;
+        rec.entryFee = fee;
+        await t.matches.put(rec);
+      }
+    });
+    const all = await publicTables({});
+    expect(all.total).toBe(40);
+    expect(all.pages).toBe(Math.ceil(40 / PAGE_SIZE));
+    expect(all.tables).toHaveLength(PAGE_SIZE);
+    const p2 = await publicTables({ page: "2" });
+    expect(p2.tables).toHaveLength(40 - 2 * PAGE_SIZE);
+    // Pages never overlap and together cover everything.
+    const seen = new Set<string>();
+    for (let page = 0; page < all.pages; page++) for (const t of (await publicTables({ page: String(page) })).tables) seen.add(t.matchId);
+    expect(seen.size).toBe(40);
+
+    expect((await publicTables({ points: "5" })).total).toBe(10);
+    expect((await publicTables({ fee: "free" })).total).toBe(37);
+    expect((await publicTables({ fee: "1-10" })).tables.map((t) => t.entryFee)).toEqual([500]);
+    expect((await publicTables({ fee: "10-50" })).tables.map((t) => t.entryFee)).toEqual([2500]);
+    expect((await publicTables({ fee: "50+" })).tables.map((t) => t.entryFee)).toEqual([9000]);
+    const oldest = await publicTables({ sort: "oldest" });
+    const newest = await publicTables({ sort: "newest" });
+    expect(oldest.tables[0].createdAt <= newest.tables[0].createdAt).toBe(true);
+    // Unknown values fall back to safe defaults.
+    expect((await publicTables({ points: "4", fee: "lots", page: "-3" })).total).toBe(40);
   });
 });
 
@@ -112,7 +155,7 @@ describe("spectators", () => {
     expect(await codeOf(setAllowSpectators(viewer.id, matchId, false))).toBe("NOT_PARTICIPANT");
     await setAllowSpectators(guest.id, matchId, false);
     expect(await codeOf(getSnapshot(viewer.id, matchId))).toBe("NOT_PARTICIPANT");
-    expect((await lobby(viewer.id)).live).toEqual([]);
+    expect((await publicTables({ view: "live" })).tables).toEqual([]);
   });
 
   it("tables created with watching off are not listed live", async () => {
@@ -121,7 +164,7 @@ describe("spectators", () => {
     const guest = await ensureUser(undefined);
     const { matchId } = await createTable(host.id, { targetPoints: 3, allowSpectators: false });
     await joinMatch(guest.id, matchId);
-    expect((await lobby((await ensureUser(undefined)).id)).live).toEqual([]);
+    expect((await publicTables({ view: "live" })).tables).toEqual([]);
   });
 });
 

@@ -60,7 +60,15 @@ export function homeData(userId: string, tzOffset: number) {
         };
       });
 
-    const waiting = await t.matches.listLobby("WAITING", 100);
+    const open = await t.matches.listPublic({
+      status: "WAITING",
+      hostSeenSince: now - HOST_ONLINE_MS,
+      activeSince: now,
+      sort: "newest",
+      offset: 0,
+      limit: 0,
+    });
+    const myWaiting = matches.filter((m) => m.mode === "quick" && m.state.status === "WAITING" && m.createdBy === userId).length;
     const stats = await t.matches.stats();
     const reports = await t.disputes.listByUser(userId);
     return {
@@ -79,7 +87,7 @@ export function homeData(userId: string, tzOffset: number) {
       pulse: {
         online: await t.users.countSeenSince(now - ONLINE_WINDOW_MS),
         live: stats.live,
-        open: waiting.filter((r) => r.hostId !== userId && r.hostSeenAt >= now - HOST_ONLINE_MS).length,
+        open: Math.max(0, open.total - myWaiting),
         gamesPlayed: stats.games,
       },
       openReports: reports.filter((r) => r.status !== "RESOLVED" && r.status !== "REJECTED").length,

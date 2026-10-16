@@ -243,7 +243,7 @@ export default function Home() {
             <strong>Create table</strong>
             <span className="muted small">Public or invite-only</span>
           </Link>
-          <Link className="mode-tile" href="/play">
+          <Link className="mode-tile" href="/play?watch=1">
             <span className="mode-icon" aria-hidden>
               <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" />
