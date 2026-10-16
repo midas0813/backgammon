@@ -13,7 +13,7 @@
    and only works together with the same wallet's game session.
 
 **The first Owner** comes from the `ADMIN_BOOTSTRAP_WALLETS` environment variable, a comma-separated
-list of wallet addresses. It applies only to a wallet that never held a role, so removing someone's
+list of wallet addresses (set in Vercel for this deployment). It applies only to a wallet that never held a role, so removing someone's
 role is never undone by the variable. After that, Owners add other admins on the **Admins** page.
 The person must have signed in once with that wallet first.
 
@@ -23,13 +23,13 @@ The person must have signed in once with that wallet first.
 | --- | :-: | :-: | :-: | :-: |
 | Dashboard, players, matches, reports (read) | ✓ | ✓ | ✓ | ✓ |
 | Suspend / lift, force logout, reset profile | ✓ | ✓ | | |
-| Close tables, void matches | ✓ | ✓ | | |
+| Close tables, void matches, remove chat messages | ✓ | ✓ | | |
 | Handle reports (assign, notes, resolve) | ✓ | ✓ | | |
 | Finance: ledger, deposits, withdrawals | ✓ | | ✓ | |
 | Request / approve balance adjustments | ✓ | | ✓ | |
 | Settings, announcements | ✓ | | | |
 | Manage admins | ✓ | | | |
-| Audit log | all | own | own | own |
+| Audit log | all (or filter by person) | own | own | own |
 
 There is always at least one Owner, and nobody can act on their own account.
 
@@ -49,6 +49,13 @@ tokens or `system:FREE_ISSUANCE` for practice credits.
 Every admin action is written to `admin_audit`: who, which role, action, target, reason,
 before/after, IP address, browser and signature. A database trigger rejects any update or delete
 of these rows. Denied unlock attempts are recorded too.
+
+## Monitoring
+
+The dashboard shows errors players hit in the last 24 hours and the latest ones, each with the
+reference number the player saw (players can include it in a report). With `DISCORD_WEBHOOK_URL`
+set, the team is alerted when errors spike or anything payment-related fails. A match's page shows
+its full event log and chat.
 
 ## What players see
 
