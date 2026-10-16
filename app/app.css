@@ -2162,3 +2162,40 @@ html[data-reduced-motion="true"]::view-transition-group(*) {
     font-size: 12px;
   }
 }
+
+/* ---- Errors and connection ------------------------------------------------------------------- */
+.error-card {
+  max-width: 520px;
+  margin: 40px auto 0;
+}
+.offline-banner {
+  position: fixed;
+  top: env(safe-area-inset-top);
+  left: 50%;
+  z-index: 70;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 14px;
+  border-radius: 0 0 14px 14px;
+  background: #3a2a10;
+  border: 1px solid var(--warning);
+  border-top: 0;
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 650;
+}
+.offline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warning);
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+  50% {
+    opacity: 0.3;
+  }
+}

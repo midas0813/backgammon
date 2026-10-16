@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/client/api";
+import { fmtDate } from "@/lib/client/admin";
 import type { dashboard } from "@/lib/server/admin/service";
 import { DailyBars, useAdmin } from "./ui";
 
@@ -66,6 +67,7 @@ export default function Dashboard() {
         <h3 className="a-h3">Needs attention</h3>
         <div className="a-tiles">
           <Tile label="Open reports" value={d.openReports} tone={d.openReports ? "warn" : undefined} onClick={() => open("reports")} />
+          <Tile label="Errors (24 h)" value={d.errors.lastDay} tone={d.errors.lastDay ? "warn" : undefined} />
           {d.finance && (
             <>
               <Tile label="Deposits pending" value={d.finance.pendingDeposits} onClick={() => open("finance")} />
@@ -85,6 +87,27 @@ export default function Dashboard() {
           )}
         </div>
       </section>
+      {d.errors.recent.length > 0 && (
+        <section className="a-card">
+          <h3 className="a-h3">Latest errors</h3>
+          <p className="muted small">Each has the reference number the player saw. Search a player&apos;s report for it.</p>
+          <ol className="a-events">
+            {d.errors.recent.map((e) => (
+              <li key={e.id}>
+                <span className="mono">{e.ref}</span> <strong>{e.source}</strong> <span className="muted small">{fmtDate(e.createdAt)}</span>
+                {e.path && <span className="muted small"> · {e.path}</span>}
+                {e.userId && (
+                  <button className="link small" onClick={() => open("users", e.userId!)}>
+                    {" "}
+                    player
+                  </button>
+                )}
+                <code>{e.message}</code>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
       <div className="a-grid2">
         <DailyBars title="New players" data={d.daily.newUsers} color="#65E2BC" />
         <DailyBars title="Finished matches" data={d.daily.completedMatches} color="#9DB7FF" />

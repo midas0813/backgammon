@@ -87,6 +87,7 @@ export function dashboard(ctx: AdminContext) {
         gamesPlayed: games,
       },
       openReports: await t.disputes.countOpen(),
+      errors: { lastDay: await t.errors.countSince(now - 24 * 60 * 60_000), recent: await t.errors.recent(8) },
       finance,
       daily: {
         newUsers: await t.users.dailyNew(14),

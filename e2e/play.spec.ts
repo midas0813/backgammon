@@ -140,3 +140,13 @@ test("lobby looks right", async ({ browser }) => {
   await expect(p.page.locator(".play-tiles")).toHaveScreenshot("lobby-tiles.png");
   await p.close();
 });
+
+test("losing the connection shows a banner that goes away when it returns", async ({ browser }) => {
+  const p = await player(browser);
+  await openLobby(p.page);
+  await p.page.context().setOffline(true);
+  await expect(p.page.getByText(/Offline — reconnecting/)).toBeVisible();
+  await p.page.context().setOffline(false);
+  await expect(p.page.getByText(/Offline — reconnecting/)).toBeHidden();
+  await p.close();
+});

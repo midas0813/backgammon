@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Playfair_Display } from "next/font/google";
 import AppHeader from "@/components/AppHeader";
 import GameGuard from "@/components/GameGuard";
+import OfflineBanner from "@/components/OfflineBanner";
 import { artExists } from "@/components/Art";
 import BottomNav from "@/components/BottomNav";
 import TableWatcher from "@/components/TableWatcher";
@@ -38,6 +39,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <Toaster />
           <TableWatcher />
           <GameGuard />
+          <OfflineBanner />
         </Web3Provider>
       </body>
     </html>

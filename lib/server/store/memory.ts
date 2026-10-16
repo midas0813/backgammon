@@ -8,6 +8,7 @@ import {
   type AdminRole,
   type AdminSession,
   type Announcement,
+  type AppError,
   type AuditEntry,
   type ChatMessage,
   type DepositIntent,
@@ -76,6 +77,7 @@ interface Data {
   counters: Record<string, number>;
   rateLimits: Record<string, { start: number; count: number }>;
   chat: Record<string, ChatMessage>;
+  errors: Record<string, AppError>;
   ledger: { balances: Record<string, number>; transactions: Txn[] };
 }
 
@@ -109,6 +111,7 @@ const empty = (): Data => ({
   counters: {},
   rateLimits: {},
   chat: {},
+  errors: {},
   ledger: { balances: {}, transactions: [] },
 });
 
@@ -144,6 +147,7 @@ export function createMemoryStore(file: string | null): Store {
         "counters",
         "rateLimits",
         "chat",
+        "errors",
       ] as const) {
         (data as unknown as Record<string, object>)[k] ??= {};
       }
@@ -407,6 +411,20 @@ export function createMemoryStore(file: string | null): Store {
         remove: async (id, by) => {
           const m = get<ChatMessage>("chat", String(id));
           if (m && !m.removedAt) put("chat", String(id), { ...m, removedAt: new Date().toISOString(), removedBy: by });
+        },
+      },
+      errors: {
+        add: async (e) => {
+          const id = values("errors").length + 1;
+          put("errors", String(id), { ...e, id, createdAt: new Date().toISOString() });
+        },
+        recent: async (limit) =>
+          values<AppError>("errors")
+            .sort((a, b) => (b.id ?? 0) - (a.id ?? 0))
+            .slice(0, limit),
+        countSince: async (at) => values<AppError>("errors").filter((e) => Date.parse(e.createdAt) >= at).length,
+        prune: async (before) => {
+          for (const e of values<AppError>("errors")) if (Date.parse(e.createdAt) < before) del("errors", String(e.id));
         },
       },
       rateLimits: {

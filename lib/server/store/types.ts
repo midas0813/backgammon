@@ -251,6 +251,17 @@ export interface ChatMessage {
   removedBy?: string;
 }
 
+export interface AppError {
+  id?: number;
+  ref: string;
+  source: "server" | "client";
+  message: string;
+  detail?: string;
+  path?: string;
+  userId?: string;
+  createdAt: string;
+}
+
 export interface DepositIntent {
   id: string;
   userId: string;
@@ -386,6 +397,13 @@ export interface Tx {
     list(matchId: string, after: number, limit: number): Promise<ChatMessage[]>;
     get(id: number): Promise<ChatMessage | undefined>;
     remove(id: number, by: string): Promise<void>;
+  };
+  errors: {
+    add(e: Omit<AppError, "id" | "createdAt">): Promise<void>;
+    recent(limit: number): Promise<AppError[]>;
+    countSince(at: number): Promise<number>;
+    /** Drop errors recorded before `before` (ms). */
+    prune(before: number): Promise<void>;
   };
   rateLimits: {
     /** Count a hit in the window starting at `windowStart` (ms) and return the window's count. */

@@ -22,9 +22,14 @@ const CATEGORIES = [
 function SupportInner({ history }: { history: { matchId: string; label: string }[] }) {
   const params = useSearchParams();
   const preset = params.get("report");
-  const [category, setCategory] = useState("GAME");
+  // From an error screen: the reference is filled in so support can find the exact failure.
+  const errorRef = params
+    .get("error")
+    ?.replace(/[^0-9a-zA-Z-]/g, "")
+    .slice(0, 16);
+  const [category, setCategory] = useState(errorRef ? "OTHER" : "GAME");
   const [matchId, setMatchId] = useState(preset ?? "");
-  const [reason, setReason] = useState("");
+  const [reason, setReason] = useState(errorRef ? `The app showed an error (reference ${errorRef}). What I was doing: ` : "");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [reports, setReports] = useState<Report[]>([]);

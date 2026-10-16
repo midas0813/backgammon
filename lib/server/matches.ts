@@ -190,7 +190,10 @@ export async function sweep(now = Date.now(), force = false) {
   }
   if (now - lastSweep.pruned > 60 * 60_000) {
     lastSweep.pruned = now;
-    await tx((t) => t.rateLimits.prune(now - 24 * 60 * 60_000));
+    await tx(async (t) => {
+      await t.rateLimits.prune(now - 24 * 60 * 60_000);
+      await t.errors.prune(now - 30 * 24 * 60 * 60_000);
+    });
   }
   return changed;
 }

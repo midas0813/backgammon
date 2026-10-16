@@ -3,6 +3,7 @@ import { cookies, headers } from "next/headers";
 import { SESSION_COOKIE } from "@/proxy";
 import type { User } from "./store";
 import { ApiError } from "./errors";
+import { recordErrorSoon } from "./monitor";
 import { rateLimit, type LimitRule } from "./ratelimit";
 import { resolveSession } from "./users";
 
@@ -63,22 +64,32 @@ export async function readJson(req: Request): Promise<Record<string, unknown>> {
  * counts the request against that rate-limit rule for the user first.
  */
 export async function handle(fn: (user: User) => unknown | Promise<unknown>, opts: { limit?: LimitRule } = {}): Promise<Response> {
+  let userId: string | undefined;
   try {
     const user = await currentUser();
+    userId = user.id;
     if (opts.limit) await rateLimit(opts.limit, user.id);
     const data = await fn(user);
     return Response.json(data, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
-    return errorResponse(e);
+    return errorResponse(e, { userId });
   }
 }
 
-export function errorResponse(e: unknown): Response {
+export function errorResponse(e: unknown, ctx: { userId?: string } = {}): Response {
   const referenceId = randomUUID().slice(0, 8);
   if (e instanceof ApiError) {
+    if (e.status >= 500) recordErrorSoon({ ref: referenceId, source: "server", message: `${e.code}: ${e.message}`, userId: ctx.userId });
     const headers: Record<string, string> = typeof e.extra.retryAfter === "number" ? { "Retry-After": String(e.extra.retryAfter) } : {};
     return Response.json({ error: { code: e.code, message: e.message, referenceId, ...e.extra } }, { status: e.status, headers });
   }
   console.error(`[${referenceId}]`, e);
+  recordErrorSoon({
+    ref: referenceId,
+    source: "server",
+    message: e instanceof Error ? e.message : String(e),
+    detail: e instanceof Error ? e.stack : undefined,
+    userId: ctx.userId,
+  });
   return Response.json({ error: { code: "SERVICE_UNAVAILABLE", message: "Something went wrong. Please retry.", referenceId } }, { status: 500 });
 }

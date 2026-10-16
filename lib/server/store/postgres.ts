@@ -4,6 +4,7 @@ import {
   type Adjustment,
   type AdminRole,
   type Announcement,
+  type AppError,
   type AuditEntry,
   type Avatar,
   type ChatMessage,
@@ -591,6 +592,38 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
       },
       async remove(id, by) {
         await q(`update match_chat set removed_at = now(), removed_by = $2 where id = $1 and removed_at is null`, [id, by]);
+      },
+    },
+    errors: {
+      async add(e) {
+        await q(`insert into app_errors (ref, source, message, detail, path, user_id) values ($1, $2, $3, $4, $5, $6)`, [
+          e.ref,
+          e.source,
+          e.message,
+          e.detail ?? null,
+          e.path ?? null,
+          e.userId ?? null,
+        ]);
+      },
+      async recent(limit) {
+        const rows = await q(`select * from app_errors order by id desc limit $1`, [limit]);
+        return rows.map((r): AppError => ({
+          id: num(r.id),
+          ref: String(r.ref),
+          source: r.source as AppError["source"],
+          message: String(r.message),
+          detail: (r.detail as string) ?? undefined,
+          path: (r.path as string) ?? undefined,
+          userId: (r.user_id as string) ?? undefined,
+          createdAt: iso(r.created_at),
+        }));
+      },
+      async countSince(at) {
+        const [r] = await q(`select count(*) as n from app_errors where created_at >= to_timestamp($1::float8 / 1000)`, [at]);
+        return num(r.n);
+      },
+      async prune(before) {
+        await q(`delete from app_errors where created_at < to_timestamp($1::float8 / 1000)`, [before]);
       },
     },
     rateLimits: {
