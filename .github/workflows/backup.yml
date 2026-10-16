@@ -1,0 +1,64 @@
+# Nightly database backup. Dumps the production database, encrypts it (AES-256, passphrase in a
+# secret) and keeps it as a workflow artifact for 30 days. Needs two repository secrets:
+#   BACKUP_DATABASE_URL  Supabase → Connect → Session pooler connection string (port 5432)
+#   BACKUP_PASSPHRASE    a long random passphrase; store it in your password manager as well
+# Optional: DISCORD_WEBHOOK_URL to be told when a backup fails. Restore steps: docs/RUNBOOK.md.
+name: Backup
+
+on:
+  schedule:
+    - cron: "15 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - name: Check configuration
+        id: cfg
+        run: |
+          if [ -z "$BACKUP_DATABASE_URL" ] || [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "Backups are not configured yet: add BACKUP_DATABASE_URL and BACKUP_PASSPHRASE secrets." >> "$GITHUB_STEP_SUMMARY"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install PostgreSQL 17 client
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
+      - name: Dump and encrypt
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          name="backgammon-$(date -u +%Y%m%d-%H%M).dump"
+          /usr/lib/postgresql/17/bin/pg_dump "$BACKUP_DATABASE_URL" --format=custom --no-owner --no-privileges --schema=public --file="$name"
+          /usr/lib/postgresql/17/bin/pg_restore --list "$name" > /dev/null   # the archive is readable
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" --symmetric --cipher-algo AES256 --output "$name.gpg" "$name"
+          rm "$name"
+          echo "FILE=$name.gpg" >> "$GITHUB_ENV"
+          echo "Backup $name.gpg ($(du -h "$name.gpg" | cut -f1))" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: steps.cfg.outputs.ready == 'true'
+        with:
+          name: ${{ env.FILE }}
+          path: ${{ env.FILE }}
+          retention-days: 30
+          if-no-files-found: error
+      - name: Tell the team if the backup failed
+        if: failure()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          [ -z "$DISCORD_WEBHOOK_URL" ] && exit 0
+          curl -fsS -H "Content-Type: application/json" -d '{"content":"⚠️ Nightly database backup failed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}' "$DISCORD_WEBHOOK_URL"
