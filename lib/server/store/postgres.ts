@@ -6,6 +6,7 @@ import {
   type Announcement,
   type AuditEntry,
   type Avatar,
+  type ChatMessage,
   type DepositIntent,
   type Dispute,
   type LobbyRow,
@@ -113,6 +114,21 @@ function toAdjustment(r: Row): Adjustment {
   };
 }
 
+function toChat(r: Row): ChatMessage {
+  return {
+    id: num(r.id),
+    matchId: String(r.match_id),
+    userId: String(r.user_id),
+    name: String(r.name),
+    role: r.role as ChatMessage["role"],
+    kind: r.kind as ChatMessage["kind"],
+    body: String(r.body),
+    createdAt: iso(r.created_at),
+    removedAt: r.removed_at ? iso(r.removed_at) : undefined,
+    removedBy: (r.removed_by as string) ?? undefined,
+  };
+}
+
 function toLobbyRow(r: Row): LobbyRow {
   const s = parse<{
     names: [string, string];
@@ -179,10 +195,13 @@ function toTxn(r: Row): Txn {
   };
 }
 
-function makeTx(q: Query): Tx {
+function makeTx(q: Query, committed: (() => void)[]): Tx {
   return {
     async lock(key) {
       await q(`select pg_advisory_xact_lock(hashtextextended($1, 0))`, [key]);
+    },
+    afterCommit(fn) {
+      committed.push(fn);
     },
     users: {
       async get(id) {
@@ -547,6 +566,26 @@ function makeTx(q: Query): Tx {
           endReason: String(r.end_reason),
           completedAt: iso(r.completed_at),
         }));
+      },
+    },
+    chat: {
+      async add(m) {
+        const [r] = await q(
+          `insert into match_chat (match_id, user_id, name, role, kind, body) values ($1, $2, $3, $4, $5, $6) returning *`,
+          [m.matchId, m.userId, m.name, m.role, m.kind, m.body],
+        );
+        return toChat(r);
+      },
+      async list(matchId, after, limit) {
+        const rows = await q(`select * from match_chat where match_id = $1 and id > $2 order by id desc limit $3`, [matchId, after, limit]);
+        return rows.reverse().map(toChat);
+      },
+      async get(id) {
+        const [r] = await q(`select * from match_chat where id = $1`, [id]);
+        return r ? toChat(r) : undefined;
+      },
+      async remove(id, by) {
+        await q(`update match_chat set removed_at = now(), removed_by = $2 where id = $1 and removed_at is null`, [id, by]);
       },
     },
     rateLimits: {
@@ -951,7 +990,10 @@ export function createPostgresStore(driver: Driver, migrations: Migration[] = []
     kind: "postgres",
     tx: async (fn) => {
       await ensure();
-      return driver.begin((q) => fn(makeTx(q)));
+      const committed: (() => void)[] = [];
+      const result = await driver.begin((q) => fn(makeTx(q, committed)));
+      for (const f of committed) f();
+      return result;
     },
     reset: async () => {
       await ensure();

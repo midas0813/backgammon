@@ -156,6 +156,11 @@ export interface MatchRecord {
   actions: Record<string, { fingerprint: string; response: unknown }>;
   /** Host's choice; undefined (older matches) means allowed. */
   allowSpectators?: boolean;
+  /** Host's choices for spectators (undefined = allowed): chat messages, emoji reactions. */
+  spectatorChat?: boolean;
+  spectatorEmoji?: boolean;
+  /** Spectators the host removed: they can no longer watch or chat. */
+  removedSpectators?: string[];
   /** Entry fee in token minor units; 0 or undefined = free. */
   entryFee?: number;
   completedAt?: string;
@@ -233,6 +238,19 @@ export interface PublicTableFilter {
   limit: number;
 }
 
+export interface ChatMessage {
+  id: number;
+  matchId: string;
+  userId: string;
+  name: string;
+  role: "player" | "spectator";
+  kind: "text" | "preset" | "emoji";
+  body: string;
+  createdAt: string;
+  removedAt?: string;
+  removedBy?: string;
+}
+
 export interface DepositIntent {
   id: string;
   userId: string;
@@ -290,6 +308,8 @@ export interface Avatar {
 export interface Tx {
   /** Serialise on an arbitrary key until commit (Postgres advisory lock; no-op in the serial memory store). */
   lock(key: string): Promise<void>;
+  /** Run `fn` once this unit of work has committed (never if it fails), e.g. to notify watchers. */
+  afterCommit(fn: () => void): void;
   users: {
     get(id: string): Promise<User | undefined>;
     getMany(ids: string[]): Promise<Record<string, User>>;
@@ -359,6 +379,13 @@ export interface Tx {
     deleteForMatch(matchId: string): Promise<string[]>;
     stats(userId: string, since?: number): Promise<PlayerTotals>;
     history(userId: string, offset: number, limit: number): Promise<MatchResultRow[]>;
+  };
+  chat: {
+    add(m: Omit<ChatMessage, "id" | "createdAt">): Promise<ChatMessage>;
+    /** Messages after id `after`, oldest first (at most `limit`, the newest ones when more). */
+    list(matchId: string, after: number, limit: number): Promise<ChatMessage[]>;
+    get(id: number): Promise<ChatMessage | undefined>;
+    remove(id: number, by: string): Promise<void>;
   };
   rateLimits: {
     /** Count a hit in the window starting at `windowStart` (ms) and return the window's count. */

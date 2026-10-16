@@ -257,13 +257,15 @@ function CreateTable({ initialPoints, onClose, onCreated }: { initialPoints: num
   const [points, setPoints] = useState(initialPoints);
   const [visibility, setVisibility] = useState<"public" | "private">("public");
   const [allowSpectators, setAllowSpectators] = useState(true);
+  const [spectatorChat, setSpectatorChat] = useState(true);
+  const [spectatorEmoji, setSpectatorEmoji] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submit = async () => {
     setBusy(true);
     setError(null);
     try {
-      const { matchId } = await api<{ matchId: string }>("/api/tables", { method: "POST", body: { targetPoints: points, visibility, allowSpectators } });
+      const { matchId } = await api<{ matchId: string }>("/api/tables", { method: "POST", body: { targetPoints: points, visibility, allowSpectators, spectatorChat, spectatorEmoji } });
       watchTable(matchId);
       onCreated(matchId);
     } catch (e) {
@@ -310,6 +312,28 @@ function CreateTable({ initialPoints, onClose, onCreated }: { initialPoints: num
         </span>
         <input type="checkbox" role="switch" checked={allowSpectators} onChange={(e) => setAllowSpectators(e.target.checked)} />
       </label>
+      {allowSpectators && (
+        <>
+          <label className="toggle">
+            <span>
+              <strong>Spectators can chat</strong>
+              <span className="muted small" style={{ display: "block" }}>
+                Messages and quick phrases. You two can always chat.
+              </span>
+            </span>
+            <input type="checkbox" role="switch" checked={spectatorChat} onChange={(e) => setSpectatorChat(e.target.checked)} />
+          </label>
+          <label className="toggle">
+            <span>
+              <strong>Spectators can send reactions</strong>
+              <span className="muted small" style={{ display: "block" }}>
+                👏 🔥 😮 float over the board
+              </span>
+            </span>
+            <input type="checkbox" role="switch" checked={spectatorEmoji} onChange={(e) => setSpectatorEmoji(e.target.checked)} />
+          </label>
+        </>
+      )}
       <ul className="list small">
         <li>
           <span>Stake</span>

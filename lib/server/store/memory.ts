@@ -10,6 +10,7 @@ import {
   type Announcement,
   type AuditEntry,
   type Avatar,
+  type ChatMessage,
   type DepositIntent,
   type Dispute,
   type DisputeNote,
@@ -75,6 +76,7 @@ interface Data {
   results: Record<string, MatchResultRow>;
   counters: Record<string, number>;
   rateLimits: Record<string, { start: number; count: number }>;
+  chat: Record<string, ChatMessage>;
   ledger: { balances: Record<string, number>; transactions: Txn[] };
 }
 
@@ -107,6 +109,7 @@ const empty = (): Data => ({
   results: {},
   counters: {},
   rateLimits: {},
+  chat: {},
   ledger: { balances: {}, transactions: [] },
 });
 
@@ -127,7 +130,7 @@ export function createMemoryStore(file: string | null): Store {
       data.disputes ??= {};
       data.seen ??= {};
       data.spectators ??= {};
-      for (const k of ["adminRoles", "adminSessions", "adminChallenges", "audit", "settings", "announcements", "disputeNotes", "adjustments", "matchEvents", "matchActions", "results", "counters", "rateLimits"] as const) {
+      for (const k of ["adminRoles", "adminSessions", "adminChallenges", "audit", "settings", "announcements", "disputeNotes", "adjustments", "matchEvents", "matchActions", "results", "counters", "rateLimits", "chat"] as const) {
         (data as unknown as Record<string, object>)[k] ??= {};
       }
     }
@@ -178,8 +181,12 @@ export function createMemoryStore(file: string | null): Store {
     const allTxns = () => [...base.ledger.transactions, ...pendingTxns];
     const balance = (a: string) => pendingBalances[a] ?? base.ledger.balances[a] ?? 0;
 
+    const committed: (() => void)[] = [];
     const t: Tx = {
       lock: async () => {},
+      afterCommit: (fn) => {
+        committed.push(fn);
+      },
       users: {
         get: async (id) => get("users", id),
         getMany: async (ids) => Object.fromEntries(ids.map((id) => [id, get<User>("users", id)]).filter(([, u]) => u)),
@@ -358,6 +365,23 @@ export function createMemoryStore(file: string | null): Store {
             .filter((r) => r.userId === userId)
             .sort((a, b) => b.completedAt.localeCompare(a.completedAt))
             .slice(offset, offset + limit),
+      },
+      chat: {
+        add: async (m) => {
+          const msg: ChatMessage = { ...m, id: values("chat").length + 1, createdAt: new Date().toISOString() };
+          put("chat", String(msg.id), msg);
+          return msg;
+        },
+        list: async (matchId, after, limit) =>
+          values<ChatMessage>("chat")
+            .filter((m) => m.matchId === matchId && m.id > after)
+            .sort((a, b) => a.id - b.id)
+            .slice(-limit),
+        get: async (id) => get("chat", String(id)),
+        remove: async (id, by) => {
+          const m = get<ChatMessage>("chat", String(id));
+          if (m && !m.removedAt) put("chat", String(id), { ...m, removedAt: new Date().toISOString(), removedBy: by });
+        },
       },
       rateLimits: {
         hit: async (key, start) => {
@@ -564,6 +588,7 @@ export function createMemoryStore(file: string | null): Store {
     base.ledger.transactions.push(...pendingTxns);
     Object.assign(base.ledger.balances, pendingBalances);
     save(base);
+    for (const f of committed) f();
     return result;
   }
 

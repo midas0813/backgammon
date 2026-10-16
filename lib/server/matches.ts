@@ -17,6 +17,7 @@ import { BOT_NAME, BOT_USER_ID, acceptsDouble, chooseSequence } from "./bot";
 import { ApiError, notFound } from "./errors";
 import { tx, type ClosedReason, type MatchMode, type MatchRecord, type MatchResultRow, type StoredEvent, type Tx, type User } from "./store";
 import { SPECTATOR_WINDOW_MS } from "./store/types";
+import { publish } from "./realtime";
 import { operatorSettings } from "./settings";
 import { GUEST_IDLE_MS, assertActive, avatarUrl } from "./users";
 
@@ -82,6 +83,8 @@ async function save(t: Tx, rec: MatchRecord) {
   if (games) await t.counters.add("games", games);
   if (rec.events.some((e) => e.type === "MATCH_COMPLETED")) await t.results.put(resultRows(rec));
   await t.matches.put(rec);
+  const version = rec.version;
+  t.afterCommit(() => publish(rec.id, "match", { v: version }));
 }
 
 // ---- Timing rules -------------------------------------------------------------------------------
@@ -245,7 +248,7 @@ export async function createMatch(
   userId: string,
   mode: MatchMode,
   targetPoints: number,
-  opts: { allowSpectators?: boolean } = {},
+  opts: { allowSpectators?: boolean; spectatorChat?: boolean; spectatorEmoji?: boolean } = {},
 ): Promise<{ matchId: string }> {
   if (!ALLOWED_POINTS.includes(targetPoints)) throw new ApiError(400, "INVALID_INPUT", "Unsupported match length");
   if (!["quick", "private", "local", "bot"].includes(mode)) throw new ApiError(400, "INVALID_INPUT", "Unsupported mode");
@@ -273,6 +276,8 @@ export async function createMatch(
       eventSeq: 0,
       actions: {},
       allowSpectators: opts.allowSpectators !== false,
+      spectatorChat: opts.spectatorChat !== false,
+      spectatorEmoji: opts.spectatorEmoji !== false,
     };
     pushEvents(rec, [{ type: "MATCH_CREATED", payload: { mode, targetPoints } }]);
     if (mode === "local" || mode === "bot") {
@@ -370,19 +375,55 @@ export async function cancelTableIn(t: Tx, matchId: string) {
   await save(t, rec);
 }
 
-/** Either player can switch watching on or off. */
-export function setAllowSpectators(userId: string, matchId: string, allow: boolean) {
+export interface SpectatorSettings {
+  allow?: unknown;
+  chat?: unknown;
+  emoji?: unknown;
+}
+
+/** The host decides who may watch and whether spectators may chat or send reactions. */
+export function setSpectatorSettings(userId: string, matchId: string, body: SpectatorSettings) {
   return tx(async (t) => {
     const rec = await t.matches.get(matchId, { lock: true });
     if (!rec) throw notFound("Match");
-    if (!rec.seats.includes(userId)) throw new ApiError(403, "NOT_PARTICIPANT", "Only players can change this");
+    if (rec.createdBy !== userId || !rec.seats.includes(userId)) throw new ApiError(403, "NOT_PARTICIPANT", "Only the host can change this");
     if (!online(rec)) throw new ApiError(409, "WRONG_PHASE", "This match is not shown to others");
-    rec.allowSpectators = allow;
+    if (typeof body.allow === "boolean") rec.allowSpectators = body.allow;
+    if (typeof body.chat === "boolean") rec.spectatorChat = body.chat;
+    if (typeof body.emoji === "boolean") rec.spectatorEmoji = body.emoji;
     rec.version += 1;
-    pushEvents(rec, [{ type: "SPECTATORS_CHANGED", payload: { allow } }]);
+    const settings = spectatorSettingsOf(rec);
+    pushEvents(rec, [{ type: "SPECTATORS_CHANGED", payload: { ...settings } }]);
     await save(t, rec);
-    return { allowSpectators: allow };
+    return settings;
   });
+}
+
+export const spectatorSettingsOf = (rec: MatchRecord) => ({
+  allow: rec.allowSpectators !== false,
+  chat: rec.spectatorChat !== false,
+  emoji: rec.spectatorEmoji !== false,
+});
+
+/** What this viewer may do in the match chat: players can always talk; spectators as the host allows. */
+export function chatRights(rec: MatchRecord, userId: string) {
+  const open = online(rec) && (rec.state.status === "ACTIVE" || rec.state.status === "COMPLETED");
+  if (!open) return { send: false, react: false };
+  if (rec.seats.includes(userId)) return { send: true, react: true };
+  if (rec.allowSpectators === false || rec.removedSpectators?.includes(userId)) return { send: false, react: false };
+  return { send: rec.spectatorChat !== false, react: rec.spectatorEmoji !== false };
+}
+
+/** Host only: stop one spectator from watching and chatting in this match. */
+export async function removeSpectatorIn(t: Tx, userId: string, matchId: string, spectatorId: string) {
+  const rec = await t.matches.get(matchId, { lock: true });
+  if (!rec) throw notFound("Match");
+  if (rec.createdBy !== userId) throw new ApiError(403, "NOT_PARTICIPANT", "Only the host can remove spectators");
+  if (rec.seats.includes(spectatorId)) throw new ApiError(409, "WRONG_PHASE", "Players cannot be removed");
+  rec.removedSpectators = [...new Set([...(rec.removedSpectators ?? []), spectatorId])];
+  rec.version += 1;
+  pushEvents(rec, [{ type: "SPECTATOR_REMOVED", payload: {} }]);
+  await save(t, rec);
 }
 
 export interface ActionRequest {
@@ -444,14 +485,16 @@ export async function submitAction(userId: string, matchId: string, req: ActionR
  */
 const lastPresenceWrite = ((globalThis as unknown as { __bgPresenceW?: Map<string, number> }).__bgPresenceW ??= new Map());
 const PRESENCE_WRITE_MS = 3000;
-const ONLINE_MS = 9000;
+// Pages with instant updates poll only every ~10 s, so "online" allows for a missed poll or two.
+const ONLINE_MS = 25000;
 
 /**
  * Players may switch watching off once a match is under way. A WAITING table stays visible so an
  * invited player can still open the link and join.
  */
-function assertMayWatch(rec: MatchRecord, userId: string, spectatorsOn: boolean) {
+export function assertMayWatch(rec: MatchRecord, userId: string, spectatorsOn: boolean) {
   if (rec.seats.includes(userId) || rec.state.status === "WAITING" || rec.state.status === "CANCELLED") return;
+  if (rec.removedSpectators?.includes(userId)) throw new ApiError(403, "NOT_PARTICIPANT", "The host removed you from this match");
   if (rec.allowSpectators === false) throw new ApiError(403, "NOT_PARTICIPANT", "The players turned off watching for this match");
   if (!spectatorsOn) throw new ApiError(403, "NOT_PARTICIPANT", "Watching other players' matches is paused right now");
 }
@@ -539,6 +582,9 @@ function snapshotOf(
     role: mySeats.length ? ("player" as const) : ("spectator" as const),
     spectators,
     allowSpectators: rec.allowSpectators !== false,
+    spectatorSettings: spectatorSettingsOf(rec),
+    chat: chatRights(rec, userId),
+    isHost: rec.createdBy === userId && mySeats.length > 0,
     closedReason: rec.closedReason ?? null,
     /** Set while the host has not come back since someone joined: the match is called off at this time. */
     hostReturnBy: online(rec) && st.status === "ACTIVE" && rec.startedAt && seen[0] < rec.startedAt ? new Date(rec.startedAt + HOST_RETURN_MS).toISOString() : null,

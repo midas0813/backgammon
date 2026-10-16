@@ -1,9 +1,9 @@
 import { handle, readJson } from "@/lib/server/http";
-import { setAllowSpectators } from "@/lib/server/matches";
+import { setSpectatorSettings } from "@/lib/server/matches";
 
-/** POST /api/matches/:id/spectators — { allow: boolean }. Players only. */
+/** POST /api/matches/:id/spectators — { allow?, chat?, emoji? }: the host's spectator settings. */
 export async function POST(req: Request, ctx: RouteContext<"/api/matches/[id]/spectators">) {
   const { id } = await ctx.params;
   const body = await readJson(req);
-  return handle((user) => setAllowSpectators(user.id, id, body.allow !== false), { limit: "game" });
+  return handle((user) => setSpectatorSettings(user.id, id, body), { limit: "game" });
 }

@@ -30,11 +30,18 @@ export async function touchUser(t: Tx, userId: string, now = Date.now()) {
 }
 
 /** Create a table (public or invite-only). Players have one game at a time, enforced in createMatch. */
-export async function createTable(userId: string, body: { targetPoints?: unknown; visibility?: unknown; allowSpectators?: unknown }) {
+export async function createTable(
+  userId: string,
+  body: { targetPoints?: unknown; visibility?: unknown; allowSpectators?: unknown; spectatorChat?: unknown; spectatorEmoji?: unknown },
+) {
   const targetPoints = Number(body.targetPoints);
   if (!ALLOWED_POINTS.includes(targetPoints)) throw new ApiError(400, "INVALID_INPUT", "Unsupported match length");
   const visibility = body.visibility === "private" ? "private" : "public";
-  return createMatch(userId, visibility === "private" ? "private" : "quick", targetPoints, { allowSpectators: body.allowSpectators !== false });
+  return createMatch(userId, visibility === "private" ? "private" : "quick", targetPoints, {
+    allowSpectators: body.allowSpectators !== false,
+    spectatorChat: body.spectatorChat !== false,
+    spectatorEmoji: body.spectatorEmoji !== false,
+  });
 }
 
 interface PlayerView {

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { homeData, startOfLocalDay } from "@/lib/server/home";
 import { PAGE_SIZE, TABLE_EXPIRY_MS, createTable, lobby, publicTables, tableStatus } from "@/lib/server/lobby";
 import { tx } from "@/lib/server/store";
-import { cancelMatch, getSnapshot, joinMatch, setAllowSpectators, setEnvForTests, submitAction, sweep } from "@/lib/server/matches";
+import { cancelMatch, getSnapshot, joinMatch, setSpectatorSettings, setEnvForTests, submitAction, sweep } from "@/lib/server/matches";
 import { ensureUser } from "@/lib/server/users";
 import { ensureAccount, randomEnv } from "./helpers";
 
@@ -177,8 +177,9 @@ describe("spectators", () => {
       await codeOf(submitAction(viewer.id, matchId, { actionId: "x", expectedVersion: view.stateVersion, actionType: "ROLL" })),
     ).toBe("NOT_PARTICIPANT");
 
-    expect(await codeOf(setAllowSpectators(viewer.id, matchId, false))).toBe("NOT_PARTICIPANT");
-    await setAllowSpectators(guest.id, matchId, false);
+    expect(await codeOf(setSpectatorSettings(viewer.id, matchId, { allow: false }))).toBe("NOT_PARTICIPANT");
+    expect(await codeOf(setSpectatorSettings(guest.id, matchId, { allow: false }))).toBe("NOT_PARTICIPANT"); // host only
+    await setSpectatorSettings(host.id, matchId, { allow: false });
     expect(await codeOf(getSnapshot(viewer.id, matchId))).toBe("NOT_PARTICIPANT");
     expect((await publicTables({ view: "live" })).tables).toEqual([]);
   });

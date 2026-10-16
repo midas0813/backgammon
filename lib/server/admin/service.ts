@@ -3,6 +3,8 @@ import { ApiError, notFound } from "../errors";
 import { LedgerError, SYSTEM, post, reconcile, userAccount, userBalances, userTransactions } from "../ledger";
 import { HOST_ONLINE_MS, cancelTableIn, voidMatchIn } from "../matches";
 import { ONLINE_WINDOW_MS, pulse } from "../lobby";
+import { chatForAdmin } from "../chat";
+import { publish } from "../realtime";
 import { invalidateSettings, mergeSettings, operatorSettings } from "../settings";
 import { tx, type Adjustment, type AdminRole, type Announcement, type Dispute, type LobbyRow, type Tx, type User } from "../store";
 import { avatarUrl, isSuspended, playerStats } from "../users";
@@ -245,6 +247,7 @@ export function matchDetail(_ctx: AdminContext, matchId: string) {
       })),
       game: m.state.game ? { board: m.state.game.board, phase: m.state.game.phase, turn: m.state.game.turn, dice: m.state.game.dice, cubeValue: m.state.game.cubeValue, gameNumber: m.state.game.gameNumber } : null,
       events: await t.matches.events(matchId, {}),
+      chat: await chatForAdmin(t, matchId),
       audit: await t.admin.listAudit({ targetType: "match", targetId: matchId, limit: 20 }),
     };
   });
@@ -268,6 +271,21 @@ export async function voidMatch(ctx: AdminContext, matchId: string, body: { reas
     const r = await voidMatchIn(t, matchId, ctx.userId, reason);
     await writeAudit(t, ctx, { action: "MATCH_VOID", targetType: "match", targetId: matchId, reason, signature, details: r });
     return { status: "VOIDED" };
+  });
+}
+
+/** Remove a chat message (it stays stored with who removed it, and is hidden from everyone). */
+export function removeChatMessage(ctx: AdminContext, matchId: string, body: { messageId?: unknown; reason?: unknown }) {
+  need(ctx, "matches.manage");
+  const reason = cleanReason(body.reason);
+  const id = Number(body.messageId);
+  return tx(async (t) => {
+    const m = await t.chat.get(id);
+    if (!m || m.matchId !== matchId) throw notFound("Message");
+    await t.chat.remove(id, ctx.userId);
+    await writeAudit(t, ctx, { action: "CHAT_REMOVE", targetType: "match", targetId: matchId, reason, details: { messageId: id, author: m.name, body: m.body } });
+    t.afterCommit(() => publish(matchId, "chat", { removed: id }));
+    return { removed: id };
   });
 }
 

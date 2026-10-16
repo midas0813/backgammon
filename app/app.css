@@ -1828,3 +1828,269 @@ html[data-reduced-motion="true"]::view-transition-group(*) {
   margin: 0 0 8px;
   font-size: 13.5px;
 }
+
+/* ---- Match chat ------------------------------------------------------------------------------ */
+.chat-btn {
+  position: relative;
+  min-width: 44px;
+}
+.chat-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: var(--error);
+  color: #1a0b10;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 19px;
+  text-align: center;
+}
+.chat-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 56;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgb(4 8 16 / 0.55);
+  animation: fade-in 180ms ease both;
+}
+.chat-sheet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 560px;
+  height: min(78dvh, 640px);
+  padding: 12px var(--gutter) calc(12px + env(safe-area-inset-bottom));
+  border-radius: 22px 22px 0 0;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-2);
+  box-shadow: var(--shadow);
+  animation: sheet-up 260ms var(--ease-out) both;
+}
+@media (min-width: 1000px) {
+  /* A side panel on wide screens: the board moves aside and stays playable while chatting. */
+  .chat-backdrop {
+    align-items: stretch;
+    justify-content: flex-end;
+    background: none;
+    pointer-events: none;
+  }
+  .chat-sheet {
+    width: 380px;
+    height: 100%;
+    border-radius: 0;
+    pointer-events: auto;
+    animation-name: sheet-left;
+  }
+  body:has(.chat-sheet) .game {
+    max-width: min(820px, calc(100vw - 400px));
+    margin-left: max(8px, calc((100vw - 380px - min(820px, 100vw - 400px)) / 2));
+    margin-right: 380px;
+    transition: margin 260ms var(--ease-out);
+  }
+}
+@keyframes sheet-up {
+  from {
+    transform: translateY(40px);
+    opacity: 0;
+  }
+}
+@keyframes sheet-left {
+  from {
+    transform: translateX(40px);
+    opacity: 0;
+  }
+}
+.chat-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.chat-head strong {
+  font-size: 18px;
+}
+.chat-mute {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.chat-mute input {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--action);
+}
+.chat-head .rb-close {
+  width: 36px;
+  height: 36px;
+}
+.chat-head .chat-mute + .rb-close {
+  margin-left: 0;
+}
+.chat-head strong + .rb-close {
+  margin-left: auto;
+}
+.chat-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 10px 0;
+  list-style: none;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chat-empty {
+  margin: auto;
+}
+.chat-msg {
+  max-width: 85%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-self: flex-start;
+}
+.chat-msg.mine {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.chat-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.chat-tag {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.07);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.chat-more {
+  min-width: 32px;
+  min-height: 28px;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font-size: 16px;
+  cursor: pointer;
+}
+.chat-body {
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+  font-size: 14.5px;
+}
+.chat-msg.mine .chat-body {
+  background: rgb(101 226 188 / 0.18);
+}
+.chat-msg.spectator .chat-body {
+  background: rgb(255 255 255 / 0.05);
+  color: var(--text-2);
+}
+.chat-body.preset {
+  font-weight: 650;
+}
+.chat-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.chat-reactions {
+  display: flex;
+  justify-content: space-around;
+  padding: 6px 0;
+  border-top: 1px solid var(--border-soft);
+}
+.chat-reactions button {
+  min-width: 48px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  font-size: 24px;
+  cursor: pointer;
+  transition: transform 140ms var(--ease-spring);
+}
+.chat-reactions button:active {
+  transform: scale(1.3);
+}
+.chat-presets {
+  display: flex;
+  gap: 6px;
+  padding: 4px 0 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.chat-presets .chip {
+  flex: none;
+}
+.chat-form {
+  display: flex;
+  gap: 8px;
+}
+.chat-form input {
+  flex: 1;
+  min-width: 0;
+}
+.chat-off {
+  margin: 8px 0 0;
+  text-align: center;
+}
+.react-quick {
+  min-width: 38px;
+  padding: 0 6px;
+  font-size: 18px;
+}
+
+/* Reactions float up over the board for everyone watching. */
+.reactions-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 6;
+}
+.reaction-float {
+  position: absolute;
+  bottom: 6%;
+  font-size: clamp(28px, 7vw, 42px);
+  animation: reaction-rise 2.4s var(--ease-out) forwards;
+  filter: drop-shadow(0 4px 10px rgb(0 0 0 / 0.5));
+}
+@keyframes reaction-rise {
+  0% {
+    transform: translateY(0) scale(0.4);
+    opacity: 0;
+  }
+  15% {
+    transform: translateY(-10%) scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-420%) scale(1);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reaction-float {
+    animation: fade-in 300ms ease both;
+  }
+}

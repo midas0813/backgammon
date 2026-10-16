@@ -7,24 +7,31 @@ import Avatar from "@/components/Avatar";
 import Board, { boardSpot, type AnimMove, type DieView } from "@/components/Board";
 import Confetti from "@/components/Confetti";
 import FxLayer, { type FxHandle } from "@/components/FxLayer";
+import { ChatSheet, FloatingReactions, type ChatMessageView } from "@/components/MatchChat";
 import Modal from "@/components/Modal";
 import ThemePicker from "@/components/ThemePicker";
+import { REACTIONS } from "@/lib/chat";
 import { applyMove, diceUses, legalSequences, nextMoves, pipCount, type Move, type Seat } from "@/lib/engine/board";
 import type { GameResult } from "@/lib/engine/match";
 import type { MatchSnapshot } from "@/lib/server/matches";
 import { ClientApiError, api, sendIdempotent } from "@/lib/client/api";
 import { effectsFor, longestBlock, type Effect } from "@/lib/client/fx";
 import { useMe } from "@/lib/client/me";
+import { useMatchChannel } from "@/lib/client/realtime";
 import { opponentAnimation, type AnimSpec } from "@/lib/client/replay";
 import { sounds } from "@/lib/client/sound";
 import { useTheme } from "@/lib/client/theme";
 
-type Snapshot = MatchSnapshot;
-type Poll = Snapshot | { unchanged: true; stateVersion: number; seats: Snapshot["seats"] };
+type ChatFeed = { messages: ChatMessageView[]; cursor: number };
+type Snapshot = MatchSnapshot & { chatFeed?: ChatFeed };
+type Poll = Snapshot | { unchanged: true; stateVersion: number; seats: Snapshot["seats"]; chatFeed?: ChatFeed };
 
 const POLL_MS = 1000;
 const BOT_POLL_MS = 700;
 const SLOW_POLL_MS = 15000;
+/** With instant updates connected, polling is only a safety net. */
+const BACKUP_POLL_MS = 10000;
+const MUTE_KEY = "bg:mute-spectators";
 const COLOR_NAME = ["White", "Black"];
 const KIND_LABEL: Record<GameResult["kind"], string> = {
   single: "Single game",
@@ -76,6 +83,29 @@ export default function MatchView({ matchId }: { matchId: string }) {
   const blockRef = useRef<[number, number]>([0, 0]);
   const animatedTurnRef = useRef<string | null>(null);
   const cursorRef = useRef<number | null>(null);
+  // Chat: messages so far, the newest id seen, unread count and floating reactions.
+  const [chat, setChat] = useState<ChatMessageView[]>([]);
+  const chatCursor = useRef(0);
+  const chatLoaded = useRef(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const chatOpenRef = useRef(false);
+  chatOpenRef.current = chatOpen;
+  const [unread, setUnread] = useState(0);
+  const [reactions, setReactions] = useState<{ id: number; emoji: string; mine: boolean }[]>([]);
+  const [muteSpectators, setMuteSpectatorsState] = useState(false);
+  const muteRef = useRef(false);
+  muteRef.current = muteSpectators;
+  useEffect(() => {
+    try {
+      setMuteSpectatorsState(localStorage.getItem(MUTE_KEY) === "1");
+    } catch {}
+  }, []);
+  const setMuteSpectators = (v: boolean) => {
+    setMuteSpectatorsState(v);
+    try {
+      localStorage.setItem(MUTE_KEY, v ? "1" : "0");
+    } catch {}
+  };
 
   const showToast = useCallback((text: string) => {
     setToast(text);
@@ -138,11 +168,40 @@ export default function MatchView({ matchId }: { matchId: string }) {
     [showToast],
   );
 
+  /** New chat messages: reactions float over the board; other messages count as unread or show a toast. */
+  const takeChat = useCallback(
+    (feed: ChatFeed | undefined) => {
+      if (!feed) return;
+      const fresh = feed.messages.filter((m) => m.id > chatCursor.current);
+      chatCursor.current = Math.max(chatCursor.current, feed.cursor);
+      if (!fresh.length) return;
+      setChat((c) => [...c, ...fresh].slice(-200));
+      if (!chatLoaded.current) {
+        chatLoaded.current = true;
+        return; // history on arrival is not news
+      }
+      const floats = fresh.filter((m) => m.kind === "emoji").map((m) => ({ id: m.id, emoji: m.body, mine: m.mine }));
+      if (floats.length) {
+        setReactions((r) => [...r, ...floats].slice(-12));
+        window.setTimeout(() => setReactions((r) => r.filter((x) => !floats.some((f) => f.id === x.id))), 2600);
+      }
+      const news = fresh.filter((m) => m.kind !== "emoji" && !m.mine && !(muteRef.current && m.role === "spectator"));
+      if (news.length && !chatOpenRef.current) {
+        setUnread((u) => u + news.length);
+        const last = news[news.length - 1];
+        showToast(`${last.name}: ${last.body}`);
+      }
+    },
+    [showToast],
+  );
+
   const refresh = useCallback(
     async (force = false) => {
       try {
         const since = force ? 0 : versionRef.current;
-        const data = await api<Poll>(`/api/matches/${matchId}${since ? `?since=${since}` : ""}`);
+        const data = await api<Poll>(`/api/matches/${matchId}?${since ? `since=${since}&` : ""}chat=${chatCursor.current}`);
+        if (!chatLoaded.current && !data.chatFeed) chatLoaded.current = true;
+        takeChat(data.chatFeed);
         if ("unchanged" in data) {
           setSnap((s) => (s ? { ...s, seats: data.seats } : s));
           return;
@@ -173,8 +232,15 @@ export default function MatchView({ matchId }: { matchId: string }) {
         else if (e instanceof ClientApiError && e.status === 403) setLoadError(e.message);
       }
     },
-    [matchId, announce, showToast],
+    [matchId, announce, showToast, takeChat],
   );
+
+  // Instant updates: any notice on the match channel means "fetch now".
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  const live = useMatchChannel(matchId, () => refreshRef.current());
+  const liveRef = useRef(live);
+  liveRef.current = live;
 
   // A played animation is dropped afterwards so it can never be handed back to the board.
   useEffect(() => {
@@ -197,7 +263,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
       if (s.status !== "ACTIVE") return SLOW_POLL_MS;
       if (s.mode === "local") return SLOW_POLL_MS;
       if (s.mode === "bot") return s.seatToAct !== null && s.seats[s.seatToAct].bot ? BOT_POLL_MS : SLOW_POLL_MS;
-      return POLL_MS;
+      return liveRef.current ? BACKUP_POLL_MS : POLL_MS;
     };
     // A short tick that fetches only when due, so a faster rate applies at once (e.g. the computer's turn).
     let last = Date.now();
@@ -349,13 +415,34 @@ export default function MatchView({ matchId }: { matchId: string }) {
     }
   };
 
-  const toggleSpectators = async (allow: boolean) => {
+  const setSpectatorRule = async (key: "allow" | "chat" | "emoji", value: boolean) => {
     try {
-      await api(`/api/matches/${matchId}/spectators`, { method: "POST", body: { allow } });
+      await api(`/api/matches/${matchId}/spectators`, { method: "POST", body: { [key]: value } });
       await refresh(true);
-      showToast(allow ? "Spectators can watch this match." : "Spectators turned off.");
+      const what = key === "allow" ? "Spectators can watch this match" : key === "chat" ? "Spectators can chat" : "Spectators can send reactions";
+      showToast(value ? `${what}.` : `${what.replace("can", "can no longer")}.`);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Could not change");
+    }
+  };
+
+  const sendChat = async (body: Record<string, unknown>) => {
+    try {
+      await api(`/api/matches/${matchId}/chat`, { method: "POST", body });
+      await refresh();
+      return true;
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Message not sent");
+      return false;
+    }
+  };
+  const chatAction = async (id: number, action: "report" | "remove-spectator") => {
+    if (action === "remove-spectator" && !window.confirm("Remove this spectator from the match? They will no longer be able to watch or chat.")) return;
+    try {
+      const r = await api<{ referenceId?: string }>(`/api/matches/${matchId}/chat/${id}`, { method: "POST", body: { action } });
+      showToast(action === "report" ? `Reported to support (${r.referenceId}). Thank you.` : "Spectator removed from this match.");
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Could not do that");
     }
   };
 
@@ -453,9 +540,24 @@ export default function MatchView({ matchId }: { matchId: string }) {
             </span>
           )}
         </div>
-        <button className="btn sm" onClick={() => setMenuOpen(true)} aria-haspopup="dialog">
-          Menu
-        </button>
+        <span className="row" style={{ gap: 6, flexWrap: "nowrap" }}>
+          {(snap.mode === "quick" || snap.mode === "private") && (
+            <button
+              className="btn sm chat-btn"
+              onClick={() => {
+                setChatOpen(true);
+                setUnread(0);
+              }}
+              aria-haspopup="dialog"
+              aria-label={unread ? `Chat, ${unread} unread` : "Chat"}
+            >
+              💬{unread > 0 && <span className="chat-badge">{unread > 9 ? "9+" : unread}</span>}
+            </button>
+          )}
+          <button className="btn sm" onClick={() => setMenuOpen(true)} aria-haspopup="dialog">
+            Menu
+          </button>
+        </span>
       </div>
 
       {spectating && (
@@ -464,9 +566,17 @@ export default function MatchView({ matchId }: { matchId: string }) {
             <strong>Watching</strong>
             <span className="muted"> · {snap.spectators} viewer{snap.spectators === 1 ? "" : "s"}</span>
           </span>
-          <button className="btn sm" onClick={() => setFlip((f) => !f)}>
-            Flip board
-          </button>
+          <span className="row" style={{ gap: 4, flexWrap: "nowrap" }}>
+            {snap.chat.react &&
+              REACTIONS.slice(0, 3).map((e) => (
+                <button key={e} className="btn sm ghost react-quick" aria-label={`React ${e}`} onClick={() => sendChat({ kind: "emoji", emoji: e })}>
+                  {e}
+                </button>
+              ))}
+            <button className="btn sm" onClick={() => setFlip((f) => !f)}>
+              Flip board
+            </button>
+          </span>
         </div>
       )}
 
@@ -491,6 +601,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
           rollKey={game!.dice ? `${game!.gameNumber}-${game!.turnNumber}-${game!.dice.join("")}` : undefined}
           anim={draft.length > 0 ? draftAnim : oppAnim}
         />
+        <FloatingReactions items={reactions} />
         <FxLayer
           ref={fxRef}
           sound={soundOn}
@@ -569,6 +680,23 @@ export default function MatchView({ matchId }: { matchId: string }) {
         {busy && <div className="status">Sending…</div>}
       </div>
 
+      {chatOpen && (
+        <ChatSheet
+          messages={chat}
+          rights={snap.chat}
+          isPlayer={snap.yourSeats.length > 0}
+          muteSpectators={muteSpectators}
+          onMuteSpectators={setMuteSpectators}
+          onSend={sendChat}
+          onReport={(id) => chatAction(id, "report")}
+          onRemove={(id) => chatAction(id, "remove-spectator")}
+          onClose={() => {
+            setChatOpen(false);
+            setUnread(0);
+          }}
+        />
+      )}
+
       {toast && (
         <div className="toast" role="status">
           {toast}
@@ -625,16 +753,34 @@ export default function MatchView({ matchId }: { matchId: string }) {
           <div className="muted small">
             Rules {snap.rulesVersion} · cube cap 128 · Crawford rule · no clocks in this MVP · state v{snap.stateVersion}
           </div>
-          {snap.yourSeats.length > 0 && (snap.mode === "quick" || snap.mode === "private") && snap.status === "ACTIVE" && (
-            <label className="toggle">
-              <span>
-                <strong>Allow spectators</strong>
-                <span className="muted small" style={{ display: "block" }}>
-                  {snap.spectators} watching now{snap.mode === "quick" ? " · listed under Watch now" : ""}
+          {snap.isHost && (snap.mode === "quick" || snap.mode === "private") && snap.status === "ACTIVE" && (
+            <>
+              <label className="toggle">
+                <span>
+                  <strong>Allow spectators</strong>
+                  <span className="muted small" style={{ display: "block" }}>
+                    {snap.spectators} watching now{snap.mode === "quick" ? " · listed under Watch live" : ""}
+                  </span>
                 </span>
-              </span>
-              <input type="checkbox" role="switch" checked={snap.allowSpectators} onChange={(e) => toggleSpectators(e.target.checked)} />
-            </label>
+                <input type="checkbox" role="switch" checked={snap.spectatorSettings.allow} onChange={(e) => setSpectatorRule("allow", e.target.checked)} />
+              </label>
+              {snap.spectatorSettings.allow && (
+                <>
+                  <label className="toggle">
+                    <span>
+                      <strong>Spectators can chat</strong>
+                    </span>
+                    <input type="checkbox" role="switch" checked={snap.spectatorSettings.chat} onChange={(e) => setSpectatorRule("chat", e.target.checked)} />
+                  </label>
+                  <label className="toggle">
+                    <span>
+                      <strong>Spectators can send reactions</strong>
+                    </span>
+                    <input type="checkbox" role="switch" checked={snap.spectatorSettings.emoji} onChange={(e) => setSpectatorRule("emoji", e.target.checked)} />
+                  </label>
+                </>
+              )}
+            </>
           )}
           {snap.status === "ACTIVE" && snap.yourSeats.length > 0 && (
             <button

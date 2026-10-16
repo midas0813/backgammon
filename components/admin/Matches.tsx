@@ -196,6 +196,44 @@ function MatchDetail({ id }: { id: string }) {
         </section>
       </div>
 
+      <section className="a-card">
+        <h3 className="a-h3">Chat ({d.chat.length})</h3>
+        {d.chat.length === 0 ? (
+          <Empty>No messages.</Empty>
+        ) : (
+          <ol className="a-events">
+            {d.chat.map((m) => (
+              <li key={m.id} style={m.removedAt ? { opacity: 0.55 } : undefined}>
+                <span className="mono muted">#{m.id}</span> <strong>{m.name}</strong> <span className="muted small">{m.role}</span>{" "}
+                <span className="muted small">{new Date(m.createdAt).toLocaleTimeString()}</span>
+                <code>{m.body}</code>
+                {m.removedAt ? (
+                  <span className="muted small"> removed {fmtDate(m.removedAt)}</span>
+                ) : (
+                  can("matches.manage") && (
+                    <button
+                      className="btn sm"
+                      onClick={async () => {
+                        const reason = window.prompt("Reason for removing this message?");
+                        if (!reason) return;
+                        try {
+                          await api(`/api/admin/matches/${d.id}/chat-remove`, { method: "POST", body: { messageId: m.id, reason } });
+                          load();
+                        } catch (e) {
+                          setError(e instanceof Error ? e.message : "Could not remove");
+                        }
+                      }}
+                    >
+                      Remove
+                    </button>
+                  )
+                )}
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+
       {d.audit.length > 0 && (
         <section className="a-card">
           <h3 className="a-h3">Admin history</h3>
