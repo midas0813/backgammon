@@ -7,6 +7,7 @@ import Avatar from "@/components/Avatar";
 import Board, { boardSpot, type AnimMove, type DieView } from "@/components/Board";
 import Confetti from "@/components/Confetti";
 import FxLayer, { type FxHandle } from "@/components/FxLayer";
+import Emoji from "@/components/Emoji";
 import { ChatSheet, FloatingReactions, type ChatMessageView } from "@/components/MatchChat";
 import Modal from "@/components/Modal";
 import ThemePicker from "@/components/ThemePicker";
@@ -582,7 +583,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
             {snap.chat.react &&
               REACTIONS.slice(0, 3).map((e) => (
                 <button key={e} className="btn sm ghost react-quick" aria-label={`React ${e}`} onClick={() => sendChat({ kind: "emoji", emoji: e })}>
-                  {e}
+                  <Emoji char={e} size={24} replayOnHover />
                 </button>
               ))}
             <button className="btn sm" onClick={() => setFlip((f) => !f)}>

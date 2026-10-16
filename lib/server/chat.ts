@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { CHAT_MAX, PRESETS, REACTIONS } from "../chat";
+import { CHAT_MAX, PRESETS, isEmoji } from "../chat";
 import { ApiError, notFound } from "./errors";
 import { assertMayWatch, chatRights, removeSpectatorIn } from "./matches";
 import { publish } from "./realtime";
@@ -73,7 +73,7 @@ export async function sendChat(userId: string, matchId: string, body: { kind?: u
   if (kind === "preset") {
     text = typeof body.preset === "string" ? (PRESETS[body.preset] ?? "") : "";
   } else if (kind === "emoji") {
-    text = typeof body.emoji === "string" && REACTIONS.includes(body.emoji) ? body.emoji : "";
+    text = typeof body.emoji === "string" && isEmoji(body.emoji) ? body.emoji : "";
   } else {
     text = cleanText(body.text);
   }

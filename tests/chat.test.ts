@@ -41,7 +41,8 @@ describe("match chat (C3)", () => {
     expect(feed.messages[3].removable).toBe(true); // the host may remove spectators
     expect((await chatSince(guest.id, matchId, 0)).messages[3].removable).toBe(false);
     expect((await chatSince(viewer.id, matchId, feed.messages[1].id)).messages).toHaveLength(2);
-    expect(await codeOf(sendChat(host.id, matchId, { kind: "emoji", emoji: "💩" }))).toBe("INVALID_INPUT");
+    expect(await codeOf(sendChat(host.id, matchId, { kind: "emoji", emoji: "hello" }))).toBe("INVALID_INPUT");
+    await sendChat(host.id, matchId, { kind: "emoji", emoji: "🦄" }); // any emoji from the picker
     expect(await codeOf(sendChat(host.id, matchId, { kind: "text", text: "   " }))).toBe("INVALID_INPUT");
   });
 

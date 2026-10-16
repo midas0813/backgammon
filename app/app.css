@@ -2025,8 +2025,9 @@ html[data-reduced-motion="true"]::view-transition-group(*) {
   margin-top: 4px;
 }
 .chat-reactions {
-  display: flex;
-  justify-content: space-around;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  justify-items: center;
   padding: 6px 0;
   border-top: 1px solid var(--border-soft);
 }
@@ -2246,4 +2247,32 @@ html[data-reduced-motion="true"]::view-transition-group(*) {
 .wallet-current {
   display: grid;
   gap: 8px;
+}
+
+/* Animated emojis (Noto) */
+.emoji-plain {
+  display: inline-grid;
+  place-items: center;
+  line-height: 1;
+}
+.chat-emoji {
+  display: inline-flex;
+  padding: 2px;
+}
+.chat-more-emoji {
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: none;
+  color: var(--text-2);
+  font-size: 22px;
+  cursor: pointer;
+}
+.react-quick {
+  display: inline-grid;
+  place-items: center;
+}
+.reaction-float > * {
+  display: block;
 }
