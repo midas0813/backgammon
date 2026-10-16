@@ -50,6 +50,7 @@ export default function LobbyPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [finding, setFinding] = useState(false);
   const versionRef = useRef<string | null>(null);
 
   const load = useCallback(async (force = false) => {
@@ -67,7 +68,9 @@ export default function LobbyPage() {
   useEffect(() => {
     load(true);
     const t = window.setInterval(() => document.visibilityState === "visible" && load(), POLL_MS);
-    if (new URLSearchParams(window.location.search).get("create")) setCreating(true);
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("create")) setCreating(true);
+    else if (q.get("find")) setFinding(true);
     return () => window.clearInterval(t);
   }, [load]);
 
@@ -87,11 +90,6 @@ export default function LobbyPage() {
     }
   };
 
-  const findGame = () =>
-    go("find", async () => ({
-      ...(await api<{ matchId: string; joined?: boolean }>("/api/tables/find", { method: "POST", body: { targetPoints: points } })),
-      watch: true,
-    }));
   const vsComputer = () => go("bot", () => api("/api/matches", { method: "POST", body: { mode: "bot", targetPoints: points } }));
   const passAndPlay = () => go("local", () => api("/api/matches", { method: "POST", body: { mode: "local", targetPoints: points } }));
   const join = (id: string) => go(`join:${id}`, () => api(`/api/matches/${id}/join`, { method: "POST" }));
@@ -143,10 +141,12 @@ export default function LobbyPage() {
           </div>
         </div>
         <div className="mode-grid">
-          <button className="mode-tile primary" disabled={!!busy} onClick={findGame}>
+          <button className="mode-tile primary" disabled={!!busy} onClick={() => setFinding(true)}>
             <Icon d="M13 2 3 14h8l-1 8 10-12h-8z" />
-            <strong>{busy === "find" ? "Searching…" : "Find a game"}</strong>
-            <span className="muted small">Join the next open {points}-pt table, or open one</span>
+            <strong>Find a game</strong>
+            <span className="muted small">
+              {data ? `${data.counts.open} open table${data.counts.open === 1 ? "" : "s"} to choose from` : "See every open table"}
+            </span>
           </button>
           <button className="mode-tile" disabled={!!busy} onClick={() => setCreating(true)}>
             <Icon d="M12 5v14M5 12h14" />
@@ -306,6 +306,18 @@ export default function LobbyPage() {
         <span className="badge">Token stakes · not enabled</span>
       </div>
 
+      {finding && (
+        <FindGame
+          data={data}
+          busy={busy}
+          onJoin={join}
+          onCreate={() => {
+            setFinding(false);
+            setCreating(true);
+          }}
+          onClose={() => setFinding(false)}
+        />
+      )}
       {creating && <CreateTable initialPoints={points} onClose={() => setCreating(false)} onCreated={(id) => router.push(`/match/${id}`)} />}
     </main>
   );
@@ -388,6 +400,84 @@ function CreateTable({ initialPoints, onClose, onCreated }: { initialPoints: num
         </button>
         <button className="btn primary" disabled={busy} onClick={submit}>
           {busy ? "Opening…" : "Open table"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/** Every open table right now (refreshed with the lobby); the player picks one to join. */
+function FindGame({
+  data,
+  busy,
+  onJoin,
+  onCreate,
+  onClose,
+}: {
+  data: Lobby | null;
+  busy: string | null;
+  onJoin: (id: string) => void;
+  onCreate: () => void;
+  onClose: () => void;
+}) {
+  const [filter, setFilter] = useState<number | null>(null);
+  const tables = (data?.open ?? []).filter((t) => !filter || t.targetPoints === filter);
+  return (
+    <Modal title="Find a game" onClose={onClose}>
+      <p className="muted small" style={{ margin: 0 }}>
+        Open tables right now. Pick one to join; the match starts as soon as you sit down.
+        {data ? ` ${data.counts.online} online · ${data.counts.live} live.` : ""}
+      </p>
+      <div className="seg compact five" role="group" aria-label="Filter by match length">
+        <button className="chip" aria-pressed={filter === null} onClick={() => setFilter(null)}>
+          All
+        </button>
+        {LENGTHS.map((p) => (
+          <button key={p} className="chip" aria-pressed={filter === p} onClick={() => setFilter(p)}>
+            {p} pt
+          </button>
+        ))}
+      </div>
+      {!data ? (
+        <div className="skeleton" style={{ height: 120, borderRadius: 12 }} />
+      ) : tables.length === 0 ? (
+        <div className="searching">
+          <span className="radar" aria-hidden />
+          <span className="muted small">
+            No open {filter ? `${filter}-pt ` : ""}tables right now. This list updates live, or open your own table and others can join you.
+          </span>
+        </div>
+      ) : (
+        <ul className="list find-list">
+          {tables.map((t) => (
+            <li key={t.matchId}>
+              <span className="row" style={{ flexWrap: "nowrap", minWidth: 0 }}>
+                <span className="avatar-wrap">
+                  <Avatar name={t.host.name} src={t.host.avatarUrl} size={36} />
+                  <span className={`presence ${t.hostOnline ? "on" : "away"}`} aria-label={t.hostOnline ? "online" : "away"} />
+                </span>
+                <span style={{ minWidth: 0 }}>
+                  <span className="ellipsis" style={{ display: "block", fontWeight: 650 }}>
+                    {t.host.name}
+                  </span>
+                  <span className="muted small">
+                    {t.targetPoints}-pt · Free · waiting {age(t.createdAt)}
+                  </span>
+                </span>
+              </span>
+              <button className="btn sm primary" disabled={!!busy} onClick={() => onJoin(t.matchId)}>
+                {busy === `join:${t.matchId}` ? "Joining…" : "Join"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="grid2">
+        <button className="btn" onClick={onClose}>
+          Close
+        </button>
+        <button className="btn primary" onClick={onCreate}>
+          Create a table
         </button>
       </div>
     </Modal>

@@ -1064,3 +1064,10 @@ html[data-reduced-motion="true"]::view-transition-group(*) {
   border-color: rgb(244 207 135 / 0.5);
   background: linear-gradient(135deg, rgb(244 207 135 / 0.16), rgb(244 207 135 / 0.04));
 }
+
+/* Find a game window: the table list scrolls, the actions stay in view. */
+.find-list {
+  max-height: min(52dvh, 420px);
+  overflow-y: auto;
+  padding-right: 2px;
+}

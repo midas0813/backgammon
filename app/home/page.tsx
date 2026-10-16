@@ -9,7 +9,6 @@ import CountUp from "@/components/CountUp";
 import WalletButton, { shortAddress } from "@/components/WalletButton";
 import { api } from "@/lib/client/api";
 import { setMe } from "@/lib/client/me";
-import { watchTable } from "@/lib/client/tables";
 import { formatTokens } from "@/lib/fees";
 import type { HomeData } from "@/lib/server/home";
 
@@ -61,21 +60,12 @@ export default function Home() {
     return () => window.clearInterval(t);
   }, [load]);
 
-  const start = async (kind: "bot" | "find") => {
-    setBusy(kind);
+  const playComputer = async () => {
+    setBusy("bot");
     setError(null);
     try {
-      if (kind === "bot") {
-        const { matchId } = await api<{ matchId: string }>("/api/matches", { method: "POST", body: { mode: "bot", targetPoints: 3 } });
-        router.push(`/match/${matchId}`);
-      } else {
-        const { matchId, joined } = await api<{ matchId: string; joined?: boolean }>("/api/tables/find", {
-          method: "POST",
-          body: { targetPoints: 3 },
-        });
-        if (!joined) watchTable(matchId);
-        router.push(`/match/${matchId}`);
-      }
+      const { matchId } = await api<{ matchId: string }>("/api/matches", { method: "POST", body: { mode: "bot", targetPoints: 3 } });
+      router.push(`/match/${matchId}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not start");
       setBusy(null);
@@ -224,7 +214,7 @@ export default function Home() {
       <section className="card">
         <h2>Quick start</h2>
         <div className="mode-grid">
-          <button className="mode-tile primary" disabled={!!busy} onClick={() => start("bot")}>
+          <button className="mode-tile primary" disabled={!!busy} onClick={playComputer}>
             <span className="mode-icon" aria-hidden>
               <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M5 8h14v11H5zM12 4v4M9 13h.01M15 13h.01M9 16h6" />
@@ -233,15 +223,17 @@ export default function Home() {
             <strong>{busy === "bot" ? "Starting…" : "vs Computer"}</strong>
             <span className="muted small">3-point match, starts now</span>
           </button>
-          <button className="mode-tile" disabled={!!busy} onClick={() => start("find")}>
+          <Link className="mode-tile" href="/play?find=1">
             <span className="mode-icon" aria-hidden>
               <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
                 <path d="M13 2 3 14h8l-1 8 10-12h-8z" />
               </svg>
             </span>
-            <strong>{busy === "find" ? "Searching…" : "Find a game"}</strong>
-            <span className="muted small">Join the next open table</span>
-          </button>
+            <strong>Find a game</strong>
+            <span className="muted small">
+              {pulse.open} open table{pulse.open === 1 ? "" : "s"} to choose from
+            </span>
+          </Link>
           <Link className="mode-tile" href="/play?create=1">
             <span className="mode-icon" aria-hidden>
               <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
