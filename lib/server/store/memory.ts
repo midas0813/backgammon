@@ -74,6 +74,7 @@ interface Data {
   matchActions: Record<string, { fingerprint: string; response: unknown }>;
   results: Record<string, MatchResultRow>;
   counters: Record<string, number>;
+  rateLimits: Record<string, { start: number; count: number }>;
   ledger: { balances: Record<string, number>; transactions: Txn[] };
 }
 
@@ -105,6 +106,7 @@ const empty = (): Data => ({
   matchActions: {},
   results: {},
   counters: {},
+  rateLimits: {},
   ledger: { balances: {}, transactions: [] },
 });
 
@@ -125,7 +127,7 @@ export function createMemoryStore(file: string | null): Store {
       data.disputes ??= {};
       data.seen ??= {};
       data.spectators ??= {};
-      for (const k of ["adminRoles", "adminSessions", "adminChallenges", "audit", "settings", "announcements", "disputeNotes", "adjustments", "matchEvents", "matchActions", "results", "counters"] as const) {
+      for (const k of ["adminRoles", "adminSessions", "adminChallenges", "audit", "settings", "announcements", "disputeNotes", "adjustments", "matchEvents", "matchActions", "results", "counters", "rateLimits"] as const) {
         (data as unknown as Record<string, object>)[k] ??= {};
       }
     }
@@ -336,6 +338,17 @@ export function createMemoryStore(file: string | null): Store {
             .filter((r) => r.userId === userId)
             .sort((a, b) => b.completedAt.localeCompare(a.completedAt))
             .slice(offset, offset + limit),
+      },
+      rateLimits: {
+        hit: async (key, start) => {
+          const cur = get<{ start: number; count: number }>("rateLimits", key);
+          const next = { start, count: cur && cur.start === start ? cur.count + 1 : 1 };
+          put("rateLimits", key, next);
+          return next.count;
+        },
+        prune: async (before) => {
+          for (const [k, v] of Object.entries(base.rateLimits)) if (v.start < before) del("rateLimits", k);
+        },
       },
       counters: {
         add: async (key, n) => put("counters", key, (get<number>("counters", key) ?? 0) + n),

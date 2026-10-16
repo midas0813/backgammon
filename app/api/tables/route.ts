@@ -20,5 +20,5 @@ export async function GET(req: NextRequest) {
 /** POST /api/tables — { targetPoints, visibility: "public" | "private", allowSpectators }. Free only. */
 export async function POST(req: Request) {
   const body = await readJson(req);
-  return handle((user) => createTable(user.id, body));
+  return handle((user) => createTable(user.id, body), { limit: "game" });
 }

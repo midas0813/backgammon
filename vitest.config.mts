@@ -10,5 +10,6 @@ export default defineConfig({
     testTimeout: 30000,
     // Creating the PGlite database and applying migrations can exceed the 10 s default on a busy machine.
     hookTimeout: 60000,
+    maxWorkers: 2,
   },
 });

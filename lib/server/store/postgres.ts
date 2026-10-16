@@ -525,6 +525,22 @@ function makeTx(q: Query): Tx {
         }));
       },
     },
+    rateLimits: {
+      async hit(key, windowStart) {
+        const [r] = await q(
+          `insert into rate_limits (key, window_start, count) values ($1, to_timestamp($2::float8 / 1000), 1)
+           on conflict (key) do update set
+             count = case when rate_limits.window_start = excluded.window_start then rate_limits.count + 1 else 1 end,
+             window_start = excluded.window_start
+           returning count`,
+          [key, windowStart],
+        );
+        return num(r.count);
+      },
+      async prune(before) {
+        await q(`delete from rate_limits where window_start < to_timestamp($1::float8 / 1000)`, [before]);
+      },
+    },
     counters: {
       async add(key, n) {
         await q(`insert into app_counters (key, value) values ($1, $2) on conflict (key) do update set value = app_counters.value + excluded.value`, [key, n]);

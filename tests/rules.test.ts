@@ -127,3 +127,21 @@ describe("results (A4)", () => {
     expect((await profileOf(b.id)).stats).toMatchObject({ played: 11, wins: 3, currentStreak: 3 });
   });
 });
+
+describe("request limits (C1)", () => {
+  it("refuses requests over a rule's limit until the window passes, separately per player", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 9, 17, 12, 0, 5));
+    const { rateLimit, RULES } = await import("@/lib/server/ratelimit");
+    for (let i = 0; i < RULES.game[0].max; i++) await rateLimit("game", "p1");
+    const err = await rateLimit("game", "p1").catch((e) => e);
+    expect(err.code).toBe("RATE_LIMITED");
+    expect(err.extra.retryAfter).toBe(55);
+    await rateLimit("game", "p2"); // another player is unaffected
+    vi.setSystemTime(Date.UTC(2026, 9, 17, 12, 1, 1));
+    await rateLimit("game", "p1");
+    // Chat: one message per second.
+    await rateLimit("chat", "p1");
+    expect((await rateLimit("chat", "p1").catch((e) => e)).code).toBe("RATE_LIMITED");
+  });
+});

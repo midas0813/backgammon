@@ -4,7 +4,7 @@ import { createDispute, listDisputes } from "@/lib/server/disputes";
 /** POST /api/disputes — { category, reason, matchId?, transactionId? } → { referenceId, status }. */
 export async function POST(req: Request) {
   const body = await readJson(req);
-  return handle((user) => createDispute(user.id, body));
+  return handle((user) => createDispute(user.id, body), { limit: "report" });
 }
 
 export async function GET() {

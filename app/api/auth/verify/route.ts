@@ -1,4 +1,5 @@
-import { currentSession, errorResponse, readJson, requestHost, setSessionCookie } from "@/lib/server/http";
+import { clientKey, currentSession, errorResponse, readJson, requestHost, setSessionCookie } from "@/lib/server/http";
+import { rateLimit } from "@/lib/server/ratelimit";
 import { verifySiwe } from "@/lib/server/siwe";
 
 /**
@@ -7,6 +8,7 @@ import { verifySiwe } from "@/lib/server/siwe";
  */
 export async function POST(req: Request) {
   try {
+    await rateLimit("signin", await clientKey());
     const body = await readJson(req);
     const { token } = await currentSession();
     const host = await requestHost();

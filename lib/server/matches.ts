@@ -164,7 +164,7 @@ export async function settleIn(t: Tx, matchId: string, now = Date.now()) {
  * Housekeeping for matches nobody is looking at: closes stale tables and settles left games. Runs at
  * most every 30 s per server instance from busy endpoints, and from the daily cron.
  */
-const lastSweep = ((globalThis as unknown as { __bgSweep?: { at: number } }).__bgSweep ??= { at: 0 });
+const lastSweep = ((globalThis as unknown as { __bgSweep?: { at: number; pruned: number } }).__bgSweep ??= { at: 0, pruned: 0 });
 export async function sweep(now = Date.now(), force = false) {
   if (!force && now - lastSweep.at < 30_000) return 0;
   lastSweep.at = now;
@@ -184,6 +184,10 @@ export async function sweep(now = Date.now(), force = false) {
   ]);
   let changed = 0;
   for (const id of ids) if (await tx((t) => settleIn(t, id, now))) changed++;
+  if (now - lastSweep.pruned > 60 * 60_000) {
+    lastSweep.pruned = now;
+    await tx((t) => t.rateLimits.prune(now - 24 * 60 * 60_000));
+  }
   return changed;
 }
 

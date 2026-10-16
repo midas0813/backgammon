@@ -5,5 +5,5 @@ import { setAllowSpectators } from "@/lib/server/matches";
 export async function POST(req: Request, ctx: RouteContext<"/api/matches/[id]/spectators">) {
   const { id } = await ctx.params;
   const body = await readJson(req);
-  return handle((user) => setAllowSpectators(user.id, id, body.allow !== false));
+  return handle((user) => setAllowSpectators(user.id, id, body.allow !== false), { limit: "game" });
 }

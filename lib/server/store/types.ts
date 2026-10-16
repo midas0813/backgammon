@@ -354,6 +354,12 @@ export interface Tx {
     stats(userId: string, since?: number): Promise<PlayerTotals>;
     history(userId: string, offset: number, limit: number): Promise<MatchResultRow[]>;
   };
+  rateLimits: {
+    /** Count a hit in the window starting at `windowStart` (ms) and return the window's count. */
+    hit(key: string, windowStart: number): Promise<number>;
+    /** Drop windows that started before `before` (ms). */
+    prune(before: number): Promise<void>;
+  };
   /** Site-wide running totals (games played, …). */
   counters: {
     add(key: string, n: number): Promise<void>;

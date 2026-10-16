@@ -3,6 +3,7 @@ import { cookies, headers } from "next/headers";
 import { SESSION_COOKIE } from "@/proxy";
 import type { User } from "./store";
 import { ApiError } from "./errors";
+import { rateLimit, type LimitRule } from "./ratelimit";
 import { resolveSession } from "./users";
 
 /**
@@ -57,10 +58,14 @@ export async function readJson(req: Request): Promise<Record<string, unknown>> {
   }
 }
 
-/** Run a handler with the current user and map errors to the contract's error envelope. */
-export async function handle(fn: (user: User) => unknown | Promise<unknown>): Promise<Response> {
+/**
+ * Run a handler with the current user and map errors to the contract's error envelope. `limit`
+ * counts the request against that rate-limit rule for the user first.
+ */
+export async function handle(fn: (user: User) => unknown | Promise<unknown>, opts: { limit?: LimitRule } = {}): Promise<Response> {
   try {
     const user = await currentUser();
+    if (opts.limit) await rateLimit(opts.limit, user.id);
     const data = await fn(user);
     return Response.json(data, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
@@ -71,7 +76,8 @@ export async function handle(fn: (user: User) => unknown | Promise<unknown>): Pr
 export function errorResponse(e: unknown): Response {
   const referenceId = randomUUID().slice(0, 8);
   if (e instanceof ApiError) {
-    return Response.json({ error: { code: e.code, message: e.message, referenceId, ...e.extra } }, { status: e.status });
+    const headers: Record<string, string> = typeof e.extra.retryAfter === "number" ? { "Retry-After": String(e.extra.retryAfter) } : {};
+    return Response.json({ error: { code: e.code, message: e.message, referenceId, ...e.extra } }, { status: e.status, headers });
   }
   console.error(`[${referenceId}]`, e);
   return Response.json(

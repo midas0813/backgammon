@@ -16,6 +16,5 @@ export async function POST(req: Request) {
   return handle((user) =>
     body.mode === "quick" || body.mode === "private"
       ? createTable(user.id, { ...body, visibility: body.mode === "private" ? "private" : "public" })
-      : createMatch(user.id, body.mode as "bot", Number(body.targetPoints)),
-  );
+      : createMatch(user.id, body.mode as "bot", Number(body.targetPoints)), { limit: "game" });
 }

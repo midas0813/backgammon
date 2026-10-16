@@ -11,9 +11,9 @@ export async function POST(req: Request) {
     const file = form?.get("avatar");
     if (!(file instanceof Blob)) throw new ApiError(400, "INVALID_INPUT", "Choose an image to upload");
     return saveAvatar(user.id, new Uint8Array(await file.arrayBuffer()));
-  });
+  }, { limit: "avatar" });
 }
 
 export async function DELETE() {
-  return handle((user) => removeAvatar(user.id));
+  return handle((user) => removeAvatar(user.id), { limit: "avatar" });
 }
