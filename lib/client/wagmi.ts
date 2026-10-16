@@ -2,12 +2,13 @@
 
 import { createConfig, http } from "wagmi";
 import { arbitrum, base, baseSepolia, mainnet, optimism, polygon, sepolia } from "wagmi/chains";
-import { coinbaseWallet, injected, walletConnect } from "wagmi/connectors";
+import { coinbaseWallet, injected, metaMask, walletConnect } from "wagmi/connectors";
 import { BRAND } from "@/lib/brand";
 
 /**
  * wagmi configuration. Browser wallets (MetaMask, Rabby, Brave, Trust and wallet in-app browsers)
- * announce themselves (EIP-6963) and each appears by name; Coinbase Wallet is always offered.
+ * announce themselves (EIP-6963) and each appears by name; MetaMask (app) and Coinbase Wallet are
+ * always offered, so phones work without WalletConnect.
  * NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID (free at https://cloud.reown.com) adds WalletConnect: a QR code
  * on desktop and links into mobile wallet apps.
  */
@@ -19,6 +20,9 @@ export const wagmiConfig = createConfig({
   chains,
   connectors: [
     injected(),
+    // MetaMask's own connector reaches the MetaMask phone app (QR code on desktop, app link on a
+    // phone) without a WalletConnect project. Its analytics are off.
+    metaMask({ dappMetadata: { name: BRAND.name, url: "https://backgammon-iota-gules.vercel.app" }, analytics: { enabled: false } }),
     coinbaseWallet({ appName: BRAND.name }),
     ...(WALLETCONNECT_PROJECT_ID
       ? [

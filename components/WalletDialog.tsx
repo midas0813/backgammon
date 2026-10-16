@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { createSiweMessage } from "viem/siwe";
 import { useConnect, useConnection, useConnectors, useDisconnect, useSignMessage } from "wagmi";
 import Modal from "@/components/Modal";
@@ -38,7 +38,13 @@ function Dialog() {
 
   // Wallets that announced themselves by name replace the generic "Injected" entry.
   const named = connectors.filter((c) => c.type === "injected" && c.id !== "injected");
-  const list = [...(named.length ? named : connectors.filter((c) => c.id === "injected")), ...connectors.filter((c) => c.type !== "injected")];
+  // MetaMask's app connector is only listed when the MetaMask extension isn't already there.
+  const hasExtension = named.some((c) => c.id === "io.metamask");
+  const list = [
+    // The generic entry only when the browser has a wallet that didn't announce itself by name.
+    ...(named.length ? named : connectors.filter((c) => c.id === "injected" && !!(window as { ethereum?: unknown }).ethereum)),
+    ...connectors.filter((c) => c.type !== "injected" && !(c.type === "metaMask" && hasExtension)),
+  ];
 
   const signIn = async (address: `0x${string}`, chainId: number | undefined) => {
     setStep({ kind: "signing" });
@@ -92,6 +98,12 @@ function Dialog() {
     }
   };
 
+  // Opened only to connect the wallet you're already signed in with, and it is connected now: done.
+  const alreadyYou = connection.status === "connected" && !!me?.registered && me.walletAddress?.toLowerCase() === connection.address?.toLowerCase();
+  useEffect(() => {
+    if (alreadyYou) closeWalletDialog();
+  }, [alreadyYou]);
+
   const busy = step.kind === "connecting" || step.kind === "signing";
   return (
     <Modal title="Connect a wallet" onClose={() => !busy && closeWalletDialog()}>
@@ -124,7 +136,7 @@ function Dialog() {
                     {c.name.slice(0, 1)}
                   </span>
                 )}
-                <span>{c.id === "injected" ? "Browser wallet" : c.name}</span>
+                <span>{c.id === "injected" ? "Browser wallet" : c.type === "metaMask" ? "MetaMask app" : c.name}</span>
                 {step.kind === "connecting" && step.name === c.name && <span className="muted small">Opening…</span>}
               </button>
             </li>

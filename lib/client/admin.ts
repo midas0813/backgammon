@@ -28,8 +28,11 @@ export function useAdminSigner(expectedWallet: string | null) {
     async (d: SignDetails): Promise<Proof> => {
       let current = isConnected && address ? address : null;
       if (!current) {
-        // Just after a page load the wallet may still be reconnecting: give it a moment first.
-        await reconnect(wagmiConfig).catch(() => {});
+        // Just after a page load the wallet may still be reconnecting: wait for it (up to 3 s).
+        if (getConnection(wagmiConfig).status === "disconnected") await reconnect(wagmiConfig).catch(() => {});
+        for (let i = 0; i < 30 && ["connecting", "reconnecting"].includes(getConnection(wagmiConfig).status); i++) {
+          await new Promise((r) => setTimeout(r, 100));
+        }
         const c = getConnection(wagmiConfig);
         current = c.status === "connected" && c.address ? c.address : null;
       }
