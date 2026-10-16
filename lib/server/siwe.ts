@@ -4,7 +4,7 @@ import { arbitrum, base, baseSepolia, mainnet, optimism, polygon, sepolia } from
 import { generateSiweNonce, parseSiweMessage, validateSiweMessage } from "viem/siwe";
 import { ApiError } from "./errors";
 import { tx, type User } from "./store";
-import { assertActive, createGuest, profileIn } from "./users";
+import { assertActive, createGuest, grantWelcomeCredits, profileIn } from "./users";
 
 /**
  * Sign-In with Ethereum (EIP-4361). The wallet IS the account: the first successful sign-in with an
@@ -78,6 +78,7 @@ export async function verifySiwe(ctx: VerifyContext, body: { message?: unknown; 
     }
     user.chainId = fields.chainId;
     await t.users.put(user);
+    if (isNew) await grantWelcomeCredits(t, user.id);
     const token = randomUUID();
     await t.sessions.put(token, { userId: user.id, createdAt: new Date().toISOString() });
     return { token, isNew, profile: await profileIn(t, user.id) };

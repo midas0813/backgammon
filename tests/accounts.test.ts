@@ -38,12 +38,13 @@ describe("wallet accounts (Sign-In with Ethereum)", () => {
   it("first sign-in creates the account by upgrading the guest in place", async () => {
     const guest = (await resolveSession(T1)).user;
     const { matchId } = await createMatch(guest.id, "bot", 1);
+    expect((await getWallet(guest.id)).balances.freeCredits).toBe(0); // guests get no credits
     const res = await signIn(T1);
     expect(res.isNew).toBe(true);
     expect(res.profile).toMatchObject({ registered: true, walletAddress: alice.address, chainId: 8453 });
     expect(res.token).not.toBe(T1); // session rotated
     const user = await tx((t) => t.users.byWallet(alice.address.toLowerCase()));
-    expect(user?.id).toBe(guest.id); // guest games and credits carried over
+    expect(user?.id).toBe(guest.id); // guest games carried over; the welcome credits arrive with the account
     expect((await tx((t) => t.matches.get(matchId)))?.seats[0]).toBe(guest.id);
     expect((await getWallet(guest.id)).balances.freeCredits).toBeGreaterThan(0);
   });

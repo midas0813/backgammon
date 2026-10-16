@@ -240,6 +240,30 @@ function makeTx(q: Query): Tx {
         const [r] = await q(`select count(*) as n from app_users where last_seen_at >= to_timestamp($1::float8 / 1000)`, [at]);
         return num(r.n);
       },
+      async deleteInactiveGuests(before, limit) {
+        const [r] = await q(
+          `with g as (
+             select u.id from app_users u
+             where u.wallet_address is null and coalesce(u.last_seen_at, u.created_at) < to_timestamp($1::float8 / 1000)
+               and not exists (select 1 from matches m where m.status in ('WAITING', 'ACTIVE') and m.mode in ('quick', 'private')
+                                 and (m.seat0 = u.id::text or m.seat1 = u.id::text))
+             order by coalesce(u.last_seen_at, u.created_at) limit $2),
+           own as (
+             select m.id from matches m where m.seat0 in (select id::text from g) and (m.mode in ('local', 'bot') or m.seat1 is null)),
+           d1 as (delete from match_events where match_id in (select id from own)),
+           d2 as (delete from match_actions where match_id in (select id from own)),
+           d3 as (delete from match_presence where match_id in (select id from own)),
+           d4 as (delete from match_spectators where match_id in (select id from own) or user_id in (select id from g)),
+           d5 as (delete from matches where id in (select id from own)),
+           d6 as (delete from match_results where user_id in (select id from g)),
+           d7 as (delete from dispute_notes where dispute_id in (select id from disputes where user_id in (select id from g))),
+           d8 as (delete from disputes where user_id in (select id from g)),
+           gone as (delete from app_users where id in (select id from g) returning id)
+           select count(*) as n from gone`,
+          [before, limit],
+        );
+        return num(r.n);
+      },
       async search(query, limit) {
         const q2 = query.trim();
         const rows = await q(

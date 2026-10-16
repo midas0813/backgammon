@@ -4,7 +4,7 @@ import { PAGE_SIZE, TABLE_EXPIRY_MS, createTable, lobby, publicTables, tableStat
 import { tx } from "@/lib/server/store";
 import { cancelMatch, getSnapshot, joinMatch, setAllowSpectators, setEnvForTests, submitAction, sweep } from "@/lib/server/matches";
 import { ensureUser } from "@/lib/server/users";
-import { randomEnv } from "./helpers";
+import { ensureAccount, randomEnv } from "./helpers";
 
 async function codeOf(p: Promise<unknown>) {
   try {
@@ -58,7 +58,7 @@ describe("lobby tables", () => {
   });
 
   it("keeps an away host's table listed, then closes it; invite-only tables close after 15 minutes", async () => {
-    const host = await ensureUser(undefined);
+    const host = await ensureAccount();
     const friend = await ensureUser(undefined);
     const other = await ensureUser(undefined);
     const { matchId } = await createTable(host.id, { targetPoints: 3 });
@@ -85,7 +85,7 @@ describe("lobby tables", () => {
   });
 
   it("a public table closes after an hour even with the host around", async () => {
-    const host = await ensureUser(undefined);
+    const host = await ensureAccount();
     const { matchId } = await createTable(host.id, { targetPoints: 3 });
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
@@ -211,7 +211,7 @@ describe("home", () => {
     await joinMatch(b.id, matchId);
     const before = await homeData(a.id, 0);
     expect(before.profile.registered).toBe(false);
-    expect(before.balances.freeCredits).toBeGreaterThan(0);
+    expect(before.balances.freeCredits).toBe(0); // guests have no credits
     expect(before.continuing.map((c) => c.matchId)).toEqual([matchId]);
     expect(before.today).toMatchObject({ matches: 0, goal: 3 });
 

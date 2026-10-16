@@ -18,7 +18,7 @@ import { ApiError, notFound } from "./errors";
 import { tx, type ClosedReason, type MatchMode, type MatchRecord, type MatchResultRow, type StoredEvent, type Tx, type User } from "./store";
 import { SPECTATOR_WINDOW_MS } from "./store/types";
 import { operatorSettings } from "./settings";
-import { assertActive, avatarUrl } from "./users";
+import { GUEST_IDLE_MS, assertActive, avatarUrl } from "./users";
 
 const ALLOWED_POINTS = [1, 3, 5, 7];
 const ACTION_TYPES: ActionType[] = ["ROLL", "CONFIRM_TURN", "OFFER_DOUBLE", "ACCEPT_DOUBLE", "PASS_DOUBLE", "FORFEIT_MATCH"];
@@ -164,7 +164,7 @@ export async function settleIn(t: Tx, matchId: string, now = Date.now()) {
  * Housekeeping for matches nobody is looking at: closes stale tables and settles left games. Runs at
  * most every 30 s per server instance from busy endpoints, and from the daily cron.
  */
-const lastSweep = ((globalThis as unknown as { __bgSweep?: { at: number; pruned: number } }).__bgSweep ??= { at: 0, pruned: 0 });
+const lastSweep = ((globalThis as unknown as { __bgSweep?: { at: number; pruned: number; guests: number } }).__bgSweep ??= { at: 0, pruned: 0, guests: 0 });
 export async function sweep(now = Date.now(), force = false) {
   if (!force && now - lastSweep.at < 30_000) return 0;
   lastSweep.at = now;
@@ -184,6 +184,10 @@ export async function sweep(now = Date.now(), force = false) {
   ]);
   let changed = 0;
   for (const id of ids) if (await tx((t) => settleIn(t, id, now))) changed++;
+  if (now - lastSweep.guests > 5 * 60_000) {
+    lastSweep.guests = now;
+    await tx((t) => t.users.deleteInactiveGuests(now - GUEST_IDLE_MS, 200));
+  }
   if (now - lastSweep.pruned > 60 * 60_000) {
     lastSweep.pruned = now;
     await tx((t) => t.rateLimits.prune(now - 24 * 60 * 60_000));

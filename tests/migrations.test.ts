@@ -41,7 +41,8 @@ describe("migrations", () => {
        values ('legacy1', 'quick', 'COMPLETED', 3, $1::uuid, $1::text, $2, 9, now(), $3::jsonb, now())`,
       [A, B, JSON.stringify(legacy)],
     );
-    await runMigrations(driver, all);
+    // Up to (not including) the one-time clean-up of test data, which empties these tables.
+    await runMigrations(driver, all.filter((m) => m.name < "20261017130000"));
     const q = async (sql: string) => (await db.query<Record<string, unknown>>(sql)).rows;
     expect((await q(`select seq, type from match_events order by seq`)).map((r) => r.type)).toEqual(["MATCH_CREATED", "MATCH_COMPLETED"]);
     expect(await q(`select action_id, fingerprint from match_actions`)).toEqual([{ action_id: "act1", fingerprint: "f" }]);

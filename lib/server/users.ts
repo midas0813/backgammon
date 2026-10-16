@@ -10,7 +10,13 @@ const TOKEN_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
 
 // ---- Sessions ---------------------------------------------------------------------------------
 
-/** A guest can play free games immediately; it becomes an account when a wallet signs in. */
+/** A guest with no activity for this long is removed (with their computer and unjoined games). */
+export const GUEST_IDLE_MS = 30 * 60 * 1000;
+
+/**
+ * A guest can play free games immediately; it becomes an account when a wallet signs in. Guests get
+ * no practice credits (those come with the account), so removing an idle guest leaves no balances.
+ */
 export async function createGuest(t: Tx): Promise<User> {
   const id = randomUUID();
   const user: User = {
@@ -21,9 +27,15 @@ export async function createGuest(t: Tx): Promise<User> {
     createdAt: new Date().toISOString(),
   };
   await t.users.put(user);
-  await grantFreeCredits(t, id, FREE_CREDIT_GRANT);
+  await t.users.touchSeen(id, Date.now());
   return user;
 }
+
+/** The welcome grant, once per account, when a wallet first signs in. */
+export const grantWelcomeCredits = (t: Tx, userId: string) => grantFreeCredits(t, userId, FREE_CREDIT_GRANT);
+
+// Last-activity writes are throttled per process; 30-minute idleness needs only minute precision.
+const lastSeenWrite = ((globalThis as unknown as { __bgSeenW?: Map<string, number> }).__bgSeenW ??= new Map());
 
 /**
  * Resolve the session token (an opaque httpOnly cookie issued by proxy.ts) to its user, creating a
@@ -36,7 +48,14 @@ export async function resolveSession(token: string | undefined): Promise<{ user:
     await t.lock(`session:${valid}`);
     const session = await t.sessions.get(valid);
     const existing = session && (await t.users.get(session.userId));
-    if (existing) return { user: existing, token: valid };
+    if (existing) {
+      const now = Date.now();
+      if (now - (lastSeenWrite.get(existing.id) ?? 0) >= 60_000) {
+        lastSeenWrite.set(existing.id, now);
+        await t.users.touchSeen(existing.id, now);
+      }
+      return { user: existing, token: valid };
+    }
     const user = await createGuest(t);
     await t.sessions.put(valid, { userId: user.id, createdAt: new Date().toISOString() });
     return { user, token: valid };

@@ -11,7 +11,7 @@ import {
   userBalances,
 } from "@/lib/server/ledger";
 import { tx } from "@/lib/server/store";
-import { FREE_CREDIT_GRANT, ensureUser } from "@/lib/server/users";
+import { FREE_CREDIT_GRANT, ensureUser, grantWelcomeCredits } from "@/lib/server/users";
 import { createPurchaseIntent, getWallet, processPaymentEvent, requestWithdrawal } from "@/lib/server/wallet";
 
 const T = TOKEN_SCALE;
@@ -109,6 +109,7 @@ describe("simulated deposits and withdrawals", () => {
   it("100 paid: lock 40 for a match, withdraw 20 → 40 / 40 / 20; free credits never fund paid actions", async () => {
     const u = await ensureUser(undefined);
     await tx(async (t) => {
+      await grantWelcomeCredits(t, u.id);
       await creditDeposit(t, u.id, "seed", 100 * T);
       await reserveForMatch(t, u.id, "m1", 40 * T);
     });

@@ -299,6 +299,12 @@ export interface Tx {
     /** Record activity (for "players online"); callers throttle. */
     touchSeen(id: string, at: number): Promise<void>;
     countSeenSince(at: number): Promise<number>;
+    /**
+     * Remove up to `limit` guests (no wallet) last active before `before` (ms) who are not in an
+     * online game, with their computer, pass & play and unjoined games, results, reports and sessions.
+     * Online matches they finished against others stay. Returns how many were removed.
+     */
+    deleteInactiveGuests(before: number, limit: number): Promise<number>;
     /** Admin: by id, wallet or name (case-insensitive substring); newest first. */
     search(query: string, limit: number): Promise<UserRow[]>;
     countCreatedSince(at: number): Promise<number>;

@@ -15,7 +15,7 @@ import {
 } from "@/lib/server/matches";
 import { tx } from "@/lib/server/store";
 import { ensureUser, profileOf } from "@/lib/server/users";
-import { randomEnv } from "./helpers";
+import { ensureAccount, randomEnv } from "./helpers";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -25,8 +25,8 @@ const later = (ms: number) => vi.setSystemTime(Date.now() + ms);
 
 async function liveMatch(seed: number) {
   setEnvForTests(randomEnv(seed));
-  const host = await ensureUser(undefined);
-  const guest = await ensureUser(undefined);
+  const host = await ensureAccount();
+  const guest = await ensureAccount();
   const { matchId } = await createTable(host.id, { targetPoints: 3 });
   await joinMatch(guest.id, matchId);
   await getSnapshot(host.id, matchId); // the host is at the board
@@ -94,7 +94,7 @@ describe("left games (A1, A6)", () => {
 
   it("computer and pass & play games close after a day alone, with no result", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
-    const u = await ensureUser(undefined);
+    const u = await ensureAccount();
     const { matchId } = await createMatch(u.id, "bot", 3);
     later(OFFLINE_GAME_MS - 60_000);
     expect((await getSnapshot(u.id, matchId)).status).toBe("ACTIVE");
@@ -143,5 +143,39 @@ describe("request limits (C1)", () => {
     // Chat: one message per second.
     await rateLimit("chat", "p1");
     expect((await rateLimit("chat", "p1").catch((e) => e)).code).toBe("RATE_LIMITED");
+  });
+});
+
+describe("guest clean-up (C2)", () => {
+  it("removes guests idle for 30 minutes with their own games, but not accounts, active players or shared history", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const { GUEST_IDLE_MS, resolveSession } = await import("@/lib/server/users");
+    setEnvForTests(randomEnv(50));
+    const idle = (await resolveSession("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")).user;
+    const bot = await createMatch(idle.id, "bot", 1);
+    const host = await ensureUser(undefined);
+    const playing = await ensureUser(undefined);
+    const table = await createTable(host.id, { targetPoints: 1 });
+    await joinMatch(playing.id, table.matchId);
+    const account = await ensureUser(undefined);
+    await tx(async (t) => t.users.put({ ...(await t.users.get(account.id))!, walletAddress: "0x0000000000000000000000000000000000000001" }));
+
+    later(GUEST_IDLE_MS - 60_000);
+    expect(await tx((t) => t.users.deleteInactiveGuests(Date.now() - GUEST_IDLE_MS, 100))).toBe(0);
+    later(120_000);
+    // The idle guest goes with their computer game; the two guests in an online match stay.
+    expect(await tx((t) => t.users.deleteInactiveGuests(Date.now() - GUEST_IDLE_MS, 100))).toBe(1);
+    expect(await tx((t) => t.users.get(idle.id))).toBeUndefined();
+    expect(await tx((t) => t.matches.get(bot.matchId))).toBeUndefined();
+    expect(await tx((t) => t.users.get(account.id))).toBeDefined();
+    expect(await tx((t) => t.users.get(playing.id))).toBeDefined();
+    // The same browser coming back later starts as a fresh guest.
+    expect((await resolveSession("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")).user.id).not.toBe(idle.id);
+
+    // Once their match has ended, those guests are removed too, and the finished match stays.
+    await leaveMatch(host.id, table.matchId);
+    later(GUEST_IDLE_MS + 1000);
+    expect(await tx((t) => t.users.deleteInactiveGuests(Date.now() - GUEST_IDLE_MS, 100))).toBe(3);
+    expect(await tx((t) => t.matches.get(table.matchId))).toBeDefined();
   });
 });

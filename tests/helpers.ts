@@ -1,3 +1,6 @@
+import { randomBytes } from "node:crypto";
+import { tx } from "@/lib/server/store";
+import { ensureUser } from "@/lib/server/users";
 import { absIndex, type Board, type Seat } from "@/lib/engine/board";
 import type { Env } from "@/lib/engine/match";
 import { expect } from "vitest";
@@ -59,4 +62,12 @@ export function expectCode(fn: () => unknown, code: string) {
   }
   expect(caught, `expected error ${code}`).toBeDefined();
   expect((caught as { code?: string }).code).toBe(code);
+}
+
+/** A wallet account (guests are removed after 30 idle minutes, which long fake-time tests pass). */
+export async function ensureAccount() {
+  const u = await ensureUser(undefined);
+  const walletAddress = `0x${randomBytes(20).toString("hex")}`;
+  await tx(async (t) => t.users.put({ ...(await t.users.get(u.id))!, walletAddress }));
+  return { ...u, walletAddress };
 }

@@ -188,6 +188,26 @@ export function createMemoryStore(file: string | null): Store {
         count: async () => values("users").length,
         touchSeen: async (id, at) => put("seen", id, Math.max(get<number>("seen", id) ?? 0, at)),
         countSeenSince: async (at) => values<number>("seen").filter((v) => v >= at).length,
+        deleteInactiveGuests: async (before, limit) => {
+          const matches = values<MatchRecord>("matches");
+          const guests = values<User>("users")
+            .filter((u) => !u.walletAddress)
+            .filter((u) => (get<number>("seen", u.id) ?? Date.parse(u.createdAt)) < before)
+            .filter((u) => !matches.some((m) => (m.mode === "quick" || m.mode === "private") && (m.state.status === "WAITING" || m.state.status === "ACTIVE") && m.seats.includes(u.id)))
+            .slice(0, limit);
+          for (const u of guests) {
+            for (const m of matches.filter((m) => m.seats[0] === u.id && (m.mode === "local" || m.mode === "bot" || m.seats[1] === null))) {
+              for (const c of ["matches", "matchEvents", "presence", "spectators"] as const) del(c, m.id);
+              for (const k of Object.keys(base.matchActions)) if (k.startsWith(`${m.id}:`)) del("matchActions", k);
+            }
+            for (const r of values<MatchResultRow>("results").filter((r) => r.userId === u.id)) del("results", `${r.matchId}:${r.userId}`);
+            for (const d of values<Dispute>("disputes").filter((d) => d.userId === u.id)) del("disputes", d.id);
+            for (const [token, sess] of Object.entries(base.sessions)) if (sess.userId === u.id) del("sessions", token);
+            del("seen", u.id);
+            del("users", u.id);
+          }
+          return guests.length;
+        },
         search: async (query, limit) => {
           const q = query.trim().toLowerCase();
           return values<User>("users")
