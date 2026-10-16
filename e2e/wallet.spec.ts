@@ -61,7 +61,8 @@ test("a new wallet signs in, creates its account, and returns to it after signin
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
   const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(String(e)));
+  // WebKit reports prefetches cancelled by a navigation as errors; those are not app failures.
+  page.on("pageerror", (e) => !/_rsc=.*access control checks/.test(String(e)) && errors.push(String(e)));
   const key = generatePrivateKey();
   const account = await installWallet(page, key);
 
@@ -77,6 +78,7 @@ test("a new wallet signs in, creates its account, and returns to it after signin
   await page.goto("/profile");
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect.poll(async () => (await (await page.request.get("/api/me")).json()).registered).toBe(false);
+  await page.waitForURL((u) => u.pathname === "/"); // signing out returns to the landing page
   await page.goto("/play");
   await page.getByRole("button", { name: "Connect Wallet" }).click();
   await page
