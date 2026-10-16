@@ -133,6 +133,7 @@ export interface StoredEvent {
 }
 
 export type MatchMode = "quick" | "private" | "local" | "bot";
+export type ClosedReason = "expired" | "host-missing" | "abandoned" | "inactive" | "ended";
 
 export interface MatchRecord {
   id: string;
@@ -145,17 +146,27 @@ export interface MatchRecord {
   version: number;
   updatedAt?: number;
   state: MatchState;
+  /**
+   * Events added since the record was loaded; `put` appends them to the match's event log (read it
+   * with `matches.events`). Loaded records start with none, so a move never rewrites the history.
+   */
   events: StoredEvent[];
   eventSeq: number;
-  /** actionId → original response, for idempotent retries. */
+  /** New actionId → original response pairs, stored by `put` (read with `matches.action`). */
   actions: Record<string, { fingerprint: string; response: unknown }>;
   /** Host's choice; undefined (older matches) means allowed. */
   allowSpectators?: boolean;
   /** Entry fee in token minor units; 0 or undefined = free. */
   entryFee?: number;
   completedAt?: string;
-  /** Why a WAITING table closed without the host cancelling it. */
-  closedReason?: "expired";
+  /**
+   * Why a match closed without a result: a table nobody joined ("expired"), a host who never came
+   * back after someone joined ("host-missing"), an online match both players left ("abandoned"), a
+   * computer or pass & play game left alone for a day ("inactive"), or one the player ended ("ended").
+   */
+  closedReason?: ClosedReason;
+  /** When the second player sat down (ms). */
+  startedAt?: number;
   voided?: { by: string; reason: string; at: string };
 }
 
@@ -173,6 +184,8 @@ export interface LobbyRow {
   score: [number, number];
   cube: number;
   gameNumber: number;
+  /** Seat that must act next, null when nobody (or unknown for rows saved before it was stored). */
+  seatToAct: number | null;
   allowSpectators: boolean;
   entryFee: number;
   hostSeenAt: number; // ms, 0 when never seen
@@ -180,6 +193,33 @@ export interface LobbyRow {
 }
 
 export const SPECTATOR_WINDOW_MS = 20_000;
+
+export interface MatchResultRow {
+  matchId: string;
+  userId: string;
+  mode: MatchMode;
+  won: boolean;
+  /** Points this player scored in the match. */
+  points: number;
+  games: number;
+  /** Games this player won with a gammon or backgammon. */
+  gammons: number;
+  opponent: string;
+  score: [number, number]; // this player's, then the opponent's
+  targetPoints: number;
+  endReason: string;
+  completedAt: string;
+}
+
+export interface PlayerTotals {
+  played: number;
+  wins: number;
+  points: number;
+  games: number;
+  gammons: number;
+  currentStreak: number;
+  bestStreak: number;
+}
 
 export interface PublicTableFilter {
   status: "WAITING" | "ACTIVE";
@@ -274,16 +314,27 @@ export interface Tx {
   };
   matches: {
     get(id: string, opts?: { lock?: boolean }): Promise<MatchRecord | undefined>;
+    /** Saves the state and appends `rec.events` and `rec.actions` to their logs. */
     put(rec: MatchRecord): Promise<void>;
+    /** Logged events after seq `after`, or the newest `last` of them, in order. */
+    events(id: string, f: { after?: number; last?: number }): Promise<StoredEvent[]>;
+    /** A stored action response, for idempotent retries. */
+    action(id: string, actionId: string): Promise<{ fingerprint: string; response: unknown } | undefined>;
+    /** The user's matches that are waiting or in progress, newest first. */
+    listOpen(userId: string, limit: number): Promise<LobbyRow[]>;
     /**
-     * Oldest public table with this length not hosted by `excludeUser` whose host was seen at or after
-     * `hostSeenSince` (ms), locked for joining.
+     * Waiting tables to close: invite-only tables older than `privateBefore`, public tables whose host
+     * was last seen before `hostSeenBefore` or that were opened before `publicBefore` (all ms).
      */
-    nextWaitingQuick(targetPoints: number, excludeUser: string, hostSeenSince: number): Promise<MatchRecord | undefined>;
-    listForUser(userId: string): Promise<MatchRecord[]>;
-    /** Public tables (mode quick) in a status, newest activity first for ACTIVE, oldest first for WAITING. */
-    listLobby(status: "WAITING" | "ACTIVE", limit: number): Promise<LobbyRow[]>;
-    stats(): Promise<{ live: number; waiting: number; games: number }>;
+    staleTables(f: { privateBefore: number; hostSeenBefore: number; publicBefore: number; limit: number }): Promise<string[]>;
+    /**
+     * Matches in progress that may have been left (oldest change first): online matches unchanged since
+     * `onlineBefore` with a player not seen since `awayBefore`, and computer / pass & play games
+     * unchanged since `offlineBefore` (all ms).
+     */
+    idleActive(f: { onlineBefore: number; awayBefore: number; offlineBefore: number; limit: number }): Promise<string[]>;
+    /** Matches in progress changed at or after `since` (ms). */
+    countActiveSince(since: number): Promise<number>;
     /**
      * Public tables (mode quick) for the room browser, filtered and paged. WAITING tables only count
      * when the host was seen at or after `hostSeenSince`; ACTIVE ones only when watchable and updated
@@ -295,6 +346,18 @@ export interface Tx {
     countCompletedSince(at: number): Promise<number>;
     /** Completed matches per UTC day, oldest first. */
     dailyCompleted(days: number): Promise<{ day: string; n: number }[]>;
+  };
+  /** One row per human player per finished match (A4): stats never load match documents. */
+  results: {
+    put(rows: MatchResultRow[]): Promise<void>;
+    deleteForMatch(matchId: string): Promise<string[]>;
+    stats(userId: string, since?: number): Promise<PlayerTotals>;
+    history(userId: string, offset: number, limit: number): Promise<MatchResultRow[]>;
+  };
+  /** Site-wide running totals (games played, …). */
+  counters: {
+    add(key: string, n: number): Promise<void>;
+    get(keys: string[]): Promise<Record<string, number>>;
   };
   spectators: {
     touch(matchId: string, userId: string, at: number): Promise<void>;

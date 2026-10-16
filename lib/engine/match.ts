@@ -69,7 +69,7 @@ export interface MatchState {
   game: GameState | null;
   results: GameResult[];
   winner: Seat | null;
-  endReason: "points" | "forfeit" | null;
+  endReason: "points" | "forfeit" | "abandoned" | null;
 }
 
 export type ActionType = "ROLL" | "CONFIRM_TURN" | "OFFER_DOUBLE" | "ACCEPT_DOUBLE" | "PASS_DOUBLE" | "FORFEIT_MATCH";

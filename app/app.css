@@ -1298,6 +1298,13 @@ html[data-reduced-motion="true"]::view-transition-group(*) {
   font-weight: 650;
   color: var(--text-2);
 }
+.fx-turn-caption {
+  margin-top: -2px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--text-2);
+}
 .fx-turn-dice {
   display: flex;
   gap: 10px;
@@ -1814,4 +1821,10 @@ html[data-reduced-motion="true"]::view-transition-group(*) {
 .room-card .btn.block {
   width: 100%;
   margin-top: auto;
+}
+
+/* Joined while the host was away: countdown until the match is called off. */
+.host-away {
+  margin: 0 0 8px;
+  font-size: 13.5px;
 }

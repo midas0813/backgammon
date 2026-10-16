@@ -44,12 +44,13 @@ describe("match history", () => {
     const a = await ensureUser(undefined);
     const b = await ensureUser(undefined);
     const stranger = await ensureUser(undefined);
+    const host = await ensureUser(undefined);
     const { matchId } = await createMatch(a.id, "bot", 3);
     const all = await matchHistory(a.id, matchId, 0);
     expect(all.events.length).toBeGreaterThan(0);
     expect((await matchHistory(a.id, matchId, all.eventCursor)).events).toEqual([]);
     expect((await matchHistory(stranger.id, matchId, 0)).events.length).toBeGreaterThan(0);
-    const closed = await createMatch(a.id, "private", 3, { allowSpectators: false });
+    const closed = await createMatch(host.id, "private", 3, { allowSpectators: false });
     await joinMatch(b.id, closed.matchId);
     expect(await codeOf(matchHistory(stranger.id, closed.matchId, 0))).toBe("NOT_PARTICIPANT");
   });

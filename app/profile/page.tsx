@@ -75,6 +75,9 @@ export default function ProfilePage() {
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const { disconnect } = useDisconnect();
   const [copied, setCopied] = useState(false);
+  // Older match history, loaded a page at a time.
+  const [more, setMore] = useState<{ items: Profile["stats"]["history"]; hasMore: boolean } | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   if (!me) {
     return (
@@ -268,7 +271,7 @@ export default function ProfilePage() {
           </div>
         ) : (
           <ul className="list">
-            {st.history.map((h) => (
+            {[...st.history, ...(more?.items ?? [])].map((h) => (
               <li key={h.matchId}>
                 <span className="row" style={{ flexWrap: "nowrap", minWidth: 0 }}>
                   <span className={`result-pill ${h.won ? "win" : "loss"}`}>{h.won ? "W" : "L"}</span>
@@ -277,7 +280,7 @@ export default function ProfilePage() {
                       vs {h.opponent}
                     </span>
                     <span className="muted small">
-                      {new Date(h.date).toLocaleDateString()} · {h.targetPoints}-pt{h.reason === "forfeit" ? " · forfeit" : ""}
+                      {new Date(h.date).toLocaleDateString()} · {h.targetPoints}-pt{h.reason === "forfeit" ? " · forfeit" : h.reason === "abandoned" ? " · abandoned" : ""}
                     </span>
                   </span>
                 </span>
@@ -287,6 +290,25 @@ export default function ProfilePage() {
               </li>
             ))}
           </ul>
+        )}
+        {(more ? more.hasMore : st.historyMore) && (
+          <button
+            className="btn block"
+            disabled={loadingMore}
+            onClick={async () => {
+              setLoadingMore(true);
+              try {
+                const page = await api<{ items: Profile["stats"]["history"]; hasMore: boolean }>(
+                  `/api/me/history?offset=${st.history.length + (more?.items.length ?? 0)}`,
+                );
+                setMore((m) => ({ items: [...(m?.items ?? []), ...page.items], hasMore: page.hasMore }));
+              } finally {
+                setLoadingMore(false);
+              }
+            }}
+          >
+            {loadingMore ? "Loading…" : "Load more"}
+          </button>
         )}
       </section>
 

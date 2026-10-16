@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import type { Seat } from "../engine/board";
 import { TOKEN_SCALE } from "../fees";
 import { ApiError } from "./errors";
 import { grantFreeCredits } from "./ledger";
@@ -105,51 +104,41 @@ export async function updatePreferences(
 
 export const avatarUrl = (user: Pick<User, "avatar"> | undefined) => (user?.avatar ? `/api/avatars/${user.avatar}` : null);
 
-export async function playerStats(t: Tx, userId: string) {
-  const finished = (await t.matches.listForUser(userId))
-    .filter((m) => m.state.status === "COMPLETED" && m.mode !== "local")
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  let wins = 0,
-    gammons = 0,
-    points = 0,
-    streak = 0,
-    bestStreak = 0;
-  const history = finished.map((m) => {
-    const seat = m.seats.indexOf(userId) as Seat;
-    const opp = (1 - seat) as Seat;
-    const won = m.state.winner === seat;
-    if (won) {
-      wins++;
-      streak++;
-      bestStreak = Math.max(bestStreak, streak);
-    } else streak = 0;
-    for (const r of m.state.results) {
-      if (r.winner === seat) {
-        points += r.points;
-        if (r.kind === "gammon" || r.kind === "backgammon") gammons++;
-      }
-    }
-    return {
-      matchId: m.id,
-      mode: m.mode,
-      opponent: m.names[opp],
-      won,
-      score: [m.state.score[seat], m.state.score[opp]] as [number, number],
-      targetPoints: m.state.targetPoints,
-      reason: m.state.endReason,
-      date: m.createdAt,
-    };
-  });
+export const HISTORY_PAGE = 10;
+
+/** One page of the player's finished matches, newest first. */
+export async function matchHistoryPage(t: Tx, userId: string, offset: number) {
+  const rows = await t.results.history(userId, Math.max(0, Math.trunc(offset) || 0), HISTORY_PAGE + 1);
   return {
-    played: finished.length,
-    wins,
-    losses: finished.length - wins,
-    winRate: finished.length ? Math.round((wins / finished.length) * 100) : 0,
-    gammons,
-    points,
-    currentStreak: streak,
-    bestStreak,
-    history: history.reverse().slice(0, 12),
+    items: rows.slice(0, HISTORY_PAGE).map((r) => ({
+      matchId: r.matchId,
+      mode: r.mode,
+      opponent: r.opponent,
+      won: r.won,
+      score: r.score,
+      targetPoints: r.targetPoints,
+      reason: r.endReason,
+      date: r.completedAt,
+    })),
+    hasMore: rows.length > HISTORY_PAGE,
+  };
+}
+
+/** Totals come from the per-match results table, so they stay correct for any number of matches. */
+export async function playerStats(t: Tx, userId: string) {
+  const s = await t.results.stats(userId);
+  const page = await matchHistoryPage(t, userId, 0);
+  return {
+    played: s.played,
+    wins: s.wins,
+    losses: s.played - s.wins,
+    winRate: s.played ? Math.round((s.wins / s.played) * 100) : 0,
+    gammons: s.gammons,
+    points: s.points,
+    currentStreak: s.currentStreak,
+    bestStreak: s.bestStreak,
+    history: page.items,
+    historyMore: page.hasMore,
   };
 }
 

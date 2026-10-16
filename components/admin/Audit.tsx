@@ -12,9 +12,10 @@ export default function Audit() {
   const { open } = useAdmin();
   const [d, setD] = useState<Data | null>(null);
   const [type, setType] = useState("");
+  const [actor, setActor] = useState("");
   useEffect(() => {
-    api<Data>(`/api/admin/audit?targetType=${type}`).then(setD).catch(() => {});
-  }, [type]);
+    api<Data>(`/api/admin/audit?targetType=${type}&actorId=${actor}`).then(setD).catch(() => {});
+  }, [type, actor]);
   const go = (t?: string, id?: string) => {
     if (t === "user" && id) open("users", id);
     else if (t === "match" && id) open("matches", id);
@@ -29,7 +30,22 @@ export default function Audit() {
           </button>
         ))}
       </div>
-      {d?.scope === "own" && <p className="muted small">Your role shows only your own actions.</p>}
+      {d && (
+        <p className="muted small">
+          {d.scope === "all" ? (
+            "Showing: all admins' actions."
+          ) : d.scope === "person" ? (
+            <>
+              Filtered: {d.actor?.name}&apos;s actions.{" "}
+              <button className="linklike" onClick={() => setActor("")}>
+                Show everyone
+              </button>
+            </>
+          ) : (
+            "Showing: only your own actions (your role cannot see other admins' actions)."
+          )}
+        </p>
+      )}
       {!d ? (
         <div className="skeleton" style={{ height: 200, borderRadius: 12 }} />
       ) : d.entries.length === 0 ? (
@@ -52,7 +68,13 @@ export default function Audit() {
                 <tr key={e.id}>
                   <td className="muted">{fmtDate(e.at)}</td>
                   <td>
-                    {e.actorName}
+                    {e.actorId && d.scope !== "own" ? (
+                      <button className="linklike" title="Show only this person's actions" onClick={() => setActor(e.actorId!)}>
+                        {e.actorName}
+                      </button>
+                    ) : (
+                      e.actorName
+                    )}
                     {e.actorRole && <span className="a-role">{e.actorRole}</span>}
                   </td>
                   <td>

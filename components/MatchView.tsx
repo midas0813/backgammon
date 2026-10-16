@@ -23,6 +23,8 @@ type Snapshot = MatchSnapshot;
 type Poll = Snapshot | { unchanged: true; stateVersion: number; seats: Snapshot["seats"] };
 
 const POLL_MS = 1000;
+const BOT_POLL_MS = 700;
+const SLOW_POLL_MS = 15000;
 const COLOR_NAME = ["White", "Black"];
 const KIND_LABEL: Record<GameResult["kind"], string> = {
   single: "Single game",
@@ -181,13 +183,39 @@ export default function MatchView({ matchId }: { matchId: string }) {
     return () => window.clearTimeout(t);
   }, [oppAnim]);
 
+  // How often to ask for news. Pass & play changes only through this device, so it needs no polling
+  // beyond a slow safety check; a computer game polls quickly only while the computer is to act
+  // (each poll also lets it make its next step).
+  const snapRef = useRef<Snapshot | null>(null);
+  snapRef.current = snap;
   useEffect(() => {
-    refresh(true);
-    const t = window.setInterval(() => refresh(), POLL_MS);
+    let timer: number | undefined;
+    let stopped = false;
+    const delay = () => {
+      const s = snapRef.current;
+      if (!s || s.status === "WAITING") return POLL_MS;
+      if (s.status !== "ACTIVE") return SLOW_POLL_MS;
+      if (s.mode === "local") return SLOW_POLL_MS;
+      if (s.mode === "bot") return s.seatToAct !== null && s.seats[s.seatToAct].bot ? BOT_POLL_MS : SLOW_POLL_MS;
+      return POLL_MS;
+    };
+    // A short tick that fetches only when due, so a faster rate applies at once (e.g. the computer's turn).
+    let last = Date.now();
+    const loop = async () => {
+      if (document.visibilityState === "visible" && Date.now() - last >= delay()) {
+        last = Date.now();
+        await refresh();
+      }
+      if (!stopped) timer = window.setTimeout(loop, BOT_POLL_MS);
+    };
+    refresh(true).then(() => {
+      if (!stopped) timer = window.setTimeout(loop, BOT_POLL_MS);
+    });
     const onVisible = () => document.visibilityState === "visible" && refresh(true);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
-      window.clearInterval(t);
+      stopped = true;
+      window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [refresh]);
@@ -221,7 +249,19 @@ export default function MatchView({ matchId }: { matchId: string }) {
       navigator.vibrate?.([25, 40, 25]);
       const g = snap.game;
       const sub = g?.phase === "CUBE_PENDING" ? "Accept or pass the double" : g?.phase === "ROLLED" ? "Make your move" : "Roll the dice";
-      fxRef.current?.play([{ kind: "your-turn", sub }]);
+      // The mini dice show what the opponent just rolled; blank when there is no such roll yet.
+      const last = g?.lastTurn;
+      const theirs = g?.phase === "BEFORE_ROLL" && last && last.seat !== snap.yourSeats[0] && last.dice.length === 2 ? last : null;
+      fxRef.current?.play([
+        theirs
+          ? {
+              kind: "your-turn",
+              sub,
+              dice: [theirs.dice[0], theirs.dice[1]],
+              caption: `${snap.seats[theirs.seat].name} rolled ${theirs.dice[0]}-${theirs.dice[1]}${theirs.forced ? " · no move" : ""}`,
+            }
+          : { kind: "your-turn", sub },
+      ]);
       setRollPing(true);
     }
     prevActRef.current = mine;
@@ -430,6 +470,8 @@ export default function MatchView({ matchId }: { matchId: string }) {
         </div>
       )}
 
+      {snap.hostReturnBy && !snap.yourSeats.includes(0) && <HostAway name={snap.seats[0].name} until={snap.hostReturnBy} />}
+
       <PlayerStrip info={top} seat={opp} target={snap.targetPoints} cube={cubeOwner === "opponent" ? game!.cubeValue : null} />
 
       <div className="board-wrap">
@@ -620,7 +662,8 @@ export default function MatchView({ matchId }: { matchId: string }) {
       {leaveAsk && (
         <Modal title="Leave the table?" onClose={() => setLeaveAsk(false)}>
           <p className="muted">
-            The match keeps going and you will <strong>not</strong> forfeit. You can come back any time from the lobby&apos;s Resume list.
+            The match keeps going and leaving does <strong>not</strong> forfeit it. Come back from the lobby&apos;s Resume button. If it&apos;s your turn and
+            you stay away for 10 minutes while your opponent waits, you lose the match by abandonment.
           </p>
           <div className="grid2">
             <button className="btn" onClick={() => setLeaveAsk(false)}>
@@ -642,6 +685,25 @@ export default function MatchView({ matchId }: { matchId: string }) {
         </Modal>
       )}
     </main>
+  );
+}
+
+/** Shown to the player who joined while the host was away. */
+function HostAway({ name, until }: { name: string; until: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, []);
+  const left = Math.max(0, Math.ceil((Date.parse(until) - now) / 1000));
+  return (
+    <div className="notice host-away" role="status">
+      <strong>{name} stepped away.</strong> We&apos;ve let them know you joined. If they&apos;re not back in{" "}
+      <span className="mono">
+        {Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}
+      </span>
+      , the match is called off with no result.
+    </div>
   );
 }
 
@@ -774,7 +836,8 @@ function MatchOver({ snap }: { snap: Snapshot }) {
         {snap.yourSeats.length === 1 ? (youWon ? "You won the match" : "You lost the match") : `${snap.seats[winner].name} wins the match`}
       </h2>
       <div className="muted">
-        Final score {snap.score[0]}–{snap.score[1]} · {snap.endReason === "forfeit" ? "by forfeit" : `${snap.targetPoints}-point match`}
+        Final score {snap.score[0]}–{snap.score[1]} ·{" "}
+        {snap.endReason === "forfeit" ? "by forfeit" : snap.endReason === "abandoned" ? "by abandonment (left the table)" : `${snap.targetPoints}-point match`}
       </div>
       {last && <ResultDetails r={last} snap={snap} />}
       <details>
@@ -798,6 +861,15 @@ function MatchOver({ snap }: { snap: Snapshot }) {
     </div>
   );
 }
+
+const CLOSED: Record<string, { title: string; text: string }> = {
+  cancelled: { title: "Match cancelled", text: "The host closed this table." },
+  expired: { title: "Table closed", text: "Nobody joined in time, so the table closed." },
+  "host-missing": { title: "Match called off", text: "The host didn't come back after the second player sat down, so the match ended with no result." },
+  abandoned: { title: "Match closed", text: "Both players left the table for 30 minutes, so the match closed with no result." },
+  inactive: { title: "Game closed", text: "This game was left for a day, so it closed with no result." },
+  ended: { title: "Game ended", text: "This game was ended before it finished, with no result." },
+};
 
 function WaitingRoom({ snap, matchId, onChange }: { snap: Snapshot; matchId: string; onChange: () => void }) {
   const [copied, setCopied] = useState(false);
@@ -824,15 +896,12 @@ function WaitingRoom({ snap, matchId, onChange }: { snap: Snapshot; matchId: str
     }
   };
   if (snap.status === "CANCELLED") {
+    const closed = CLOSED[snap.closedReason ?? ""] ?? CLOSED.cancelled;
     return (
       <main className="page">
         <div className="card">
-          <h1>{snap.closedReason === "expired" ? "Table closed" : "Match cancelled"}</h1>
-          <p className="muted">
-            {snap.closedReason === "expired"
-              ? "Nobody was at this table for 15 minutes, so it closed. Nothing was reserved for this free match."
-              : "Nothing was reserved for this free match."}
-          </p>
+          <h1>{closed.title}</h1>
+          <p className="muted">{closed.text} Nothing was reserved for this free match.</p>
           <Link className="btn primary" href="/play">
             Back to lobby
           </Link>
@@ -894,8 +963,8 @@ function WaitingRoom({ snap, matchId, onChange }: { snap: Snapshot; matchId: str
           <>
             <p className="notice" style={{ margin: 0 }}>
               {snap.mode === "quick"
-                ? "Waiting for another player to join from the lobby. The table closes after 15 minutes if you leave. "
-                : "Send this link to your opponent. "}
+                ? "Waiting for another player to join from the lobby. If you step away, the table stays listed as “host away” and closes after 15 minutes. "
+                : "Send this link to your opponent. The invite expires 15 minutes after you opened the table. "}
               A second tab in this browser counts as you, so test with a private window or another device — or play the computer now.
             </p>
             <button className="btn primary block" onClick={playComputer}>

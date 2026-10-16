@@ -1,20 +1,19 @@
 import { createHash } from "node:crypto";
 import { BOT_USER_ID } from "./bot";
 import { ApiError } from "./errors";
-import { HOST_ONLINE_MS, createMatch, expireTable } from "./matches";
+import { HOST_ONLINE_MS, TABLE_EXPIRY_MS, createMatch, sweep } from "./matches";
 import { operatorSettings } from "./settings";
-import { tx, type LobbyRow, type MatchRecord, type Tx, type User } from "./store";
+import { tx, type Tx, type User } from "./store";
 import { avatarUrl } from "./users";
 
 /**
- * The online lobby: open tables to join, live matches to watch, and the player's own tables.
+ * The online lobby: open tables to join, live matches to watch, and the player's own game.
  * Tables are public (mode "quick", listed) or private (mode "private", invite link only).
  */
-export const TABLE_EXPIRY_MS = 15 * 60 * 1000;
-export const MAX_OPEN_TABLES = 3;
-const TABLES_PER_MINUTE = 5;
+export { TABLE_EXPIRY_MS };
 export const ONLINE_WINDOW_MS = 2 * 60 * 1000;
-const LIVE_STALE_MS = 30 * 60 * 1000;
+/** "Playing" and "live" count only matches with a move this recently. */
+export const LIVE_WINDOW_MS = 10 * 60 * 1000;
 const ALLOWED_POINTS = [1, 3, 5, 7];
 
 // Activity writes are throttled per process so frequent polling stays cheap.
@@ -30,31 +29,12 @@ export async function touchUser(t: Tx, userId: string, now = Date.now()) {
   if (due(`seen:${userId}`, now, 20_000)) await t.users.touchSeen(userId, now);
 }
 
-const isOpenTable = (m: MatchRecord, userId: string) =>
-  m.state.status === "WAITING" && m.createdBy === userId && (m.mode === "quick" || m.mode === "private");
-
+/** Create a table (public or invite-only). Players have one game at a time, enforced in createMatch. */
 export async function createTable(userId: string, body: { targetPoints?: unknown; visibility?: unknown; allowSpectators?: unknown }) {
   const targetPoints = Number(body.targetPoints);
   if (!ALLOWED_POINTS.includes(targetPoints)) throw new ApiError(400, "INVALID_INPUT", "Unsupported match length");
   const visibility = body.visibility === "private" ? "private" : "public";
-  await tx(async (t) => {
-    const mine = await t.matches.listForUser(userId);
-    if (mine.filter((m) => isOpenTable(m, userId)).length >= MAX_OPEN_TABLES) {
-      throw new ApiError(429, "RATE_LIMITED", `You already have ${MAX_OPEN_TABLES} open tables. Close one first.`);
-    }
-    const recent = mine.filter((m) => m.createdBy === userId && Date.now() - Date.parse(m.createdAt) < 60_000 && m.mode !== "bot" && m.mode !== "local");
-    if (recent.length >= TABLES_PER_MINUTE) throw new ApiError(429, "RATE_LIMITED", "You are opening tables too quickly. Please wait a moment.");
-  });
-  return createMatch(userId, visibility === "private" ? "private" : "quick", targetPoints, {
-    allowSpectators: body.allowSpectators !== false,
-    joinExisting: false,
-  });
-}
-
-/** One tap: join the oldest table with this length whose host is around, otherwise open one. */
-export function findGame(userId: string, targetPoints: number) {
-  if (!ALLOWED_POINTS.includes(targetPoints)) throw new ApiError(400, "INVALID_INPUT", "Unsupported match length");
-  return createMatch(userId, "quick", targetPoints);
+  return createMatch(userId, visibility === "private" ? "private" : "quick", targetPoints, { allowSpectators: body.allowSpectators !== false });
 }
 
 interface PlayerView {
@@ -74,61 +54,49 @@ function players(seats: [string | null, string | null], names: [string, string],
 
 const realIds = (ids: (string | null)[]) => [...new Set(ids.filter((id): id is string => !!id && id !== BOT_USER_ID))];
 
-/** Close tables whose host has been gone for TABLE_EXPIRY_MS (oldest first). */
-async function expireStaleTables(t: Tx, now: number) {
-  const waiting = await t.matches.listLobby("WAITING", 100);
-  const stale = waiting.filter((r) => (r.hostSeenAt || Date.parse(r.createdAt)) < now - TABLE_EXPIRY_MS).map((r) => r.id);
-  for (const id of stale) await expireTable(t, id);
-  return new Set(stale);
+/** Site-wide numbers for the lobby and Home. */
+export async function pulse(t: Tx, now: number, spectators: boolean) {
+  const base = { hostSeenSince: now - TABLE_EXPIRY_MS, activeSince: now - LIVE_WINDOW_MS, sort: "newest" as const, offset: 0, limit: 0 };
+  return {
+    online: await t.users.countSeenSince(now - ONLINE_WINDOW_MS),
+    open: (await t.matches.listPublic({ ...base, status: "WAITING" })).total,
+    live: spectators ? (await t.matches.listPublic({ ...base, status: "ACTIVE" })).total : 0,
+    playing: await t.matches.countActiveSince(now - LIVE_WINDOW_MS),
+  };
 }
 
-/** Counts shown on the lobby tiles: open tables to join and live matches to watch. */
-async function publicCounts(t: Tx, now: number, spectators: boolean) {
-  const base = { hostSeenSince: now - HOST_ONLINE_MS, activeSince: now - LIVE_STALE_MS, sort: "newest" as const, offset: 0, limit: 0 };
-  const open = (await t.matches.listPublic({ ...base, status: "WAITING" })).total;
-  const live = spectators ? (await t.matches.listPublic({ ...base, status: "ACTIVE" })).total : 0;
-  return { open, live };
-}
-
-/** The player's own tables and matches plus lobby counts. Tables to join are paged by publicTables. */
+/** The player's own game plus lobby counts. Tables to join are paged by publicTables. */
 export async function lobby(userId: string) {
+  await sweep();
   const data = await tx(async (t) => {
     const now = Date.now();
     await touchUser(t, userId, now);
-    const stale = await expireStaleTables(t, now);
-
-    const mineAll = await t.matches.listForUser(userId);
-    // Being in the lobby counts as being around for your own tables.
-    for (const m of mineAll.filter((m) => isOpenTable(m, userId))) {
+    const mine = await t.matches.listOpen(userId, 5);
+    // Being in the lobby counts as being around for your own table.
+    for (const m of mine.filter((m) => m.status === "WAITING" && m.hostId === userId)) {
       if (due(`host:${m.id}`, now, 10_000)) await t.presence.touch(m.id, 0, now);
     }
-    const mine = mineAll
-      .filter((m) => (m.state.status === "WAITING" || m.state.status === "ACTIVE") && !stale.has(m.id))
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     const users = await t.users.getMany(realIds(mine.flatMap((m) => m.seats)));
     const settings = await operatorSettings(t);
-    const counts = await publicCounts(t, now, settings.spectators);
-    const stats = await t.matches.stats();
+    const counts = await pulse(t, now, settings.spectators);
     return {
       mine: mine.map((m) => ({
         matchId: m.id,
         mode: m.mode,
-        status: m.state.status,
-        targetPoints: m.state.targetPoints,
+        status: m.status,
+        targetPoints: m.targetPoints,
         players: players(m.seats, m.names, users),
-        score: m.state.score,
-        host: m.createdBy === userId,
-        allowSpectators: m.allowSpectators !== false,
+        score: m.score,
+        host: m.hostId === userId,
+        allowSpectators: m.allowSpectators,
         createdAt: m.createdAt,
       })),
       counts: {
-        online: await t.users.countSeenSince(now - ONLINE_WINDOW_MS),
-        // Open tables other players can join (your own waiting tables are not counted).
-        open: Math.max(0, counts.open - mine.filter((m) => m.state.status === "WAITING" && m.mode === "quick" && m.createdBy === userId).length),
-        live: counts.live,
-        playing: stats.live,
+        ...counts,
+        // Open tables other players can join (your own waiting table is not counted).
+        open: Math.max(0, counts.open - mine.filter((m) => m.status === "WAITING" && m.mode === "quick" && m.hostId === userId).length),
       },
-      limits: { maxOpenTables: MAX_OPEN_TABLES, tableExpiryMinutes: TABLE_EXPIRY_MS / 60_000 },
+      limits: { tableExpiryMinutes: TABLE_EXPIRY_MS / 60_000 },
       maintenance: settings.maintenance.enabled ? settings.maintenance.message : null,
     };
   });
@@ -168,9 +136,9 @@ export async function publicTables(input: PublicTableQuery) {
   const sort = input.sort === "oldest" ? "oldest" : "newest";
   const page = Math.max(0, Math.min(500, Math.trunc(Number(input.page) || 0)));
   const [feeMin, feeMax] = FEE_BANDS[fee];
+  await sweep();
   return tx(async (t) => {
     const now = Date.now();
-    if (due("expire-sweep", now, 30_000)) await expireStaleTables(t, now);
     const settings = await operatorSettings(t);
     const { rows, total } =
       view === "live" && !settings.spectators
@@ -180,8 +148,8 @@ export async function publicTables(input: PublicTableQuery) {
             points,
             feeMin,
             feeMax,
-            hostSeenSince: now - HOST_ONLINE_MS,
-            activeSince: now - LIVE_STALE_MS,
+            hostSeenSince: now - TABLE_EXPIRY_MS,
+            activeSince: now - LIVE_WINDOW_MS,
             sort,
             offset: page * PAGE_SIZE,
             limit: PAGE_SIZE,
@@ -203,7 +171,8 @@ export async function publicTables(input: PublicTableQuery) {
           entryFee: r.entryFee,
           createdAt: r.createdAt,
           host,
-          hostOnline: r.hostSeenAt >= now - 15_000,
+          // Away hosts stay listed (phones pause background pages); they hear about a join when they return.
+          hostOnline: r.hostSeenAt >= now - HOST_ONLINE_MS,
           // Live matches only:
           opponent: view === "live" ? guest : null,
           score: view === "live" ? r.score : null,
@@ -221,14 +190,15 @@ export type PublicTables = Awaited<ReturnType<typeof publicTables>>;
 export type Lobby = Awaited<ReturnType<typeof lobby>>;
 
 /** Status of the caller's own tables, polled app-wide so a host hears "opponent joined" anywhere. */
-export function tableStatus(userId: string, ids: string[]) {
+export async function tableStatus(userId: string, ids: string[]) {
+  await sweep();
   return tx(async (t) => {
-    const out: { matchId: string; status: string; opponent: string | null }[] = [];
-    for (const id of ids.slice(0, MAX_OPEN_TABLES + 2)) {
+    const out: { matchId: string; status: string; opponent: string | null; reason: string | null }[] = [];
+    for (const id of ids.slice(0, 5)) {
       const m = await t.matches.get(id);
       if (!m || m.createdBy !== userId) continue;
       if (m.state.status === "WAITING" && due(`host:${m.id}`, Date.now(), 10_000)) await t.presence.touch(m.id, 0, Date.now());
-      out.push({ matchId: id, status: m.state.status, opponent: m.state.status === "WAITING" ? null : m.names[1] });
+      out.push({ matchId: id, status: m.state.status, opponent: m.state.status === "WAITING" ? null : m.names[1], reason: m.closedReason ?? null });
     }
     return { tables: out };
   });

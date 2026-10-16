@@ -121,6 +121,7 @@ function toLobbyRow(r: Row): LobbyRow {
     gameNumber: number;
     hostId: string;
     seats?: [string | null, string | null];
+    seatToAct?: number | null;
   }>(r.summary);
   return {
     id: String(r.id),
@@ -135,6 +136,7 @@ function toLobbyRow(r: Row): LobbyRow {
     score: s.score,
     cube: num(s.cube),
     gameNumber: num(s.gameNumber),
+    seatToAct: s.seatToAct ?? null,
     allowSpectators: Boolean(r.allow_spectators),
     entryFee: num(r.entry_fee),
     hostSeenAt: num(r.host_seen_ms),
@@ -296,9 +298,12 @@ function makeTx(q: Query): Tx {
     matches: {
       async get(id, opts) {
         const [r] = await q(`select data from matches where id = $1 ${opts?.lock ? "for update" : ""}`, [id]);
-        return r ? parse<MatchRecord>(r.data) : undefined;
+        if (!r) return undefined;
+        // Logs live in match_events / match_actions; the document carries only what this unit adds.
+        return { ...parse<MatchRecord>(r.data), events: [], actions: {} };
       },
       async put(m) {
+        const doc = { ...m, events: [], actions: {} };
         await q(
           `insert into matches (id, mode, status, target_points, created_by, seat0, seat1, version, created_at, updated_at, data,
              summary, allow_spectators, completed_at, entry_fee)
@@ -316,35 +321,101 @@ function makeTx(q: Query): Tx {
             m.seats[1],
             m.version,
             m.createdAt,
-            JSON.stringify(m),
+            JSON.stringify(doc),
             JSON.stringify(summarize(m)),
             m.allowSpectators !== false,
             m.completedAt ?? null,
             m.entryFee ?? 0,
           ],
         );
+        if (m.events.length) {
+          await q(
+            `insert into match_events (match_id, seq, type, state_version, server_time, payload)
+             select $1, x.seq, x.type, x.v, x.t, x.p
+             from unnest($2::int[], $3::text[], $4::int[], $5::timestamptz[], $6::jsonb[]) as x(seq, type, v, t, p)
+             on conflict do nothing`,
+            [
+              m.id,
+              m.events.map((e) => e.seq),
+              m.events.map((e) => e.type),
+              m.events.map((e) => e.stateVersion),
+              m.events.map((e) => e.serverTime),
+              m.events.map((e) => JSON.stringify(e.payload)),
+            ],
+          );
+        }
+        const actions = Object.entries(m.actions);
+        if (actions.length) {
+          await q(
+            `insert into match_actions (match_id, action_id, fingerprint, response)
+             select $1, x.a, x.f, x.r from unnest($2::text[], $3::text[], $4::jsonb[]) as x(a, f, r)
+             on conflict do nothing`,
+            [m.id, actions.map(([id]) => id), actions.map(([, a]) => a.fingerprint), actions.map(([, a]) => JSON.stringify(a.response))],
+          );
+        }
       },
-      async nextWaitingQuick(points, exclude, hostSeenSince) {
-        const [r] = await q(
-          `select m.data from matches m join match_presence p on p.match_id = m.id and p.seat = 0
-           where m.mode = 'quick' and m.status = 'WAITING' and m.target_points = $1 and m.seat0 <> $2
-             and p.seen_at >= to_timestamp($3::float8 / 1000)
-           order by m.created_at limit 1 for update of m skip locked`,
-          [points, exclude, hostSeenSince],
-        );
-        return r ? parse<MatchRecord>(r.data) : undefined;
+      async events(id, f) {
+        const rows =
+          f.last !== undefined
+            ? (
+                await q(
+                  `select seq, type, state_version, server_time, payload from match_events where match_id = $1 and seq > $2
+                   order by seq desc limit $3`,
+                  [id, f.after ?? 0, f.last],
+                )
+              ).reverse()
+            : await q(
+                `select seq, type, state_version, server_time, payload from match_events where match_id = $1 and seq > $2 order by seq`,
+                [id, f.after ?? 0],
+              );
+        return rows.map((r) => ({
+          seq: num(r.seq),
+          type: String(r.type),
+          stateVersion: num(r.state_version),
+          serverTime: iso(r.server_time),
+          payload: parse<Record<string, unknown>>(r.payload),
+        }));
       },
-      async listForUser(userId) {
-        const rows = await q(`select data from matches where seat0 = $1 or seat1 = $1 order by created_at desc limit 200`, [userId]);
-        return rows.map((r) => parse<MatchRecord>(r.data));
+      async action(id, actionId) {
+        const [r] = await q(`select fingerprint, response from match_actions where match_id = $1 and action_id = $2`, [id, actionId]);
+        return r ? { fingerprint: String(r.fingerprint), response: parse(r.response) } : undefined;
       },
-      async listLobby(status, limit) {
+      async listOpen(userId, limit) {
         const rows = await q(
-          `${LOBBY_SELECT} where m.mode = 'quick' and m.status = $1
-           order by ${status === "WAITING" ? "m.created_at asc" : "m.updated_at desc"} limit $2`,
-          [status, limit],
+          `${LOBBY_SELECT} where (m.seat0 = $1 or m.seat1 = $1) and m.status in ('WAITING', 'ACTIVE')
+           order by m.updated_at desc limit $2`,
+          [userId, limit],
         );
         return rows.filter((r) => r.summary).map(toLobbyRow);
+      },
+      async staleTables(f) {
+        const rows = await q(
+          `select m.id from matches m
+           left join match_presence p on p.match_id = m.id and p.seat = 0
+           where m.status = 'WAITING' and (
+             (m.mode = 'private' and m.created_at < to_timestamp($1::float8 / 1000)) or
+             (m.mode = 'quick' and (coalesce(p.seen_at, m.created_at) < to_timestamp($2::float8 / 1000)
+                                    or m.created_at < to_timestamp($3::float8 / 1000))))
+           order by m.created_at limit $4`,
+          [f.privateBefore, f.hostSeenBefore, f.publicBefore, f.limit],
+        );
+        return rows.map((r) => String(r.id));
+      },
+      async idleActive(f) {
+        const rows = await q(
+          `select m.id from matches m
+           where m.status = 'ACTIVE' and (
+             (m.mode in ('quick', 'private') and m.updated_at < to_timestamp($1::float8 / 1000)
+               and (select count(*) from match_presence p where p.match_id = m.id and p.seen_at >= to_timestamp($2::float8 / 1000)) < 2) or
+             (m.mode in ('bot', 'local') and m.updated_at < to_timestamp($3::float8 / 1000)))
+           order by m.updated_at limit $4`,
+          [f.onlineBefore, f.awayBefore, f.offlineBefore, f.limit],
+        );
+        return rows.map((r) => String(r.id));
+      },
+      async countActiveSince(since) {
+        const [r] = await q(`select count(*) as n from matches where status = 'ACTIVE' and updated_at >= to_timestamp($1::float8 / 1000)`, [since]);
+        return num(r.n);
       },
       async listPublic(f) {
         // Shared filter for the count and the page, so "N tables" always matches what can be paged.
@@ -381,14 +452,88 @@ function makeTx(q: Query): Tx {
         const rows = await q(DAILY("matches", "completed_at"), [days]);
         return rows.map((r) => ({ day: String(r.day), n: num(r.n) }));
       },
-      async stats() {
-        const [r] = await q(
-          `select count(*) filter (where status = 'ACTIVE') as live,
-                  count(*) filter (where status = 'WAITING' and mode = 'quick') as waiting,
-                  coalesce(sum(jsonb_array_length(data->'state'->'results')), 0) as games
-           from matches`,
+    },
+    results: {
+      async put(rows) {
+        if (rows.length === 0) return;
+        await q(
+          `insert into match_results (match_id, user_id, mode, won, points, games, gammons, opponent, score_for, score_against,
+             target_points, end_reason, completed_at)
+           select * from unnest($1::text[], $2::uuid[], $3::text[], $4::boolean[], $5::int[], $6::int[], $7::int[], $8::text[],
+             $9::int[], $10::int[], $11::int[], $12::text[], $13::timestamptz[])
+           on conflict do nothing`,
+          [
+            rows.map((r) => r.matchId),
+            rows.map((r) => r.userId),
+            rows.map((r) => r.mode),
+            rows.map((r) => r.won),
+            rows.map((r) => r.points),
+            rows.map((r) => r.games),
+            rows.map((r) => r.gammons),
+            rows.map((r) => r.opponent),
+            rows.map((r) => r.score[0]),
+            rows.map((r) => r.score[1]),
+            rows.map((r) => r.targetPoints),
+            rows.map((r) => r.endReason),
+            rows.map((r) => r.completedAt),
+          ],
         );
-        return { live: num(r.live), waiting: num(r.waiting), games: num(r.games) };
+      },
+      async deleteForMatch(matchId) {
+        const rows = await q(`delete from match_results where match_id = $1 returning user_id`, [matchId]);
+        return rows.map((r) => String(r.user_id));
+      },
+      async stats(userId, since) {
+        const [r] = await q(
+          `with mine as (
+             select won, points, games, gammons, completed_at from match_results
+             where user_id = $1 and ($2::float8 is null or completed_at >= to_timestamp($2::float8 / 1000))),
+           runs as (
+             select won, count(*) filter (where not won) over (order by completed_at rows unbounded preceding) as grp from mine)
+           select count(*) as played, count(*) filter (where won) as wins, coalesce(sum(points), 0) as points,
+                  coalesce(sum(games), 0) as games, coalesce(sum(gammons), 0) as gammons,
+                  (select count(*) from mine where won and completed_at > coalesce((select max(completed_at) from mine where not won), '-infinity')) as current_streak,
+                  (select coalesce(max(n), 0) from (select count(*) as n from runs where won group by grp) s) as best_streak
+           from mine`,
+          [userId, since ?? null],
+        );
+        return {
+          played: num(r.played),
+          wins: num(r.wins),
+          points: num(r.points),
+          games: num(r.games),
+          gammons: num(r.gammons),
+          currentStreak: num(r.current_streak),
+          bestStreak: num(r.best_streak),
+        };
+      },
+      async history(userId, offset, limit) {
+        const rows = await q(`select * from match_results where user_id = $1 order by completed_at desc limit $2 offset $3`, [userId, limit, offset]);
+        return rows.map((r) => ({
+          matchId: String(r.match_id),
+          userId: String(r.user_id),
+          mode: r.mode as LobbyRow["mode"],
+          won: Boolean(r.won),
+          points: num(r.points),
+          games: num(r.games),
+          gammons: num(r.gammons),
+          opponent: String(r.opponent),
+          score: [num(r.score_for), num(r.score_against)] as [number, number],
+          targetPoints: num(r.target_points),
+          endReason: String(r.end_reason),
+          completedAt: iso(r.completed_at),
+        }));
+      },
+    },
+    counters: {
+      async add(key, n) {
+        await q(`insert into app_counters (key, value) values ($1, $2) on conflict (key) do update set value = app_counters.value + excluded.value`, [key, n]);
+      },
+      async get(keys) {
+        const rows = await q(`select key, value from app_counters where key = any($1::text[])`, [keys]);
+        const out: Record<string, number> = Object.fromEntries(keys.map((k) => [k, 0]));
+        for (const r of rows) out[String(r.key)] = num(r.value);
+        return out;
       },
     },
     idempotency: {

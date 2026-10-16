@@ -1,3 +1,4 @@
+import { seatToAct } from "../../engine/match";
 import type { LobbyRow, MatchRecord } from "./types";
 
 /** The lobby fields of a match, stored beside the document so lists never load it. */
@@ -9,6 +10,7 @@ export function summarize(m: MatchRecord) {
     gameNumber: m.state.game?.gameNumber ?? 0,
     hostId: m.createdBy,
     seats: m.seats,
+    seatToAct: seatToAct(m.state),
   };
 }
 
@@ -27,6 +29,7 @@ export function lobbyRow(m: MatchRecord, hostSeenAt: number, spectators: number)
     score: s.score,
     cube: s.cube,
     gameNumber: s.gameNumber,
+    seatToAct: s.seatToAct,
     allowSpectators: m.allowSpectators !== false,
     entryFee: m.entryFee ?? 0,
     hostSeenAt,

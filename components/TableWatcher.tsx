@@ -9,7 +9,7 @@ import { onTablesChange, unwatchTable, watchedTables } from "@/lib/client/tables
 import { toast } from "@/lib/client/toast";
 
 interface Status {
-  tables: { matchId: string; status: string; opponent: string | null }[];
+  tables: { matchId: string; status: string; opponent: string | null; reason: string | null }[];
 }
 
 /** Anywhere in the app: when someone joins a table you host, say so and take you to the board. */
@@ -43,8 +43,13 @@ export default function TableWatcher() {
                 toast(`${t.opponent ?? "An opponent"} joined your table!`, { tone: "ok", action: { label: "Play", href } });
                 if (!pathRef.current.startsWith("/match/")) router.push(href);
               }
-            } else if (t.status === "CANCELLED" && pathRef.current !== href) {
-              toast("Your table closed after waiting too long.", { tone: "warn" });
+            } else if (t.status === "CANCELLED" && pathRef.current !== href && t.reason !== "ended") {
+              toast(
+                t.reason === "host-missing"
+                  ? "Someone joined your table while you were away, and the match was called off."
+                  : "Your table closed after waiting too long.",
+                { tone: "warn" },
+              );
             }
           }
         } catch {}
@@ -52,14 +57,19 @@ export default function TableWatcher() {
       if (!stopped) timer = window.setTimeout(tick, watchedTables().length ? 3000 : 10000);
     };
     tick();
-    const off = onTablesChange(() => {
+    const soon = () => {
       window.clearTimeout(timer);
       timer = window.setTimeout(tick, 300);
-    });
+    };
+    const off = onTablesChange(soon);
+    // Coming back to the app (e.g. unlocking the phone): check at once, a joiner may be waiting.
+    const onVisible = () => document.visibilityState === "visible" && soon();
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       stopped = true;
       window.clearTimeout(timer);
       off();
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [router]);
   return null;

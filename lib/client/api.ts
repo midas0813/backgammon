@@ -3,7 +3,23 @@ export interface ApiErrorBody {
   message: string;
   referenceId?: string;
   currentVersion?: number;
+  /** ALREADY_IN_GAME: the game the player is in. */
+  current?: CurrentGame;
 }
+
+export interface CurrentGame {
+  matchId: string;
+  mode: "quick" | "private" | "local" | "bot";
+  status: string;
+  opponent: string | null;
+  host: boolean;
+}
+
+/** Fired for ALREADY_IN_GAME; the app-wide GameGuard explains it and offers a way out. */
+export const ALREADY_IN_GAME_EVENT = "bg:already-in-game";
+
+/** Errors already shown to the player app-wide, so callers need not show them again. */
+export const isHandled = (e: unknown) => e instanceof ClientApiError && e.code === "ALREADY_IN_GAME";
 
 export class ClientApiError extends Error {
   constructor(public status: number, public body: ApiErrorBody) {
@@ -29,7 +45,11 @@ export async function api<T>(path: string, init?: { method?: string; body?: unkn
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new ClientApiError(res.status, data.error ?? { code: "SERVICE_UNAVAILABLE", message: "Request failed" });
+    const body: ApiErrorBody = data.error ?? { code: "SERVICE_UNAVAILABLE", message: "Request failed" };
+    if (body.code === "ALREADY_IN_GAME" && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(ALREADY_IN_GAME_EVENT, { detail: body.current }));
+    }
+    throw new ClientApiError(res.status, body);
   }
   return data as T;
 }

@@ -216,7 +216,9 @@ export default function RoomBrowser({
                     {view === "open" ? (
                       <div className="room-info">
                         <strong className="ellipsis">{t.host.name}</strong>
-                        <span className="muted small">waiting {age(t.createdAt, now)}</span>
+                        <span className="muted small">
+                          {t.hostOnline ? `waiting ${age(t.createdAt, now)}` : "host away · we'll alert them when you join"}
+                        </span>
                       </div>
                     ) : (
                       <div className="room-info">

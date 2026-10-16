@@ -13,7 +13,8 @@ export type Effect =
   | { kind: "cube-take"; value: number }
   | { kind: "cube-drop" }
   | { kind: "banner"; text: string; tone: "gold" | "mint" | "red" | "blue" }
-  | { kind: "your-turn"; sub: string }
+  /** `dice`: the opponent's last roll, shown with `caption`; none = blank dice (nothing rolled yet). */
+  | { kind: "your-turn"; sub: string; dice?: [number, number]; caption?: string }
   | { kind: "game-win"; label: string; mine: boolean | null }
   | { kind: "match-win"; name: string; mine: boolean | null };
 

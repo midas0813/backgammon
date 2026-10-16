@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { currentSequences } from "@/lib/engine/match";
-import { createMatch, forceBotDue, getSnapshot, joinMatch, setEnvForTests, submitAction, tickBot } from "@/lib/server/matches";
+import { createMatch, forceBotDue, getSnapshot, joinMatch, leaveMatch, setEnvForTests, submitAction, tickBot } from "@/lib/server/matches";
 import { tx } from "@/lib/server/store";
 import { ensureUser } from "@/lib/server/users";
 import { randomEnv, scriptedEnv } from "./helpers";
@@ -99,16 +99,30 @@ describe("authoritative match service", () => {
     expect((await getSnapshot(alice.id, matchId)).stateVersion).toBe(before);
   });
 
-  it("quick match queue pairs two different players", async () => {
+  it("one game at a time: another table, join or computer game is refused until the first ends", async () => {
     setEnvForTests(randomEnv(7));
     const a = await ensureUser(undefined);
     const b = await ensureUser(undefined);
-    const m1 = await createMatch(a.id, "quick", 5);
-    const again = await createMatch(a.id, "quick", 5);
-    expect(again.matchId).toBe(m1.matchId);
-    const m2 = await createMatch(b.id, "quick", 5);
-    expect(m2.matchId).toBe(m1.matchId);
-    expect((await getSnapshot(a.id, m1.matchId)).status).toBe("ACTIVE");
+    const c = await ensureUser(undefined);
+    const table = await createMatch(a.id, "quick", 5);
+    const err = await createMatch(a.id, "bot", 3).catch((e) => e);
+    expect(err.code).toBe("ALREADY_IN_GAME");
+    expect(err.extra.current).toMatchObject({ matchId: table.matchId, status: "WAITING", host: true });
+
+    const bot = await createMatch(b.id, "bot", 3);
+    expect(await codeOf(joinMatch(b.id, table.matchId))).toBe("ALREADY_IN_GAME");
+    // Two tabs at once: exactly one new game.
+    const both = await Promise.allSettled([createMatch(c.id, "bot", 1), createMatch(c.id, "local", 1)]);
+    expect(both.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+
+    // Ending the computer game frees the player, with no result recorded.
+    expect(await leaveMatch(b.id, bot.matchId)).toMatchObject({ status: "CANCELLED" });
+    await joinMatch(b.id, table.matchId);
+    expect((await getSnapshot(a.id, table.matchId)).status).toBe("ACTIVE");
+    // Leaving an online match forfeits it.
+    expect(await leaveMatch(a.id, table.matchId)).toMatchObject({ status: "COMPLETED" });
+    expect((await getSnapshot(b.id, table.matchId)).winner).toBe(1);
+    await createMatch(a.id, "bot", 1);
   });
 });
 

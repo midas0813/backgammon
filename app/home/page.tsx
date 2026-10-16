@@ -7,7 +7,7 @@ import Announcements from "@/components/Announcements";
 import Avatar from "@/components/Avatar";
 import CountUp from "@/components/CountUp";
 import WalletButton, { shortAddress } from "@/components/WalletButton";
-import { api } from "@/lib/client/api";
+import { api, isHandled } from "@/lib/client/api";
 import { setMe } from "@/lib/client/me";
 import { formatTokens } from "@/lib/fees";
 import type { HomeData } from "@/lib/server/home";
@@ -67,7 +67,7 @@ export default function Home() {
       const { matchId } = await api<{ matchId: string }>("/api/matches", { method: "POST", body: { mode: "bot", targetPoints: 3 } });
       router.push(`/match/${matchId}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not start");
+      if (!isHandled(e)) setError(e instanceof Error ? e.message : "Could not start");
       setBusy(null);
     }
   };

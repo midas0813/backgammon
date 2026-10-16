@@ -110,6 +110,10 @@ describe("admin roles", () => {
     await resolveAdmin(vctx.token, viewer.user.id, "matches.view", {});
     // Viewers see only their own audit entries.
     expect((await admin.listAuditAdmin(vctx, {})).scope).toBe("own");
+    // An owner sees everyone, or one person when filtering, and a bad filter is a clear error.
+    expect((await admin.listAuditAdmin(ctx, {})).scope).toBe("all");
+    expect(await admin.listAuditAdmin(ctx, { actorId: owner.user.id })).toMatchObject({ scope: "person", actor: { id: owner.user.id } });
+    expect(await codeOf(admin.listAuditAdmin(ctx, { actorId: "nope" }))).toBe("INVALID_INPUT");
   });
 
   it("always keeps one Owner", async () => {

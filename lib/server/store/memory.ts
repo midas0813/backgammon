@@ -14,7 +14,9 @@ import {
   type Dispute,
   type DisputeNote,
   type MatchRecord,
+  type MatchResultRow,
   type Session,
+  type StoredEvent,
   type Store,
   type Tx,
   type Txn,
@@ -68,6 +70,10 @@ interface Data {
   announcements: Record<string, Announcement>;
   disputeNotes: Record<string, DisputeNote>;
   adjustments: Record<string, Adjustment>;
+  matchEvents: Record<string, StoredEvent[]>;
+  matchActions: Record<string, { fingerprint: string; response: unknown }>;
+  results: Record<string, MatchResultRow>;
+  counters: Record<string, number>;
   ledger: { balances: Record<string, number>; transactions: Txn[] };
 }
 
@@ -95,6 +101,10 @@ const empty = (): Data => ({
   announcements: {},
   disputeNotes: {},
   adjustments: {},
+  matchEvents: {},
+  matchActions: {},
+  results: {},
+  counters: {},
   ledger: { balances: {}, transactions: [] },
 });
 
@@ -115,7 +125,7 @@ export function createMemoryStore(file: string | null): Store {
       data.disputes ??= {};
       data.seen ??= {};
       data.spectators ??= {};
-      for (const k of ["adminRoles", "adminSessions", "adminChallenges", "audit", "settings", "announcements", "disputeNotes", "adjustments"] as const) {
+      for (const k of ["adminRoles", "adminSessions", "adminChallenges", "audit", "settings", "announcements", "disputeNotes", "adjustments", "matchEvents", "matchActions", "results", "counters"] as const) {
         (data as unknown as Record<string, object>)[k] ??= {};
       }
     }
@@ -157,6 +167,12 @@ export function createMemoryStore(file: string | null): Store {
       const ids = new Set([...Object.keys(base[c]), ...(pending[c]?.keys() ?? [])]);
       return [...ids].map((id) => getRaw<V>(c, id)).filter((v): v is V => v !== undefined).map(clone);
     };
+    const row = (m: MatchRecord, spectatorsSince: number) =>
+      lobbyRow(
+        m,
+        get<[number, number]>("presence", m.id)?.[0] ?? 0,
+        Object.values(get<Record<string, number>>("spectators", m.id) ?? {}).filter((v) => v >= spectatorsSince).length,
+      );
     const allTxns = () => [...base.ledger.transactions, ...pendingTxns];
     const balance = (a: string) => pendingBalances[a] ?? base.ledger.balances[a] ?? 0;
 
@@ -198,45 +214,65 @@ export function createMemoryStore(file: string | null): Store {
         },
       },
       matches: {
-        get: async (id) => get("matches", id),
-        put: async (rec) => put("matches", rec.id, rec),
-        nextWaitingQuick: async (points, exclude, hostSeenSince) =>
-          values<MatchRecord>("matches")
-            .filter(
-              (m) =>
-                m.mode === "quick" &&
-                m.state.status === "WAITING" &&
-                m.state.targetPoints === points &&
-                m.seats[0] !== exclude &&
-                (get<[number, number]>("presence", m.id)?.[0] ?? 0) >= hostSeenSince,
-            )
-            .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0],
-        listForUser: async (userId) => values<MatchRecord>("matches").filter((m) => m.seats.includes(userId)),
-        listLobby: async (status, limit) => {
+        get: async (id) => {
+          const m = get<MatchRecord>("matches", id);
+          return m && { ...m, events: [], actions: {} };
+        },
+        put: async (rec) => {
+          put("matches", rec.id, { ...rec, events: [], actions: {} });
+          if (rec.events.length) {
+            const log = get<StoredEvent[]>("matchEvents", rec.id) ?? [];
+            const last = log[log.length - 1]?.seq ?? 0;
+            put("matchEvents", rec.id, [...log, ...rec.events.filter((e) => e.seq > last)]);
+          }
+          for (const [actionId, a] of Object.entries(rec.actions)) {
+            if (!getRaw("matchActions", `${rec.id}:${actionId}`)) put("matchActions", `${rec.id}:${actionId}`, a);
+          }
+        },
+        events: async (id, f) => {
+          const log = (get<StoredEvent[]>("matchEvents", id) ?? []).filter((e) => e.seq > (f.after ?? 0));
+          return f.last !== undefined ? log.slice(-f.last) : log;
+        },
+        action: async (id, actionId) => get("matchActions", `${id}:${actionId}`),
+        listOpen: async (userId, limit) => {
           const since = Date.now() - SPECTATOR_WINDOW_MS;
           return values<MatchRecord>("matches")
-            .filter((m) => m.mode === "quick" && m.state.status === status)
-            .map((m) =>
-              lobbyRow(
-                m,
-                get<[number, number]>("presence", m.id)?.[0] ?? 0,
-                Object.values(get<Record<string, number>>("spectators", m.id) ?? {}).filter((v) => v >= since).length,
-              ),
-            )
-            .sort((a, b) => (status === "WAITING" ? a.createdAt.localeCompare(b.createdAt) : b.updatedAt - a.updatedAt))
+            .filter((m) => m.seats.includes(userId) && (m.state.status === "WAITING" || m.state.status === "ACTIVE"))
+            .map((m) => row(m, since))
+            .sort((a, b) => b.updatedAt - a.updatedAt)
             .slice(0, limit);
         },
+        staleTables: async (f) =>
+          values<MatchRecord>("matches")
+            .filter((m) => {
+              if (m.state.status !== "WAITING") return false;
+              const created = Date.parse(m.createdAt);
+              if (m.mode === "private") return created < f.privateBefore;
+              if (m.mode !== "quick") return false;
+              const seen = get<[number, number]>("presence", m.id)?.[0] || created;
+              return seen < f.hostSeenBefore || created < f.publicBefore;
+            })
+            .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+            .slice(0, f.limit)
+            .map((m) => m.id),
+        idleActive: async (f) =>
+          values<MatchRecord>("matches")
+            .filter((m) => {
+              if (m.state.status !== "ACTIVE") return false;
+              const at = m.updatedAt ?? 0;
+              if (m.mode === "bot" || m.mode === "local") return at < f.offlineBefore;
+              const seen = get<[number, number]>("presence", m.id) ?? [0, 0];
+              return at < f.onlineBefore && seen.filter((s) => s >= f.awayBefore).length < 2;
+            })
+            .sort((a, b) => (a.updatedAt ?? 0) - (b.updatedAt ?? 0))
+            .slice(0, f.limit)
+            .map((m) => m.id),
+        countActiveSince: async (since) => values<MatchRecord>("matches").filter((m) => m.state.status === "ACTIVE" && (m.updatedAt ?? 0) >= since).length,
         listPublic: async (f) => {
           const since = Date.now() - SPECTATOR_WINDOW_MS;
           const all = values<MatchRecord>("matches")
             .filter((m) => m.mode === "quick" && m.state.status === f.status)
-            .map((m) =>
-              lobbyRow(
-                m,
-                get<[number, number]>("presence", m.id)?.[0] ?? 0,
-                Object.values(get<Record<string, number>>("spectators", m.id) ?? {}).filter((v) => v >= since).length,
-              ),
-            )
+            .map((m) => row(m, since))
             .filter(
               (r) =>
                 (f.status === "WAITING" ? r.hostSeenAt >= f.hostSeenSince : r.allowSpectators && r.updatedAt >= f.activeSince) &&
@@ -251,13 +287,7 @@ export function createMemoryStore(file: string | null): Store {
           const since = Date.now() - SPECTATOR_WINDOW_MS;
           return values<MatchRecord>("matches")
             .filter((m) => (!f.status || m.state.status === f.status) && (!f.userId || m.seats.includes(f.userId)))
-            .map((m) =>
-              lobbyRow(
-                m,
-                get<[number, number]>("presence", m.id)?.[0] ?? 0,
-                Object.values(get<Record<string, number>>("spectators", m.id) ?? {}).filter((v) => v >= since).length,
-              ),
-            )
+            .map((m) => row(m, since))
             .sort((a, b) => b.updatedAt - a.updatedAt)
             .slice(0, f.limit);
         },
@@ -270,14 +300,46 @@ export function createMemoryStore(file: string | null): Store {
               .filter((m) => m.completedAt)
               .map((m) => Date.parse(m.completedAt!)),
           ),
-        stats: async () => {
-          const all = values<MatchRecord>("matches");
+      },
+      results: {
+        put: async (rows) => {
+          for (const r of rows) if (!getRaw("results", `${r.matchId}:${r.userId}`)) put("results", `${r.matchId}:${r.userId}`, r);
+        },
+        deleteForMatch: async (matchId) => {
+          const rows = values<MatchResultRow>("results").filter((r) => r.matchId === matchId);
+          for (const r of rows) del("results", `${r.matchId}:${r.userId}`);
+          return rows.map((r) => r.userId);
+        },
+        stats: async (userId, since) => {
+          const mine = values<MatchResultRow>("results")
+            .filter((r) => r.userId === userId && (since === undefined || Date.parse(r.completedAt) >= since))
+            .sort((a, b) => a.completedAt.localeCompare(b.completedAt));
+          let streak = 0,
+            best = 0;
+          for (const r of mine) {
+            streak = r.won ? streak + 1 : 0;
+            best = Math.max(best, streak);
+          }
+          const sum = (k: "points" | "games" | "gammons") => mine.reduce((n, r) => n + r[k], 0);
           return {
-            live: all.filter((m) => m.state.status === "ACTIVE").length,
-            waiting: all.filter((m) => m.mode === "quick" && m.state.status === "WAITING").length,
-            games: all.reduce((n, m) => n + m.state.results.length, 0),
+            played: mine.length,
+            wins: mine.filter((r) => r.won).length,
+            points: sum("points"),
+            games: sum("games"),
+            gammons: sum("gammons"),
+            currentStreak: streak,
+            bestStreak: best,
           };
         },
+        history: async (userId, offset, limit) =>
+          values<MatchResultRow>("results")
+            .filter((r) => r.userId === userId)
+            .sort((a, b) => b.completedAt.localeCompare(a.completedAt))
+            .slice(offset, offset + limit),
+      },
+      counters: {
+        add: async (key, n) => put("counters", key, (get<number>("counters", key) ?? 0) + n),
+        get: async (keys) => Object.fromEntries(keys.map((k) => [k, get<number>("counters", k) ?? 0])),
       },
       idempotency: {
         get: async (key) => get("idempotency", key),

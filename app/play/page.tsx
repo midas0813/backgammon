@@ -7,7 +7,7 @@ import Announcements from "@/components/Announcements";
 import CountUp from "@/components/CountUp";
 import Modal from "@/components/Modal";
 import RoomBrowser, { type RoomView } from "@/components/RoomBrowser";
-import { ClientApiError, api } from "@/lib/client/api";
+import { ClientApiError, api, isHandled } from "@/lib/client/api";
 import { watchTable, unwatchTable } from "@/lib/client/tables";
 import { toast } from "@/lib/client/toast";
 import type { Lobby } from "@/lib/server/lobby";
@@ -104,7 +104,9 @@ export default function LobbyPage() {
       const r = await fn();
       router.push(`/match/${r.matchId}`);
     } catch (e) {
-      if (e instanceof ClientApiError && e.code === "EVENT_FULL") {
+      if (isHandled(e)) {
+        // Explained app-wide (one game at a time).
+      } else if (e instanceof ClientApiError && e.code === "EVENT_FULL") {
         toast("Someone just took that seat — try another table.", { tone: "warn" });
       } else {
         const msg = e instanceof Error ? e.message : "Something went wrong";
@@ -196,7 +198,7 @@ export default function LobbyPage() {
         <section className="card accent">
           <div className="card-title">
             <span className="badge live">Yours</span>
-            <h2>Your tables & matches</h2>
+            <h2>Your game</h2>
           </div>
           <ul className="list">
             {data.mine.map((m) => (
@@ -265,7 +267,8 @@ function CreateTable({ initialPoints, onClose, onCreated }: { initialPoints: num
       watchTable(matchId);
       onCreated(matchId);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not create the table");
+      if (isHandled(e)) onClose();
+      else setError(e instanceof Error ? e.message : "Could not create the table");
       setBusy(false);
     }
   };
@@ -318,7 +321,11 @@ function CreateTable({ initialPoints, onClose, onCreated }: { initialPoints: num
         </li>
         <li>
           <span>Closes</span>
-          <span className="muted">After 15 min if you leave</span>
+          <span className="muted">{visibility === "public" ? "15 min after you leave, or after 1 hour" : "If not accepted within 15 min"}</span>
+        </li>
+        <li>
+          <span>Games</span>
+          <span className="muted">One at a time</span>
         </li>
       </ul>
       {error && <p className="err small">{error}</p>}

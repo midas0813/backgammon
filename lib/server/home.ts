@@ -1,7 +1,8 @@
 import type { Seat } from "../engine/board";
 import { userBalances } from "./ledger";
-import { HOST_ONLINE_MS } from "./matches";
-import { ONLINE_WINDOW_MS, touchUser } from "./lobby";
+import { sweep } from "./matches";
+import { pulse, touchUser } from "./lobby";
+import { operatorSettings } from "./settings";
 import { tx } from "./store";
 import { profileIn } from "./users";
 
@@ -18,7 +19,8 @@ export function startOfLocalDay(now: number, tzOffset: number) {
 }
 
 /** Everything the Home tab shows, in one round trip. */
-export function homeData(userId: string, tzOffset: number) {
+export async function homeData(userId: string, tzOffset: number) {
+  await sweep();
   return tx(async (t) => {
     const now = Date.now();
     await touchUser(t, userId, now);
@@ -28,67 +30,43 @@ export function homeData(userId: string, tzOffset: number) {
       .filter((d) => d.status === "PENDING" || d.status === "CONFIRMED")
       .reduce((s, d) => s + d.tokenUnits, 0);
 
-    const matches = await t.matches.listForUser(userId);
     const dayStart = startOfLocalDay(now, tzOffset);
-    let wins = 0,
-      points = 0,
-      games = 0;
-    const finishedToday = matches.filter((m) => m.mode !== "local" && m.completedAt && Date.parse(m.completedAt) >= dayStart);
-    for (const m of finishedToday) {
-      const seat = m.seats.indexOf(userId) as Seat;
-      if (m.state.winner === seat) wins++;
-      for (const r of m.state.results) {
-        games++;
-        if (r.winner === seat) points += r.points;
-      }
-    }
-    const continuing = matches
-      .filter((m) => m.state.status === "ACTIVE" || m.state.status === "WAITING")
-      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
-      .slice(0, 6)
-      .map((m) => {
-        const seat = Math.max(0, m.seats.indexOf(userId)) as Seat;
-        const opp = (1 - seat) as Seat;
-        return {
-          matchId: m.id,
-          mode: m.mode,
-          status: m.state.status,
-          targetPoints: m.state.targetPoints,
-          opponent: m.mode === "local" ? "Pass & play" : m.state.status === "WAITING" ? null : m.names[opp],
-          score: [m.state.score[seat], m.state.score[opp]] as [number, number],
-          yourTurn: m.state.status === "ACTIVE" && m.state.game !== null && m.state.game.turn === seat && m.mode !== "local",
-        };
-      });
-
-    const open = await t.matches.listPublic({
-      status: "WAITING",
-      hostSeenSince: now - HOST_ONLINE_MS,
-      activeSince: now,
-      sort: "newest",
-      offset: 0,
-      limit: 0,
+    const today = await t.results.stats(userId, dayStart);
+    const continuing = (await t.matches.listOpen(userId, 5)).map((m) => {
+      const seat = Math.max(0, m.seats.indexOf(userId)) as Seat;
+      const opp = (1 - seat) as Seat;
+      return {
+        matchId: m.id,
+        mode: m.mode,
+        status: m.status,
+        targetPoints: m.targetPoints,
+        opponent: m.mode === "local" ? "Pass & play" : m.status === "WAITING" ? null : m.names[opp],
+        score: [m.score[seat], m.score[opp]] as [number, number],
+        yourTurn: m.status === "ACTIVE" && m.mode !== "local" && m.seatToAct === seat,
+      };
     });
-    const myWaiting = matches.filter((m) => m.mode === "quick" && m.state.status === "WAITING" && m.createdBy === userId).length;
-    const stats = await t.matches.stats();
+    const settings = await operatorSettings(t);
+    const counts = await pulse(t, now, settings.spectators);
+    const myWaiting = continuing.filter((m) => m.mode === "quick" && m.status === "WAITING").length;
     const reports = await t.disputes.listByUser(userId);
     return {
       profile,
       balances: { ...balances, pendingDeposits },
       today: {
-        matches: finishedToday.length,
-        wins,
-        losses: finishedToday.length - wins,
-        games,
-        points,
+        matches: today.played,
+        wins: today.wins,
+        losses: today.played - today.wins,
+        games: today.games,
+        points: today.points,
         goal: DAILY_GOAL,
         dayStart: new Date(dayStart).toISOString(),
       },
       continuing,
       pulse: {
-        online: await t.users.countSeenSince(now - ONLINE_WINDOW_MS),
-        live: stats.live,
-        open: Math.max(0, open.total - myWaiting),
-        gamesPlayed: stats.games,
+        online: counts.online,
+        live: counts.playing,
+        open: Math.max(0, counts.open - myWaiting),
+        gamesPlayed: (await t.counters.get(["games"])).games,
       },
       openReports: reports.filter((r) => r.status !== "RESOLVED" && r.status !== "REJECTED").length,
     };

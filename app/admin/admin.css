@@ -468,3 +468,15 @@ button.a-tile:hover {
   pointer-events: none;
   white-space: nowrap;
 }
+
+/* Inline text button (e.g. filter the audit log by a person). */
+.linklike {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}

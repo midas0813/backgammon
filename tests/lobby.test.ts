@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { homeData, startOfLocalDay } from "@/lib/server/home";
-import { MAX_OPEN_TABLES, PAGE_SIZE, TABLE_EXPIRY_MS, createTable, findGame, lobby, publicTables, tableStatus } from "@/lib/server/lobby";
+import { PAGE_SIZE, TABLE_EXPIRY_MS, createTable, lobby, publicTables, tableStatus } from "@/lib/server/lobby";
 import { tx } from "@/lib/server/store";
-import { cancelMatch, getSnapshot, joinMatch, setAllowSpectators, setEnvForTests, submitAction } from "@/lib/server/matches";
+import { cancelMatch, getSnapshot, joinMatch, setAllowSpectators, setEnvForTests, submitAction, sweep } from "@/lib/server/matches";
 import { ensureUser } from "@/lib/server/users";
 import { randomEnv } from "./helpers";
 
@@ -18,16 +18,18 @@ describe("lobby tables", () => {
   it("lists public tables to others, hides private ones, and moves joined tables to Live", async () => {
     setEnvForTests(randomEnv(11));
     const host = await ensureUser(undefined);
+    const friend = await ensureUser(undefined);
     const guest = await ensureUser(undefined);
     const pub = await createTable(host.id, { targetPoints: 3, visibility: "public" });
-    const priv = await createTable(host.id, { targetPoints: 5, visibility: "private" });
+    const priv = await createTable(friend.id, { targetPoints: 5, visibility: "private" });
 
     const seen = await publicTables({});
     expect(seen.tables.map((t) => t.matchId)).toEqual([pub.matchId]); // private tables are never listed
     expect(seen.tables[0].host.name).toBe(host.name);
     expect((await lobby(guest.id)).counts.open).toBe(1);
     expect((await lobby(host.id)).counts.open).toBe(0); // your own table is not "open to join" for you
-    expect((await lobby(host.id)).mine.map((m) => m.matchId).sort()).toEqual([pub.matchId, priv.matchId].sort());
+    expect((await lobby(host.id)).mine.map((m) => m.matchId)).toEqual([pub.matchId]);
+    expect((await lobby(friend.id)).mine.map((m) => m.matchId)).toEqual([priv.matchId]);
     expect((await publicTables({ points: "5" })).tables).toEqual([]);
 
     await joinMatch(guest.id, pub.matchId);
@@ -48,41 +50,64 @@ describe("lobby tables", () => {
     expect((results.find((r) => r.status === "rejected") as PromiseRejectedResult).reason.code).toBe("EVENT_FULL");
   });
 
-  it("limits open tables per player", async () => {
+  it("one table per player, and only supported lengths", async () => {
     const host = await ensureUser(undefined);
-    for (let i = 0; i < MAX_OPEN_TABLES; i++) await createTable(host.id, { targetPoints: [1, 3, 5][i] });
-    expect(await codeOf(createTable(host.id, { targetPoints: 7 }))).toBe("RATE_LIMITED");
-    expect(await codeOf(createTable(host.id, { targetPoints: 4 }))).toBe("INVALID_INPUT");
+    await createTable(host.id, { targetPoints: 1 });
+    expect(await codeOf(createTable(host.id, { targetPoints: 7, visibility: "private" }))).toBe("ALREADY_IN_GAME");
+    expect(await codeOf(createTable((await ensureUser(undefined)).id, { targetPoints: 4 }))).toBe("INVALID_INPUT");
   });
 
-  it("hides tables whose host went away and expires them later", async () => {
+  it("keeps an away host's table listed, then closes it; invite-only tables close after 15 minutes", async () => {
     const host = await ensureUser(undefined);
+    const friend = await ensureUser(undefined);
     const other = await ensureUser(undefined);
     const { matchId } = await createTable(host.id, { targetPoints: 3 });
-    expect((await publicTables({})).tables.map((t) => t.matchId)).toEqual([matchId]);
+    const invite = await createTable(friend.id, { targetPoints: 3, visibility: "private" });
+    expect((await publicTables({})).tables[0]).toMatchObject({ matchId, hostOnline: true });
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
-      vi.setSystemTime(Date.now() + 3 * 60 * 1000); // host quiet for 3 minutes: hidden, still open
-      expect((await publicTables({})).tables).toEqual([]);
-      expect((await tableStatus(host.id, [matchId])).tables[0].status).toBe("WAITING");
-      vi.setSystemTime(Date.now() + TABLE_EXPIRY_MS + 1000); // long gone: closed as expired
+      vi.setSystemTime(Date.now() + 3 * 60 * 1000); // host's phone in the background: listed as away
+      expect((await publicTables({})).tables[0]).toMatchObject({ matchId, hostOnline: false });
+      expect((await tableStatus(host.id, [matchId])).tables[0].status).toBe("WAITING"); // host is back
+      vi.setSystemTime(Date.now() + 13 * 60 * 1000); // 16 min: the invite was never accepted
+      await sweep(Date.now(), true);
+      expect((await getSnapshot(friend.id, invite.matchId)).closedReason).toBe("expired");
+      expect((await getSnapshot(host.id, matchId)).status).toBe("WAITING");
+      vi.setSystemTime(Date.now() + TABLE_EXPIRY_MS + 1000); // host long gone: closed as expired
       await lobby(other.id);
+      await sweep(Date.now(), true);
+      expect((await getSnapshot(host.id, matchId)).closedReason).toBe("expired");
+      // The host is free to open a new table.
+      await createTable(host.id, { targetPoints: 3 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a public table closes after an hour even with the host around", async () => {
+    const host = await ensureUser(undefined);
+    const { matchId } = await createTable(host.id, { targetPoints: 3 });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      for (let m = 10; m <= 60; m += 10) {
+        vi.setSystemTime(Date.now() + 10 * 60 * 1000);
+        await tableStatus(host.id, [matchId]); // the host's app keeps checking in
+      }
+      vi.setSystemTime(Date.now() + 1000);
       expect((await getSnapshot(host.id, matchId)).closedReason).toBe("expired");
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("Find a game joins an available table, otherwise opens one", async () => {
+  it("tells the host when their table is joined", async () => {
     setEnvForTests(randomEnv(13));
     const a = await ensureUser(undefined);
     const b = await ensureUser(undefined);
-    const first = await findGame(a.id, 3);
-    expect(first.joined).toBeUndefined();
-    const second = await findGame(b.id, 3);
-    expect(second).toEqual({ matchId: first.matchId, joined: true });
-    expect((await tableStatus(a.id, [first.matchId])).tables[0]).toMatchObject({ status: "ACTIVE", opponent: b.name });
-    expect((await tableStatus(b.id, [first.matchId])).tables).toEqual([]); // only the host's own tables
+    const { matchId } = await createTable(a.id, { targetPoints: 3 });
+    await joinMatch(b.id, matchId);
+    expect((await tableStatus(a.id, [matchId])).tables[0]).toMatchObject({ status: "ACTIVE", opponent: b.name });
+    expect((await tableStatus(b.id, [matchId])).tables).toEqual([]); // only the host's own tables
   });
 
   it("cancelled tables leave the lobby", async () => {
@@ -98,7 +123,7 @@ describe("room browser", () => {
   it("filters by length and entry fee, sorts, and pages through many tables", async () => {
     const lengths = [1, 3, 5, 7];
     const ids: string[] = [];
-    // 40 hosts with one table each (the per-player limit is 3).
+    // 40 hosts with one table each (one game per player).
     for (let i = 0; i < 40; i++) {
       const host = await ensureUser(undefined);
       ids.push((await createTable(host.id, { targetPoints: lengths[i % 4] })).matchId);

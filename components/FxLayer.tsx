@@ -44,15 +44,16 @@ const FACES: [number, string][] = [
   [2, "bottom"],
 ];
 
+/** `value` 0 draws a blank die (no pips), for moments with no real roll to show. */
 function Die3D({ value, delay = 0, mini = false }: { value: number; delay?: number; mini?: boolean }) {
-  const [rx, ry] = FACE_ROT[value];
+  const [rx, ry] = FACE_ROT[value] ?? [0, 0];
   return (
     <div className={`die3d-wrap${mini ? " mini" : ""}`} style={{ animationDelay: `${delay}ms` }}>
       <div className="die3d" style={{ "--rx": `${rx}deg`, "--ry": `${ry}deg`, animationDelay: `${delay}ms` } as React.CSSProperties}>
         {FACES.map(([n, side]) => (
           <div key={side} className={`face ${side}`}>
             {Array.from({ length: 9 }, (_, i) => (
-              <i key={i} className={PIPS[n].includes(i) ? "pip" : undefined} />
+              <i key={i} className={value > 0 && PIPS[n].includes(i) ? "pip" : undefined} />
             ))}
           </div>
         ))}
@@ -262,9 +263,10 @@ export default function FxLayer({
               <div className="fx-turn-sweep" />
               <div className="fx-turn-card">
                 <span className="fx-turn-dice">
-                  <Die3D value={1 + Math.floor(Math.random() * 6)} mini />
-                  <Die3D value={1 + Math.floor(Math.random() * 6)} delay={90} mini />
+                  <Die3D value={e.dice?.[0] ?? 0} mini />
+                  <Die3D value={e.dice?.[1] ?? 0} delay={90} mini />
                 </span>
+                {e.caption && <span className="fx-turn-caption">{e.caption}</span>}
                 <strong>Your turn</strong>
                 <span>{e.sub}</span>
               </div>

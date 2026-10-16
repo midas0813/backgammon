@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { ApiError, notFound } from "../errors";
 import { LedgerError, SYSTEM, post, reconcile, userAccount, userBalances, userTransactions } from "../ledger";
 import { HOST_ONLINE_MS, cancelTableIn, voidMatchIn } from "../matches";
-import { ONLINE_WINDOW_MS } from "../lobby";
+import { ONLINE_WINDOW_MS, pulse } from "../lobby";
 import { invalidateSettings, mergeSettings, operatorSettings } from "../settings";
 import { tx, type Adjustment, type AdminRole, type Announcement, type Dispute, type LobbyRow, type Tx, type User } from "../store";
 import { avatarUrl, isSuspended, playerStats } from "../users";
@@ -59,7 +59,9 @@ export function dashboard(ctx: AdminContext) {
   return tx(async (t) => {
     const now = Date.now();
     const day = utcDayStart(now);
-    const stats = await t.matches.stats();
+    const settings = await operatorSettings(t, true);
+    const counts = await pulse(t, now, settings.spectators);
+    const games = (await t.counters.get(["games"])).games;
     const finance = can(ctx.role, "finance.view")
       ? {
           pendingDeposits: (await t.deposits.listAll({ status: "PENDING", limit: 500 })).length,
@@ -77,10 +79,10 @@ export function dashboard(ctx: AdminContext) {
         online: await t.users.countSeenSince(now - ONLINE_WINDOW_MS),
       },
       matches: {
-        live: stats.live,
-        openTables: stats.waiting,
+        live: counts.playing,
+        openTables: counts.open,
         completedToday: await t.matches.countCompletedSince(day),
-        gamesPlayed: stats.games,
+        gamesPlayed: games,
       },
       openReports: await t.disputes.countOpen(),
       finance,
@@ -88,7 +90,7 @@ export function dashboard(ctx: AdminContext) {
         newUsers: await t.users.dailyNew(14),
         completedMatches: await t.matches.dailyCompleted(14),
       },
-      settings: await operatorSettings(t, true),
+      settings,
       you: { name: ctx.name, wallet: ctx.wallet, role: ctx.role },
     };
   });
@@ -242,7 +244,7 @@ export function matchDetail(_ctx: AdminContext, matchId: string) {
         bot: id === "bot",
       })),
       game: m.state.game ? { board: m.state.game.board, phase: m.state.game.phase, turn: m.state.game.turn, dice: m.state.game.dice, cubeValue: m.state.game.cubeValue, gameNumber: m.state.game.gameNumber } : null,
-      events: m.events,
+      events: await t.matches.events(matchId, {}),
       audit: await t.admin.listAudit({ targetType: "match", targetId: matchId, limit: 20 }),
     };
   });
@@ -330,13 +332,22 @@ export function updateReport(ctx: AdminContext, id: string, body: { status?: unk
 
 // ---- Audit --------------------------------------------------------------------------------------
 
-export function listAuditAdmin(ctx: AdminContext, f: { actorId?: string; targetType?: string; targetId?: string }) {
+export async function listAuditAdmin(ctx: AdminContext, f: { actorId?: string; targetType?: string; targetId?: string }) {
+  if (f.actorId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(f.actorId)) {
+    throw new ApiError(400, "INVALID_INPUT", "Invalid person filter");
+  }
   return tx(async (t) => {
     // Without the "all" permission an admin sees only their own actions.
-    const actorId = can(ctx.role, "audit.view.all") ? f.actorId || undefined : ctx.userId;
+    const full = can(ctx.role, "audit.view.all");
+    const actorId = full ? f.actorId || undefined : ctx.userId;
     const entries = await t.admin.listAudit({ actorId, targetType: f.targetType || undefined, targetId: f.targetId || undefined, limit: 200 });
-    const users = await t.users.getMany([...new Set(entries.map((e) => e.actorId).filter((x): x is string => !!x))]);
-    return { entries: entries.map((e) => ({ ...e, actorName: e.actorId ? (users[e.actorId]?.name ?? "Unknown") : "System" })), scope: actorId ? "own" : "all" };
+    const users = await t.users.getMany([...new Set([...entries.map((e) => e.actorId), actorId].filter((x): x is string => !!x))]);
+    return {
+      entries: entries.map((e) => ({ ...e, actorName: e.actorId ? (users[e.actorId]?.name ?? "Unknown") : "System" })),
+      // What the list shows: everyone's actions, one person's (a filter), or only the viewer's own (their role).
+      scope: !full ? ("own" as const) : actorId ? ("person" as const) : ("all" as const),
+      actor: actorId ? { id: actorId, name: users[actorId]?.name ?? "Unknown" } : null,
+    };
   });
 }
 
