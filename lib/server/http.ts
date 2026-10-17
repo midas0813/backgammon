@@ -3,6 +3,7 @@ import { cookies, headers } from "next/headers";
 import { SESSION_COOKIE } from "@/proxy";
 import type { User } from "./store";
 import { ApiError } from "./errors";
+import { hashIp } from "./anticheat";
 import { recordErrorSoon } from "./monitor";
 import { rateLimit, type LimitRule } from "./ratelimit";
 import { resolveSession } from "./users";
@@ -27,7 +28,7 @@ export async function requestHost(): Promise<string> {
 export async function currentSession(): Promise<{ user: User; token: string }> {
   const jar = await cookies();
   const existing = jar.get(SESSION_COOKIE)?.value;
-  const session = await resolveSession(existing);
+  const session = await resolveSession(existing, hashIp(await clientKey()));
   if (session.token !== existing) jar.set(SESSION_COOKIE, session.token, await cookieOptions());
   return session;
 }

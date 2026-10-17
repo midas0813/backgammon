@@ -21,6 +21,7 @@ import { newClock, nextDecision, noteReturn, timedOut, clockView, type ClockPres
 import { cleanSeed } from "../fair";
 import { fairView, newFair, nextDie } from "./fair";
 import { levelOf } from "../quests";
+import { scanFinishedMatch } from "./anticheat";
 import { closeWeek, withLeaderboardPoints } from "./leaderboard";
 import { recordProgress } from "./quests";
 import { publish } from "./realtime";
@@ -106,6 +107,7 @@ async function save(t: Tx, rec: MatchRecord) {
   if (rec.events.some((e) => e.type === "MATCH_COMPLETED")) await t.results.put(await withLeaderboardPoints(t, rec, resultRows(rec)));
   await recordProgress(t, rec);
   await t.matches.put(rec);
+  if (rec.events.some((e) => e.type === "MATCH_COMPLETED")) await scanFinishedMatch(t, rec);
   const version = rec.version;
   t.afterCommit(() => publish(rec.id, "match", { v: version }));
 }

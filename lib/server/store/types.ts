@@ -27,6 +27,9 @@ export interface User {
   xp?: number;
   /** Chosen avatar frame (lib/quests.ts FRAMES). */
   frame?: string;
+  /** Salted hashes of the network address at sign-up and last seen (anti-cheat; never the address). */
+  createdIp?: string;
+  lastIp?: string;
 }
 
 /** A user as the admin area lists them. */
@@ -253,6 +256,20 @@ export interface PrizeWeek {
   note?: string;
 }
 
+export interface CheatFlag {
+  id: number;
+  kind: string;
+  dedupeKey: string;
+  userIds: string[];
+  matchIds: string[];
+  details: Record<string, unknown>;
+  status: "OPEN" | "DISMISSED" | "ACTIONED";
+  createdAt: string;
+  decidedBy?: string;
+  decidedAt?: string;
+  note?: string;
+}
+
 export interface PlayerTotals {
   played: number;
   wins: number;
@@ -365,7 +382,9 @@ export interface Tx {
     put(user: User): Promise<void>;
     count(): Promise<number>;
     /** Record activity (for "players online"); callers throttle. */
-    touchSeen(id: string, at: number): Promise<void>;
+    touchSeen(id: string, at: number, ipHash?: string): Promise<void>;
+    /** Accounts created from this network (hash) since `since` (ms). */
+    countCreatedFrom(ipHash: string, since: number): Promise<number>;
     /** The player closed the app: no longer counted online (last activity set to `at`, in the past). */
     markAway(id: string, at: number): Promise<void>;
     /** Add XP atomically; returns the new total. */
@@ -437,6 +456,8 @@ export interface Tx {
     leaderboard(since: number, until: number, limit: number): Promise<LeaderRow[]>;
     /** One player's points, 1-based rank and distinct opponents in [since, until). */
     standing(userId: string, since: number, until: number): Promise<LeaderRow & { rank: number | null }>;
+    /** Losses to that opponent since `since` that ended by one of `reasons` (forfeit, timeout, …). */
+    countLostBy(userId: string, opponentId: string, since: number, reasons: string[]): Promise<number>;
     /** Mark or clear a match's results as under review. */
     setFlagged(matchId: string, flagged: boolean): Promise<void>;
   };
@@ -472,6 +493,14 @@ export interface Tx {
     get(weekKey: string, opts?: { lock?: boolean }): Promise<PrizeWeek | undefined>;
     put(w: PrizeWeek): Promise<void>;
     list(limit: number): Promise<PrizeWeek[]>;
+  };
+  flags: {
+    /** Open a flag unless one with this dedupe key exists; returns its id when new. */
+    add(f: Omit<CheatFlag, "id" | "status" | "createdAt">): Promise<number | null>;
+    get(id: number, opts?: { lock?: boolean }): Promise<CheatFlag | undefined>;
+    list(status: CheatFlag["status"] | undefined, limit: number): Promise<CheatFlag[]>;
+    decide(id: number, status: "DISMISSED" | "ACTIONED", by: string, note: string): Promise<void>;
+    countOpen(): Promise<number>;
   };
   /** Site-wide running totals (games played, …). */
   counters: {

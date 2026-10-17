@@ -4,6 +4,7 @@ import { LedgerError, SYSTEM, post, reconcile, userAccount, userBalances, userTr
 import { HOST_ONLINE_MS, cancelTableIn, voidMatchIn } from "../matches";
 import { ONLINE_WINDOW_MS, pulse } from "../lobby";
 import { chatForAdmin } from "../chat";
+import { FLAG_LABELS } from "../anticheat";
 import { closeWeek, decidePrizeWeekIn } from "../leaderboard";
 import { publish } from "../realtime";
 import { invalidateSettings, mergeSettings, operatorSettings } from "../settings";
@@ -88,6 +89,7 @@ export function dashboard(ctx: AdminContext) {
         gamesPlayed: games,
       },
       openReports: await t.disputes.countOpen(),
+      openFlags: await t.flags.countOpen(),
       errors: { lastDay: await t.errors.countSince(now - 24 * 60 * 60_000), recent: await t.errors.recent(8) },
       finance,
       daily: {
@@ -304,6 +306,58 @@ export function removeChatMessage(ctx: AdminContext, matchId: string, body: { me
     });
     t.afterCommit(() => publish(matchId, "chat", { removed: id }));
     return { removed: id };
+  });
+}
+
+// ---- Fair play (anti-cheat flags) ------------------------------------------------------------------
+
+export function listFlags(ctx: AdminContext, status?: string) {
+  need(ctx, "matches.view");
+  return tx(async (t) => {
+    const flags = await t.flags.list(status === "OPEN" || status === "DISMISSED" || status === "ACTIONED" ? status : undefined, 100);
+    const users = await t.users.getMany([...new Set(flags.flatMap((f) => [...f.userIds, ...(f.decidedBy ? [f.decidedBy] : [])]))]);
+    return {
+      flags: flags.map((f) => ({
+        ...f,
+        label: FLAG_LABELS[f.kind] ?? f.kind,
+        players: f.userIds.map((id) => ({ id, name: users[id]?.name ?? "Deleted guest", wallet: users[id]?.walletAddress ?? null })),
+        decidedByName: f.decidedBy ? (users[f.decidedBy]?.name ?? "Admin") : null,
+      })),
+    };
+  });
+}
+
+/**
+ * Decide a flag: dismiss it (its matches count again) or act on it — void the matches (signed).
+ * Suspending an account stays on the player's page, with its own signature.
+ */
+export async function decideFlag(ctx: AdminContext, id: number, body: { decision?: unknown; reason?: unknown; nonce?: unknown; signature?: unknown }) {
+  need(ctx, "matches.manage");
+  const reason = cleanReason(body.reason);
+  const act = body.decision === "void";
+  const signature = act ? await stepUp(ctx, body, { action: "FLAG_ACTION", target: `flag:${id}`, reason }) : undefined;
+  return tx(async (t) => {
+    const f = await t.flags.get(id, { lock: true });
+    if (!f) throw notFound("Flag");
+    if (f.status !== "OPEN") throw new ApiError(409, "WRONG_PHASE", "This flag was already decided");
+    if (act) {
+      for (const m of f.matchIds) {
+        const rec = await t.matches.get(m);
+        if (rec && (rec.state.status === "COMPLETED" || rec.state.status === "ACTIVE")) await voidMatchIn(t, m, ctx.userId, `Fair play: ${reason}`);
+      }
+    } else {
+      for (const m of f.matchIds) await t.results.setFlagged(m, false);
+    }
+    await t.flags.decide(id, act ? "ACTIONED" : "DISMISSED", ctx.userId, reason);
+    await writeAudit(t, ctx, {
+      action: act ? "FLAG_ACTION" : "FLAG_DISMISS",
+      targetType: "flag",
+      targetId: String(id),
+      reason,
+      signature,
+      details: { kind: f.kind, users: f.userIds, matches: f.matchIds },
+    });
+    return { status: act ? "ACTIONED" : "DISMISSED" };
   });
 }
 

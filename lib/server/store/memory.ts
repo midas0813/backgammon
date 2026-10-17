@@ -17,6 +17,7 @@ import {
   type MatchRecord,
   type MatchResultRow,
   type PrizeWeek,
+  type CheatFlag,
   type Session,
   type StoredEvent,
   type Store,
@@ -81,6 +82,7 @@ interface Data {
   errors: Record<string, AppError>;
   quests: Record<string, { userId: string; periodKey: string; questId: string; progress: number; claimedAt?: string }>;
   prizes: Record<string, PrizeWeek>;
+  flags: Record<string, CheatFlag>;
   ledger: { balances: Record<string, number>; transactions: Txn[] };
 }
 
@@ -117,6 +119,7 @@ const empty = (): Data => ({
   errors: {},
   quests: {},
   prizes: {},
+  flags: {},
   ledger: { balances: {}, transactions: [] },
 });
 
@@ -155,6 +158,7 @@ export function createMemoryStore(file: string | null): Store {
         "errors",
         "quests",
         "prizes",
+        "flags",
       ] as const) {
         (data as unknown as Record<string, object>)[k] ??= {};
       }
@@ -240,7 +244,12 @@ export function createMemoryStore(file: string | null): Store {
         byWallet: async (address) => values<User>("users").find((u) => u.walletAddress?.toLowerCase() === address.toLowerCase()),
         put: async (u) => put("users", u.id, u),
         count: async () => values("users").length,
-        touchSeen: async (id, at) => put("seen", id, Math.max(get<number>("seen", id) ?? 0, at)),
+        touchSeen: async (id, at, ipHash) => {
+          put("seen", id, Math.max(get<number>("seen", id) ?? 0, at));
+          const u = ipHash ? get<User>("users", id) : undefined;
+          if (u && ipHash) put("users", id, { ...u, lastIp: ipHash });
+        },
+        countCreatedFrom: async (ipHash, since) => values<User>("users").filter((u) => u.createdIp === ipHash && Date.parse(u.createdAt) >= since).length,
         addXp: async (id, n) => {
           const u = get<User>("users", id);
           if (!u) return 0;
@@ -434,6 +443,10 @@ export function createMemoryStore(file: string | null): Store {
           const i = all.findIndex((r) => r.userId === userId);
           return i >= 0 ? { ...all[i], rank: i + 1 } : { userId, points: 0, wins: 0, played: 0, opponents: 0, rank: null };
         },
+        countLostBy: async (userId, opponentId, since, reasons) =>
+          values<MatchResultRow>("results").filter(
+            (r) => r.userId === userId && r.opponentId === opponentId && !r.won && reasons.includes(r.endReason) && Date.parse(r.completedAt) >= since,
+          ).length,
         setFlagged: async (matchId, flagged) => {
           for (const r of values<MatchResultRow>("results").filter((r) => r.matchId === matchId)) put("results", `${r.matchId}:${r.userId}`, { ...r, flagged });
         },
@@ -505,6 +518,25 @@ export function createMemoryStore(file: string | null): Store {
           put("quests", k, { ...cur, claimedAt: new Date().toISOString() });
           return true;
         },
+      },
+      flags: {
+        add: async (f) => {
+          if (values<CheatFlag>("flags").some((x) => x.dedupeKey === f.dedupeKey)) return null;
+          const id = values("flags").length + 1;
+          put("flags", String(id), { ...f, id, status: "OPEN", createdAt: new Date().toISOString() });
+          return id;
+        },
+        get: async (id) => get("flags", String(id)),
+        list: async (status, limit) =>
+          values<CheatFlag>("flags")
+            .filter((f) => !status || f.status === status)
+            .sort((a, b) => b.id - a.id)
+            .slice(0, limit),
+        decide: async (id, status, by, note) => {
+          const f = get<CheatFlag>("flags", String(id));
+          if (f) put("flags", String(id), { ...f, status, decidedBy: by, decidedAt: new Date().toISOString(), note });
+        },
+        countOpen: async () => values<CheatFlag>("flags").filter((f) => f.status === "OPEN").length,
       },
       prizes: {
         get: async (weekKey) => get("prizes", weekKey),

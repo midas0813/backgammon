@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { TOKEN_SCALE } from "../fees";
 import { levelOf } from "../quests";
+import { scanNewAccount } from "./anticheat";
 import { ApiError } from "./errors";
 import { grantFreeCredits } from "./ledger";
 import { tx, type Tx, type User } from "./store";
@@ -18,7 +19,7 @@ export const GUEST_IDLE_MS = 30 * 60 * 1000;
  * A guest can play free games immediately; it becomes an account when a wallet signs in. Guests get
  * no practice credits (those come with the account), so removing an idle guest leaves no balances.
  */
-export async function createGuest(t: Tx): Promise<User> {
+export async function createGuest(t: Tx, ipHash?: string): Promise<User> {
   const id = randomUUID();
   const user: User = {
     id,
@@ -27,8 +28,10 @@ export async function createGuest(t: Tx): Promise<User> {
     reducedMotion: false,
     createdAt: new Date().toISOString(),
   };
+  if (ipHash) user.createdIp = ipHash;
   await t.users.put(user);
-  await t.users.touchSeen(id, Date.now());
+  await t.users.touchSeen(id, Date.now(), ipHash);
+  await scanNewAccount(t, id, ipHash);
   return user;
 }
 
@@ -42,7 +45,8 @@ const lastSeenWrite = ((globalThis as unknown as { __bgSeenW?: Map<string, numbe
  * Resolve the session token (an opaque httpOnly cookie issued by proxy.ts) to its user, creating a
  * guest for a new token. Returns the token actually in use.
  */
-export async function resolveSession(token: string | undefined): Promise<{ user: User; token: string }> {
+/** `ipHash`: the caller's network address, hashed (anti-cheat); never stored in the clear. */
+export async function resolveSession(token: string | undefined, ipHash?: string): Promise<{ user: User; token: string }> {
   return tx(async (t) => {
     const valid = token && TOKEN_RE.test(token) ? token : randomUUID();
     // Parallel first requests carry the same new cookie: only one may create its guest.
@@ -53,11 +57,11 @@ export async function resolveSession(token: string | undefined): Promise<{ user:
       const now = Date.now();
       if (now - (lastSeenWrite.get(existing.id) ?? 0) >= 60_000) {
         lastSeenWrite.set(existing.id, now);
-        await t.users.touchSeen(existing.id, now);
+        await t.users.touchSeen(existing.id, now, ipHash);
       }
       return { user: existing, token: valid };
     }
-    const user = await createGuest(t);
+    const user = await createGuest(t, ipHash);
     await t.sessions.put(valid, { userId: user.id, createdAt: new Date().toISOString() });
     return { user, token: valid };
   });

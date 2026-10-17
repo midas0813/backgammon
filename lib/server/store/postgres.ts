@@ -9,6 +9,7 @@ import {
   type Avatar,
   type ChatMessage,
   type PrizeWeek,
+  type CheatFlag,
   type DepositIntent,
   type Dispute,
   type LobbyRow,
@@ -83,6 +84,8 @@ function toUser(r: Row): User {
     suspendedReason: (r.suspended_reason as string) ?? undefined,
     xp: num(r.xp),
     frame: (r.frame as string) ?? "none",
+    createdIp: (r.created_ip as string) ?? undefined,
+    lastIp: (r.last_ip as string) ?? undefined,
   };
 }
 
@@ -115,6 +118,22 @@ function toAdjustment(r: Row): Adjustment {
     decidedBy: (r.decided_by as string) ?? undefined,
     decidedAt: r.decided_at ? iso(r.decided_at) : undefined,
     txnKey: (r.txn_key as string) ?? undefined,
+  };
+}
+
+function toFlag(r: Row): CheatFlag {
+  return {
+    id: num(r.id),
+    kind: String(r.kind),
+    dedupeKey: String(r.dedupe_key),
+    userIds: (r.user_ids as string[]).map(String),
+    matchIds: (r.match_ids as string[]).map(String),
+    details: parse<Record<string, unknown>>(r.details),
+    status: r.status as CheatFlag["status"],
+    createdAt: iso(r.created_at),
+    decidedBy: (r.decided_by as string) ?? undefined,
+    decidedAt: r.decided_at ? iso(r.decided_at) : undefined,
+    note: (r.note as string) ?? undefined,
   };
 }
 
@@ -239,8 +258,8 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
       async put(u) {
         await q(
           `insert into app_users (id, wallet_address, chain_id, name, theme_id, reduced_motion, bio, country, avatar, created_at, registered_at,
-             sound, high_contrast, board_orientation, status, suspended_until, suspended_reason, frame)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+             sound, high_contrast, board_orientation, status, suspended_until, suspended_reason, frame, created_ip)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
            on conflict (id) do update set wallet_address = excluded.wallet_address, chain_id = excluded.chain_id,
              name = excluded.name, theme_id = excluded.theme_id, reduced_motion = excluded.reduced_motion, bio = excluded.bio,
              country = excluded.country, avatar = excluded.avatar, registered_at = excluded.registered_at,
@@ -266,6 +285,7 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
             u.suspendedUntil ?? null,
             u.suspendedReason ?? null,
             u.frame ?? "none",
+            u.createdIp ?? null,
           ],
         );
       },
@@ -273,8 +293,16 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
         const [r] = await q(`select count(*) as n from app_users`);
         return num(r.n);
       },
-      async touchSeen(id, at) {
-        await q(`update app_users set last_seen_at = greatest(coalesce(last_seen_at, '-infinity'), to_timestamp($2::float8 / 1000)) where id = $1`, [id, at]);
+      async touchSeen(id, at, ipHash) {
+        await q(
+          `update app_users set last_seen_at = greatest(coalesce(last_seen_at, '-infinity'), to_timestamp($2::float8 / 1000)),
+             last_ip = coalesce($3, last_ip) where id = $1`,
+          [id, at, ipHash ?? null],
+        );
+      },
+      async countCreatedFrom(ipHash, since) {
+        const [r] = await q(`select count(*) as n from app_users where created_ip = $1 and created_at >= to_timestamp($2::float8 / 1000)`, [ipHash, since]);
+        return num(r.n);
       },
       async addXp(id, n) {
         const [r] = await q(`update app_users set xp = xp + $2 where id = $1 returning xp`, [id, n]);
@@ -628,6 +656,14 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
           rank: r.rank === null ? null : num(r.rank),
         };
       },
+      async countLostBy(userId, opponentId, since, reasons) {
+        const [r] = await q(
+          `select count(*) as n from match_results where user_id = $1 and opponent_id::text = $2 and not won
+             and end_reason = any($4::text[]) and completed_at >= to_timestamp($3::float8 / 1000)`,
+          [userId, opponentId, since, reasons],
+        );
+        return num(r.n);
+      },
       async setFlagged(matchId, flagged) {
         await q(`update match_results set flagged = $2 where match_id = $1`, [matchId, flagged]);
       },
@@ -752,6 +788,31 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
           [userId, periodKey, questId, target],
         );
         return rows.length > 0;
+      },
+    },
+    flags: {
+      async add(f) {
+        const rows = await q(
+          `insert into cheat_flags (kind, dedupe_key, user_ids, match_ids, details) values ($1, $2, $3::uuid[], $4::text[], $5::jsonb)
+           on conflict (dedupe_key) do nothing returning id`,
+          [f.kind, f.dedupeKey, f.userIds, f.matchIds, JSON.stringify(f.details)],
+        );
+        return rows.length ? num(rows[0].id) : null;
+      },
+      async get(id, opts) {
+        const [r] = await q(`select * from cheat_flags where id = $1 ${opts?.lock ? "for update" : ""}`, [id]);
+        return r ? toFlag(r) : undefined;
+      },
+      async list(status, limit) {
+        const rows = await q(`select * from cheat_flags where ($1::text is null or status = $1) order by id desc limit $2`, [status ?? null, limit]);
+        return rows.map(toFlag);
+      },
+      async decide(id, status, by, note) {
+        await q(`update cheat_flags set status = $2, decided_by = $3, decided_at = now(), note = $4 where id = $1`, [id, status, by, note]);
+      },
+      async countOpen() {
+        const [r] = await q(`select count(*) as n from cheat_flags where status = 'OPEN'`);
+        return num(r.n);
       },
     },
     prizes: {

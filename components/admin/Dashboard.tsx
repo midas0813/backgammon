@@ -67,6 +67,7 @@ export default function Dashboard() {
         <h3 className="a-h3">Needs attention</h3>
         <div className="a-tiles">
           <Tile label="Open reports" value={d.openReports} tone={d.openReports ? "warn" : undefined} onClick={() => open("reports")} />
+          <Tile label="Fair-play flags" value={d.openFlags} tone={d.openFlags ? "warn" : undefined} onClick={() => open("fairplay")} />
           <Tile label="Errors (24 h)" value={d.errors.lastDay} tone={d.errors.lastDay ? "warn" : undefined} />
           {d.finance && (
             <>

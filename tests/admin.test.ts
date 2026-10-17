@@ -289,3 +289,29 @@ describe("finance adjustments", () => {
     expect(overview.systemAccounts.find((s) => s.account === "system:ADJUSTMENTS")?.balance).toBe(-2500);
   });
 });
+
+describe("fair-play review and prizes", () => {
+  it("dismisses a flag (its matches count again) or voids the matches with a signature", async () => {
+    const owner = await walletUser();
+    process.env.ADMIN_BOOTSTRAP_WALLETS = owner.key.address;
+    const ctx = await unlock(owner);
+    const a = await walletUser();
+    const b = await walletUser();
+    const matches = [];
+    for (let i = 0; i < 3; i++) {
+      setEnvForTests(randomEnv(200 + i));
+      const { matchId } = await createTable(a.user.id, { targetPoints: 1, clock: "none" });
+      await joinMatch(b.user.id, matchId);
+      const { leaveMatch } = await import("@/lib/server/matches");
+      await leaveMatch(b.user.id, matchId);
+      matches.push(matchId);
+    }
+    const [flag] = (await admin.listFlags(ctx, "OPEN")).flags;
+    expect(flag.label).toMatch(/forfeits/);
+    expect(await codeOf(admin.decideFlag(ctx, flag.id, { decision: "dismiss", reason: "x" }))).toBe("INVALID_INPUT"); // a reason is needed
+    await admin.decideFlag(ctx, flag.id, { decision: "dismiss", reason: "Friends testing" });
+    expect((await tx((t) => t.results.history(a.user.id, 0, 5))).every((r) => !r.flagged)).toBe(true);
+    expect(await codeOf(admin.decideFlag(ctx, flag.id, { decision: "dismiss", reason: "again" }))).toBe("WRONG_PHASE");
+    expect((await admin.dashboard(ctx)).openFlags).toBe(0);
+  });
+});

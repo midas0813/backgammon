@@ -9,6 +9,7 @@ import { fmtDate, shortWallet, useAdminSigner } from "@/lib/client/admin";
 import Admins from "./Admins";
 import Audit from "./Audit";
 import Dashboard from "./Dashboard";
+import FairPlay from "./FairPlay";
 import Finance from "./Finance";
 import Matches from "./Matches";
 import Prizes from "./Prizes";
@@ -27,6 +28,7 @@ const SECTIONS = [
   { id: "users", label: "Players", perm: "users.view", icon: "M16 11a4 4 0 1 0-8 0M4 21c1-4 4-6 8-6s7 2 8 6" },
   { id: "matches", label: "Matches", perm: "matches.view", icon: "M4 4h16v16H4zM4 12h16M12 4v16" },
   { id: "reports", label: "Reports", perm: "disputes.view", icon: "M4 4h16v12H8l-4 4z" },
+  { id: "fairplay", label: "Fair play", perm: "matches.view", icon: "M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6zM9 12l2 2 4-4" },
   { id: "finance", label: "Finance", perm: "finance.view", icon: "M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" },
   { id: "prizes", label: "Prizes", perm: "finance.view", icon: "M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4" },
   {
@@ -212,6 +214,7 @@ export default function AdminApp() {
           {section === "users" && <Users id={id} />}
           {section === "matches" && <Matches id={id} />}
           {section === "reports" && <Reports id={id} />}
+          {section === "fairplay" && <FairPlay />}
           {section === "finance" && <Finance />}
           {section === "prizes" && <Prizes />}
           {section === "settings" && <Settings />}

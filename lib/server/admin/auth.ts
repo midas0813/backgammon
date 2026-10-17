@@ -65,6 +65,7 @@ export const STEP_UP_ACTIONS = [
   "SETTINGS_UPDATE",
   "PRIZE_PAY",
   "PRIZE_SKIP",
+  "FLAG_ACTION",
 ] as const;
 export type StepUpAction = (typeof STEP_UP_ACTIONS)[number];
 
