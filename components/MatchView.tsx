@@ -1024,8 +1024,13 @@ function PlayerStrip({
         <span>Off {info.off}</span>
         {cube && <span className="badge">Cube {cube}</span>}
         {clock && (
-          <span className={`clock${clock.running ? " running" : ""}${clock.low ? " low" : ""}`} aria-label={`Time bank ${mmss(clock.bankMs)}`}>
-            ⏱ {mmss(clock.bankMs)}
+          // On your turn the clock counts down from the moment the turn starts: free seconds plus bank.
+          <span
+            className={`clock${clock.running ? " running" : ""}${clock.low ? " low" : ""}`}
+            aria-label={clock.running ? `${mmss(clock.freeMs + clock.bankMs)} left this turn` : `Time bank ${mmss(clock.bankMs)}`}
+            title={`${Math.ceil(clock.perMoveMs / 1000)} free seconds each turn, then the time bank (${mmss(clock.bankMs)})`}
+          >
+            ⏱ {mmss(clock.running ? clock.freeMs + clock.bankMs : clock.bankMs)}
           </span>
         )}
       </div>
