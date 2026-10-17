@@ -978,6 +978,8 @@ function PlayerStrip({
     toAct: boolean;
     avatarUrl?: string | null;
     bot?: boolean;
+    level?: number | null;
+    frame?: string | null;
   };
   seat: Seat;
   target: number;
@@ -993,7 +995,7 @@ function PlayerStrip({
               <circle cx="22" cy="22" r="20" pathLength="100" strokeDasharray={`${(clock.freeMs / clock.perMoveMs) * 100} 100`} />
             </svg>
           )}
-          <Avatar name={info.name} src={info.avatarUrl} bot={info.bot} size={34} />
+          <Avatar name={info.name} src={info.avatarUrl} bot={info.bot} size={34} frame={info.frame} />
           <span
             className="dot"
             style={{
@@ -1010,6 +1012,7 @@ function PlayerStrip({
           {info.name}
           {info.you ? " (you)" : ""}
         </span>
+        {info.level && <span className="level-chip small">Lv {info.level}</span>}
         {!info.online && <span className="badge warn">offline</span>}
         {info.toAct && <span className="badge ok">to act</span>}
       </div>

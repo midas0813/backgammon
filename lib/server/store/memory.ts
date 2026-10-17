@@ -78,6 +78,7 @@ interface Data {
   rateLimits: Record<string, { start: number; count: number }>;
   chat: Record<string, ChatMessage>;
   errors: Record<string, AppError>;
+  quests: Record<string, { userId: string; periodKey: string; questId: string; progress: number; claimedAt?: string }>;
   ledger: { balances: Record<string, number>; transactions: Txn[] };
 }
 
@@ -112,6 +113,7 @@ const empty = (): Data => ({
   rateLimits: {},
   chat: {},
   errors: {},
+  quests: {},
   ledger: { balances: {}, transactions: [] },
 });
 
@@ -148,6 +150,7 @@ export function createMemoryStore(file: string | null): Store {
         "rateLimits",
         "chat",
         "errors",
+        "quests",
       ] as const) {
         (data as unknown as Record<string, object>)[k] ??= {};
       }
@@ -215,6 +218,13 @@ export function createMemoryStore(file: string | null): Store {
         put: async (u) => put("users", u.id, u),
         count: async () => values("users").length,
         touchSeen: async (id, at) => put("seen", id, Math.max(get<number>("seen", id) ?? 0, at)),
+        addXp: async (id, n) => {
+          const u = get<User>("users", id);
+          if (!u) return 0;
+          const xp = (u.xp ?? 0) + n;
+          put("users", id, { ...u, xp });
+          return xp;
+        },
         markAway: async (id, at) => put("seen", id, Math.min(get<number>("seen", id) ?? at, at)),
         countSeenSince: async (at) => values<number>("seen").filter((v) => v >= at).length,
         deleteInactiveGuests: async (before, limit) => {
@@ -391,6 +401,9 @@ export function createMemoryStore(file: string | null): Store {
             bestStreak: best,
           };
         },
+        countAgainst: async (userId, opponentId, since) =>
+          values<MatchResultRow>("results").filter((r) => r.userId === userId && r.opponentId === opponentId && r.won && Date.parse(r.completedAt) >= since)
+            .length,
         history: async (userId, offset, limit) =>
           values<MatchResultRow>("results")
             .filter((r) => r.userId === userId)
@@ -437,6 +450,27 @@ export function createMemoryStore(file: string | null): Store {
         },
         prune: async (before) => {
           for (const [k, v] of Object.entries(base.rateLimits)) if (v.start < before) del("rateLimits", k);
+        },
+      },
+      quests: {
+        list: async (userId, keys) =>
+          values<Data["quests"][string]>("quests")
+            .filter((r) => r.userId === userId && keys.includes(r.periodKey))
+            .map(({ periodKey, questId, progress, claimedAt }) => ({ periodKey, questId, progress, claimedAt })),
+        bump: async (userId, rows) => {
+          for (const r of rows) {
+            const k = `${userId}|${r.periodKey}|${r.questId}`;
+            const cur = get<Data["quests"][string]>("quests", k);
+            if (cur?.claimedAt) continue;
+            put("quests", k, { userId, periodKey: r.periodKey, questId: r.questId, progress: Math.min(r.target, (cur?.progress ?? 0) + r.n) });
+          }
+        },
+        claim: async (userId, periodKey, questId, target) => {
+          const k = `${userId}|${periodKey}|${questId}`;
+          const cur = get<Data["quests"][string]>("quests", k);
+          if (!cur || cur.claimedAt || cur.progress < target) return false;
+          put("quests", k, { ...cur, claimedAt: new Date().toISOString() });
+          return true;
         },
       },
       counters: {

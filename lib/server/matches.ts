@@ -20,6 +20,8 @@ import { SPECTATOR_WINDOW_MS } from "./store/types";
 import { newClock, nextDecision, noteReturn, timedOut, clockView, type ClockPreset } from "./clock";
 import { cleanSeed } from "../fair";
 import { fairView, newFair, nextDie } from "./fair";
+import { levelOf } from "../quests";
+import { recordProgress } from "./quests";
 import { publish } from "./realtime";
 import { operatorSettings } from "./settings";
 import { GUEST_IDLE_MS, assertActive, avatarUrl } from "./users";
@@ -82,6 +84,7 @@ function resultRows(rec: MatchRecord): MatchResultRow[] {
         games: st.results.length,
         gammons: mine.filter((r) => r.kind === "gammon" || r.kind === "backgammon").length,
         opponent: rec.names[opp],
+        opponentId: isHuman(rec.seats[opp]) ? rec.seats[opp] : null,
         score: [st.score[s], st.score[opp]],
         targetPoints: st.targetPoints,
         endReason: st.endReason ?? "points",
@@ -100,6 +103,7 @@ async function save(t: Tx, rec: MatchRecord) {
   const games = rec.events.filter((e) => e.type === "GAME_COMPLETED").length;
   if (games) await t.counters.add("games", games);
   if (rec.events.some((e) => e.type === "MATCH_COMPLETED")) await t.results.put(resultRows(rec));
+  await recordProgress(t, rec);
   await t.matches.put(rec);
   const version = rec.version;
   t.afterCommit(() => publish(rec.id, "match", { v: version }));
@@ -623,6 +627,8 @@ function snapshotOf(
       name: rec.names[s],
       occupied: rec.seats[s] !== null,
       avatarUrl: rec.seats[s] ? avatarUrl(users[rec.seats[s]!]) : null,
+      level: rec.seats[s] && users[rec.seats[s]!] ? levelOf(users[rec.seats[s]!].xp ?? 0).level : null,
+      frame: rec.seats[s] && users[rec.seats[s]!] ? (users[rec.seats[s]!].frame ?? "none") : "none",
       bot: rec.seats[s] === BOT_USER_ID,
       online: rec.mode === "local" || rec.seats[s] === BOT_USER_ID || mySeats.includes(s) ? true : now - seen[s] < ONLINE_MS,
     })),

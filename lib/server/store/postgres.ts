@@ -80,6 +80,8 @@ function toUser(r: Row): User {
     status: r.status === "suspended" ? "suspended" : "active",
     suspendedUntil: r.suspended_until ? iso(r.suspended_until) : undefined,
     suspendedReason: (r.suspended_reason as string) ?? undefined,
+    xp: num(r.xp),
+    frame: (r.frame as string) ?? "none",
   };
 }
 
@@ -223,13 +225,14 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
       async put(u) {
         await q(
           `insert into app_users (id, wallet_address, chain_id, name, theme_id, reduced_motion, bio, country, avatar, created_at, registered_at,
-             sound, high_contrast, board_orientation, status, suspended_until, suspended_reason)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+             sound, high_contrast, board_orientation, status, suspended_until, suspended_reason, frame)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
            on conflict (id) do update set wallet_address = excluded.wallet_address, chain_id = excluded.chain_id,
              name = excluded.name, theme_id = excluded.theme_id, reduced_motion = excluded.reduced_motion, bio = excluded.bio,
              country = excluded.country, avatar = excluded.avatar, registered_at = excluded.registered_at,
              sound = excluded.sound, high_contrast = excluded.high_contrast, board_orientation = excluded.board_orientation,
-             status = excluded.status, suspended_until = excluded.suspended_until, suspended_reason = excluded.suspended_reason`,
+             status = excluded.status, suspended_until = excluded.suspended_until, suspended_reason = excluded.suspended_reason,
+             frame = excluded.frame`,
           [
             u.id,
             u.walletAddress ?? null,
@@ -248,6 +251,7 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
             u.status ?? "active",
             u.suspendedUntil ?? null,
             u.suspendedReason ?? null,
+            u.frame ?? "none",
           ],
         );
       },
@@ -257,6 +261,10 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
       },
       async touchSeen(id, at) {
         await q(`update app_users set last_seen_at = greatest(coalesce(last_seen_at, '-infinity'), to_timestamp($2::float8 / 1000)) where id = $1`, [id, at]);
+      },
+      async addXp(id, n) {
+        const [r] = await q(`update app_users set xp = xp + $2 where id = $1 returning xp`, [id, n]);
+        return r ? num(r.xp) : 0;
       },
       async markAway(id, at) {
         await q(`update app_users set last_seen_at = least(coalesce(last_seen_at, 'infinity'), to_timestamp($2::float8 / 1000)) where id = $1`, [id, at]);
@@ -502,12 +510,12 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
       async put(rows) {
         if (rows.length === 0) return;
         await q(
-          `insert into match_results (match_id, user_id, mode, won, points, games, gammons, opponent, score_for, score_against,
+          `insert into match_results (match_id, user_id, mode, won, points, games, gammons, opponent, opponent_id, score_for, score_against,
              target_points, end_reason, completed_at)
-           select x.match_id, x.user_id, x.mode, x.won, x.points, x.games, x.gammons, x.opponent, x.score_for, x.score_against,
+           select x.match_id, x.user_id, x.mode, x.won, x.points, x.games, x.gammons, x.opponent, x.opponent_id, x.score_for, x.score_against,
              x.target_points, x.end_reason, x.completed_at
            from jsonb_to_recordset($1::jsonb) as x(match_id text, user_id uuid, mode text, won boolean, points int, games int,
-             gammons int, opponent text, score_for int, score_against int, target_points int, end_reason text, completed_at timestamptz)
+             gammons int, opponent text, opponent_id uuid, score_for int, score_against int, target_points int, end_reason text, completed_at timestamptz)
            on conflict do nothing`,
           [
             JSON.stringify(
@@ -520,6 +528,7 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
                 games: r.games,
                 gammons: r.gammons,
                 opponent: r.opponent,
+                opponent_id: r.opponentId,
                 score_for: r.score[0],
                 score_against: r.score[1],
                 target_points: r.targetPoints,
@@ -558,6 +567,13 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
           bestStreak: num(r.best_streak),
         };
       },
+      async countAgainst(userId, opponentId, since) {
+        const [r] = await q(
+          `select count(*) as n from match_results where user_id = $1 and opponent_id::text = $2 and won and completed_at >= to_timestamp($3::float8 / 1000)`,
+          [userId, opponentId, since],
+        );
+        return num(r.n);
+      },
       async history(userId, offset, limit) {
         const rows = await q(`select * from match_results where user_id = $1 order by completed_at desc limit $2 offset $3`, [userId, limit, offset]);
         return rows.map((r) => ({
@@ -569,6 +585,7 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
           games: num(r.games),
           gammons: num(r.gammons),
           opponent: String(r.opponent),
+          opponentId: (r.opponent_id as string) ?? null,
           score: [num(r.score_for), num(r.score_against)] as [number, number],
           targetPoints: num(r.target_points),
           endReason: String(r.end_reason),
@@ -646,6 +663,36 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
       },
       async prune(before) {
         await q(`delete from rate_limits where window_start < to_timestamp($1::float8 / 1000)`, [before]);
+      },
+    },
+    quests: {
+      async list(userId, keys) {
+        const rows = await q(`select * from quest_progress where user_id = $1 and period_key = any($2::text[])`, [userId, keys]);
+        return rows.map((r) => ({
+          periodKey: String(r.period_key),
+          questId: String(r.quest_id),
+          progress: num(r.progress),
+          claimedAt: r.claimed_at ? iso(r.claimed_at) : undefined,
+        }));
+      },
+      async bump(userId, rows) {
+        if (!rows.length) return;
+        await q(
+          `insert into quest_progress (user_id, period_key, quest_id, progress, target)
+           select $1, x.p, x.q, least(x.n, x.t), x.t from jsonb_to_recordset($2::jsonb) as x(p text, q text, n int, t int)
+           on conflict (user_id, period_key, quest_id) do update
+             set progress = least(quest_progress.progress + excluded.progress, excluded.target), target = excluded.target
+             where quest_progress.claimed_at is null`,
+          [userId, JSON.stringify(rows.map((r) => ({ p: r.periodKey, q: r.questId, n: r.n, t: r.target })))],
+        );
+      },
+      async claim(userId, periodKey, questId, target) {
+        const rows = await q(
+          `update quest_progress set claimed_at = now()
+           where user_id = $1 and period_key = $2 and quest_id = $3 and progress >= $4 and claimed_at is null returning 1`,
+          [userId, periodKey, questId, target],
+        );
+        return rows.length > 0;
       },
     },
     counters: {

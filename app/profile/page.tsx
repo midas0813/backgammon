@@ -10,6 +10,7 @@ import { signOutEverywhere } from "@/components/Web3Provider";
 import SupportCard from "@/components/SupportCard";
 import ThemePicker from "@/components/ThemePicker";
 import { api } from "@/lib/client/api";
+import { FRAMES } from "@/lib/quests";
 import { uploadAvatar } from "@/lib/client/avatar";
 import { setMe, useMe, type Profile } from "@/lib/client/me";
 
@@ -153,7 +154,7 @@ export default function ProfilePage() {
         <div className="profile-cover" aria-hidden />
         <div className="profile-id">
           <div className="avatar-edit">
-            <Avatar name={me.name} src={me.avatarUrl} size={104} />
+            <Avatar name={me.name} src={me.avatarUrl} size={104} frame={me.frame} />
           </div>
           <div className="profile-photo-actions">
             <button className="btn sm primary" onClick={() => fileRef.current?.click()} disabled={uploading}>
@@ -361,6 +362,37 @@ export default function ProfilePage() {
             <WalletButton className="btn gold" />
           </>
         )}
+      </section>
+
+      <section className="card">
+        <div className="spread">
+          <h2>Level {me.level}</h2>
+          <span className="muted small">{me.xp} XP</span>
+        </div>
+        <p className="muted small">Earn XP by playing and from quests on Home. Levels unlock avatar frames.</p>
+        <div className="frames" role="group" aria-label="Avatar frame">
+          {FRAMES.map((f) => {
+            const locked = f.level > me.level;
+            return (
+              <button
+                key={f.id}
+                className="frame-option"
+                aria-pressed={me.frame === f.id}
+                disabled={locked}
+                onClick={async () => {
+                  try {
+                    await api("/api/me/frame", { method: "POST", body: { frame: f.id } });
+                    setMe({ ...me, frame: f.id });
+                  } catch {}
+                }}
+              >
+                <Avatar name={me.name} src={me.avatarUrl} size={44} frame={f.id} />
+                <span className="small">{f.name}</span>
+                {locked && <span className="muted small">Level {f.level}</span>}
+              </button>
+            );
+          })}
+        </div>
       </section>
 
       <section className="card">

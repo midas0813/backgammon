@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { TOKEN_SCALE } from "../fees";
+import { levelOf } from "../quests";
 import { ApiError } from "./errors";
 import { grantFreeCredits } from "./ledger";
 import { tx, type Tx, type User } from "./store";
@@ -184,6 +185,9 @@ export async function profileIn(t: Tx, userId: string) {
     registeredAt: u.registeredAt ?? null,
     createdAt: u.createdAt,
     avatarUrl: avatarUrl(u),
+    xp: u.xp ?? 0,
+    level: levelOf(u.xp ?? 0).level,
+    frame: u.frame ?? "none",
     bio: u.bio ?? "",
     country: u.country ?? "",
     themeId: u.themeId,

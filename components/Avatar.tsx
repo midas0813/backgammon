@@ -14,7 +14,20 @@ function hash(s: string) {
   return Math.abs(h);
 }
 
-export default function Avatar({ name, src, size = 40, bot }: { name: string; src?: string | null; size?: number; bot?: boolean }) {
+export default function Avatar({
+  name,
+  src,
+  size = 40,
+  bot,
+  frame,
+}: {
+  name: string;
+  src?: string | null;
+  size?: number;
+  bot?: boolean;
+  /** An unlocked avatar frame (lib/quests.ts FRAMES). */
+  frame?: string | null;
+}) {
   const [a, b] = PALETTE[hash(name) % PALETTE.length];
   const initials =
     name
@@ -25,7 +38,11 @@ export default function Avatar({ name, src, size = 40, bot }: { name: string; sr
       .map((w) => w[0])
       .join("") || "?";
   return (
-    <span className="avatar" style={{ width: size, height: size, fontSize: size * 0.4, background: `linear-gradient(135deg, ${a}, ${b})` }} aria-hidden>
+    <span
+      className={`avatar${frame && frame !== "none" ? ` frame-${frame}` : ""}`}
+      style={{ width: size, height: size, fontSize: size * 0.4, background: `linear-gradient(135deg, ${a}, ${b})` }}
+      aria-hidden
+    >
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt="" width={size} height={size} />

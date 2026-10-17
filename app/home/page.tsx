@@ -11,6 +11,7 @@ import { api, isHandled } from "@/lib/client/api";
 import { setMe } from "@/lib/client/me";
 import { formatTokens } from "@/lib/fees";
 import type { HomeData } from "@/lib/server/home";
+import QuestsCard from "@/components/QuestsCard";
 
 const POLL_MS = 8000;
 
@@ -146,6 +147,8 @@ export default function Home() {
           <WalletButton className="btn sm gold" label="Connect Wallet" />
         </div>
       )}
+
+      <QuestsCard />
 
       <section className="card today">
         <div className="spread">

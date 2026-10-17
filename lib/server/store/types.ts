@@ -23,6 +23,10 @@ export interface User {
   /** ISO; absent = until lifted. */
   suspendedUntil?: string;
   suspendedReason?: string;
+  /** Experience points (changed only through users.addXp, never by put). */
+  xp?: number;
+  /** Chosen avatar frame (lib/quests.ts FRAMES). */
+  frame?: string;
 }
 
 /** A user as the admin area lists them. */
@@ -218,6 +222,8 @@ export interface MatchResultRow {
   /** Games this player won with a gammon or backgammon. */
   gammons: number;
   opponent: string;
+  /** The opponent's account (null against the computer). */
+  opponentId: string | null;
   score: [number, number]; // this player's, then the opponent's
   targetPoints: number;
   endReason: string;
@@ -339,6 +345,8 @@ export interface Tx {
     touchSeen(id: string, at: number): Promise<void>;
     /** The player closed the app: no longer counted online (last activity set to `at`, in the past). */
     markAway(id: string, at: number): Promise<void>;
+    /** Add XP atomically; returns the new total. */
+    addXp(id: string, n: number): Promise<number>;
     countSeenSince(at: number): Promise<number>;
     /**
      * Remove up to `limit` guests (no wallet) last active before `before` (ms) who are not in an
@@ -400,6 +408,8 @@ export interface Tx {
     deleteForMatch(matchId: string): Promise<string[]>;
     stats(userId: string, since?: number): Promise<PlayerTotals>;
     history(userId: string, offset: number, limit: number): Promise<MatchResultRow[]>;
+    /** Matches this user won against that opponent since `since` (ms). */
+    countAgainst(userId: string, opponentId: string, since: number): Promise<number>;
   };
   chat: {
     add(m: Omit<ChatMessage, "id" | "createdAt">): Promise<ChatMessage>;
@@ -420,6 +430,14 @@ export interface Tx {
     hit(key: string, windowStart: number): Promise<number>;
     /** Drop windows that started before `before` (ms). */
     prune(before: number): Promise<void>;
+  };
+  quests: {
+    /** Progress rows for these periods. */
+    list(userId: string, periodKeys: string[]): Promise<{ periodKey: string; questId: string; progress: number; claimedAt?: string }[]>;
+    /** Add to unclaimed quests' progress (capped at each target). */
+    bump(userId: string, rows: { periodKey: string; questId: string; n: number; target: number }[]): Promise<void>;
+    /** Mark a completed, unclaimed quest claimed; false if it was not claimable. */
+    claim(userId: string, periodKey: string, questId: string, target: number): Promise<boolean>;
   };
   /** Site-wide running totals (games played, …). */
   counters: {

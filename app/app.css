@@ -2363,3 +2363,124 @@ html[data-reduced-motion="true"]::view-transition-group(*) {
   font-weight: 750;
   text-decoration: none;
 }
+
+/* ---- Quests, levels and frames --------------------------------------------------------------- */
+.quests {
+  position: relative;
+  overflow: hidden;
+}
+.level-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgb(244 207 135 / 0.16);
+  color: var(--gold);
+  font-weight: 800;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.xp-bar,
+.quest-bar {
+  height: 8px;
+  border-radius: 99px;
+  background: rgb(255 255 255 / 0.08);
+  overflow: hidden;
+}
+.quest-bar {
+  height: 6px;
+  margin-top: 6px;
+}
+.xp-bar span,
+.quest-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--action-2), var(--action));
+  transition: width 600ms var(--ease-out);
+}
+.xp-bar span {
+  background: linear-gradient(90deg, var(--gold-2), var(--gold));
+}
+.quests-reset {
+  margin-left: auto;
+  align-self: center;
+}
+.quest-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.quest-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.04);
+}
+.quest-list li.ready {
+  background: rgb(101 226 188 / 0.1);
+  border: 1px solid rgb(101 226 188 / 0.4);
+}
+.quest-list li.claimed {
+  opacity: 0.6;
+}
+.quest-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.frames {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 8px;
+}
+.frame-option {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 10px 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+.frame-option[aria-pressed="true"] {
+  border-color: var(--action);
+  background: rgb(101 226 188 / 0.1);
+}
+.frame-option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.avatar[class*="frame-"] {
+  outline-offset: 2px;
+}
+.avatar.frame-mint {
+  outline: 3px solid var(--action);
+}
+.avatar.frame-gold {
+  outline: 3px solid var(--gold);
+  box-shadow: 0 0 12px rgb(244 207 135 / 0.6);
+}
+.avatar.frame-ember {
+  outline: 3px solid #ff8f6b;
+  box-shadow: 0 0 14px rgb(255 120 80 / 0.65);
+}
+.avatar.frame-aurora {
+  outline: 3px solid #9db7ff;
+  box-shadow:
+    0 0 10px rgb(101 226 188 / 0.6),
+    0 0 18px rgb(157 183 255 / 0.5);
+}
+.avatar.frame-crown {
+  outline: 3px double var(--gold);
+  box-shadow:
+    0 0 0 5px rgb(244 207 135 / 0.25),
+    0 0 18px rgb(244 207 135 / 0.7);
+}
