@@ -58,7 +58,7 @@ export function decisionTimes(events: { type: string; serverTime: string; payloa
 export function coefficientOfVariation(xs: number[]) {
   if (xs.length < 2) return Infinity;
   const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
-  if (mean <= 0) return 0;
+  if (mean <= 0) return Infinity; // no measurable time (e.g. a frozen test clock): nothing to judge
   const sd = Math.sqrt(xs.reduce((a, b) => a + (b - mean) ** 2, 0) / xs.length);
   return sd / mean;
 }
