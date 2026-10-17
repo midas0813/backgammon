@@ -120,6 +120,17 @@ export default function Settings() {
             />
           </label>
           <label>
+            Spectator delay, ranked &amp; tournaments (s)
+            <input
+              type="number"
+              min={0}
+              max={600}
+              disabled={!manage}
+              value={draft.spectatorDelaySec}
+              onChange={(e) => setDraft({ ...draft, spectatorDelaySec: Math.max(0, Math.min(600, Math.round(Number(e.target.value)))) })}
+            />
+          </label>
+          <label>
             Different opponents needed
             <input
               type="number"

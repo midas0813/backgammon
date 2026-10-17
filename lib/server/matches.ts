@@ -650,7 +650,20 @@ export async function getSnapshot(userId: string, matchId: string, settled = fal
     });
     return getSnapshot(userId, matchId, settled, true);
   }
-  return snapshotOf(rec, userId, users, seen, spectators, events, now);
+  const delayMs = spectatorDelayMs(rec, userId, (await tx((t) => operatorSettings(t))).spectatorDelaySec);
+  const snap = snapshotOf(rec, userId, users, seen, spectators, events, now);
+  if (!delayMs) return { ...snap, spectatorDelayMs: 0 };
+  // Delayed spectating: no live position, dice or clocks; the page rebuilds the board from the
+  // delayed event log (matchHistory).
+  return {
+    ...snap,
+    spectatorDelayMs: delayMs,
+    game: null,
+    clock: null,
+    seatToAct: null,
+    events: snap.events.filter((e) => Date.parse(e.serverTime) <= now - delayMs),
+    eventCursor: 0,
+  };
 }
 
 function snapshotOf(
@@ -716,7 +729,7 @@ function snapshotOf(
   };
 }
 
-export type MatchSnapshot = ReturnType<typeof snapshotOf>;
+export type MatchSnapshot = ReturnType<typeof snapshotOf> & { spectatorDelayMs: number };
 
 const BOT_STEP_MS = 700;
 
@@ -761,10 +774,21 @@ export async function matchHistory(userId: string, matchId: string, cursor: numb
   return tx(async (t) => {
     const rec = await t.matches.get(matchId);
     if (!rec) throw notFound("Match");
+    const settings = await operatorSettings(t);
     assertMayWatch(rec, userId, true);
     // The whole log is kept, so a cursor is never too old for a replay.
-    return { events: await t.matches.events(matchId, { after: Math.max(0, cursor) }), eventCursor: rec.eventSeq, snapshotRequired: false };
+    let events = await t.matches.events(matchId, { after: Math.max(0, cursor) });
+    // Spectators of a delayed match only get what happened before the delay.
+    const delay = spectatorDelayMs(rec, userId, settings.spectatorDelaySec);
+    if (delay) events = events.filter((e) => Date.parse(e.serverTime) <= Date.now() - delay);
+    return { events, eventCursor: events.length ? events[events.length - 1].seq : Math.max(0, cursor), snapshotRequired: false, delayMs: delay };
   });
+}
+
+/** How late this viewer sees the match (ms): spectators of ranked and tournament matches in play. */
+export function spectatorDelayMs(rec: MatchRecord, userId: string, delaySec: number) {
+  if (!delaySec || rec.seats.includes(userId) || rec.state.status !== "ACTIVE") return 0;
+  return rec.ranked || rec.tournamentId ? delaySec * 1000 : 0;
 }
 
 /** Tests: make the bot act immediately. */

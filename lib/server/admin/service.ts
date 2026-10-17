@@ -482,6 +482,7 @@ export async function updateSettings(ctx: AdminContext, body: { patch?: unknown;
     await t.admin.putSetting("maintenance", next.maintenance, ctx.userId);
     await t.admin.putSetting("spectators", next.spectators, ctx.userId);
     await t.admin.putSetting("prizePool", next.prizePool, ctx.userId);
+    await t.admin.putSetting("spectatorDelaySec", next.spectatorDelaySec, ctx.userId);
     invalidateSettings();
     await writeAudit(t, ctx, { action: "SETTINGS_UPDATE", targetType: "settings", targetId: "operator", reason, signature, details: { before, after: next } });
     return { settings: next };

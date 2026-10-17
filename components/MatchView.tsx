@@ -7,6 +7,7 @@ import Avatar from "@/components/Avatar";
 import Board, { boardSpot, type AnimMove, type DieView } from "@/components/Board";
 import Confetti from "@/components/Confetti";
 import FxLayer, { type FxHandle } from "@/components/FxLayer";
+import DelayedWatch from "@/components/DelayedWatch";
 import Emoji from "@/components/Emoji";
 import { ChatSheet, FloatingReactions, type ChatMessageView } from "@/components/MatchChat";
 import Modal from "@/components/Modal";
@@ -555,6 +556,17 @@ export default function MatchView({ matchId }: { matchId: string }) {
 
   if (snap.status === "WAITING" || snap.status === "CANCELLED") {
     return <WaitingRoom snap={snap} matchId={matchId} onChange={() => refresh(true)} />;
+  }
+  if (snap.spectatorDelayMs > 0 && snap.status === "ACTIVE") {
+    return (
+      <DelayedWatch
+        matchId={matchId}
+        names={[snap.seats[0].name, snap.seats[1].name]}
+        targetPoints={snap.targetPoints}
+        delayMs={snap.spectatorDelayMs}
+        rights={snap.chat}
+      />
+    );
   }
 
   const board = draftBoard ?? game!.board;

@@ -57,3 +57,30 @@ describe("ranked matches", () => {
     expect((await getSnapshot(a.id, t.matchId)).ranked).toBe(false);
   });
 });
+
+describe("spectator delay", () => {
+  it("spectators of ranked matches get no live board and only events older than the delay", async () => {
+    const { ensureUser } = await import("@/lib/server/users");
+    const { matchHistory } = await import("@/lib/server/matches");
+    setEnvForTests(randomEnv(310));
+    const a = await ensureAccount();
+    const b = await ensureAccount();
+    const viewer = await ensureUser(undefined);
+    const { matchId } = await createTable(a.id, { targetPoints: 3 });
+    await joinMatch(b.id, matchId);
+    const watch = await getSnapshot(viewer.id, matchId);
+    expect(watch.spectatorDelayMs).toBe(20_000);
+    expect(watch.game).toBeNull();
+    expect(watch.clock).toBeNull();
+    expect((await matchHistory(viewer.id, matchId, 0)).events).toEqual([]); // everything is newer than 20 s
+    const player = await getSnapshot(a.id, matchId);
+    expect(player.game).not.toBeNull(); // players always see the live board
+    expect((await matchHistory(a.id, matchId, 0)).events.length).toBeGreaterThan(0);
+    // Casual (unranked) matches are watched live.
+    const c = await ensureAccount();
+    const d = await ensureAccount();
+    const casual = await createTable(c.id, { targetPoints: 3, clock: "none" });
+    await joinMatch(d.id, casual.matchId);
+    expect((await getSnapshot(viewer.id, casual.matchId)).spectatorDelayMs).toBe(0);
+  });
+});
