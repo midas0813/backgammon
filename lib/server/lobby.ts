@@ -36,7 +36,14 @@ export async function touchUser(t: Tx, userId: string, now = Date.now()) {
 /** Create a table (public or invite-only). Players have one game at a time, enforced in createMatch. */
 export async function createTable(
   userId: string,
-  body: { targetPoints?: unknown; visibility?: unknown; allowSpectators?: unknown; spectatorChat?: unknown; spectatorEmoji?: unknown },
+  body: {
+    targetPoints?: unknown;
+    visibility?: unknown;
+    allowSpectators?: unknown;
+    spectatorChat?: unknown;
+    spectatorEmoji?: unknown;
+    clock?: unknown;
+  },
 ) {
   const targetPoints = Number(body.targetPoints);
   if (!ALLOWED_POINTS.includes(targetPoints)) throw new ApiError(400, "INVALID_INPUT", "Unsupported match length");
@@ -45,6 +52,7 @@ export async function createTable(
     allowSpectators: body.allowSpectators !== false,
     spectatorChat: body.spectatorChat !== false,
     spectatorEmoji: body.spectatorEmoji !== false,
+    clock: body.clock === "fast" || body.clock === "none" ? body.clock : "standard",
   });
 }
 
@@ -180,6 +188,7 @@ export async function publicTables(input: PublicTableQuery) {
           matchId: r.id,
           targetPoints: r.targetPoints,
           entryFee: r.entryFee,
+          clock: r.clock,
           createdAt: r.createdAt,
           host,
           // Away hosts stay listed (phones pause background pages); they hear about a join when they return.

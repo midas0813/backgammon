@@ -26,7 +26,36 @@ import { useTheme } from "@/lib/client/theme";
 
 type ChatFeed = { messages: ChatMessageView[]; cursor: number };
 type Snapshot = MatchSnapshot & { chatFeed?: ChatFeed };
-type Poll = Snapshot | { unchanged: true; stateVersion: number; seats: Snapshot["seats"]; chatFeed?: ChatFeed };
+type Poll =
+  | Snapshot
+  | {
+      unchanged: true;
+      stateVersion: number;
+      seats: Snapshot["seats"];
+      clock: Snapshot["clock"];
+      hostReturnBy: Snapshot["hostReturnBy"];
+      serverNow: string;
+      chatFeed?: ChatFeed;
+    };
+
+type ClockFace = { bankMs: number; freeMs: number; perMoveMs: number; running: boolean; low: boolean };
+
+/** Each player's clock right now, counting down locally from the server's last reading. */
+function clockFaces(c: Snapshot["clock"], receivedAt: number, now: number): [ClockFace, ClockFace] | null {
+  if (!c) return null;
+  const el = c.paused || c.reconnectBy !== null ? 0 : Math.max(0, now - receivedAt);
+  return ([0, 1] as Seat[]).map((seat) => {
+    const running = c.seat === seat && !c.paused && c.reconnectBy === null;
+    const free = c.seat === seat ? Math.max(0, c.freeLeftMs - el) : c.perMoveMs;
+    const bank = c.seat === seat ? Math.max(0, c.bankLeftMs[seat] - Math.max(0, el - c.freeLeftMs)) : c.bankLeftMs[seat];
+    return { bankMs: bank, freeMs: free, perMoveMs: c.perMoveMs, running, low: running && free + bank <= 15_000 };
+  }) as [ClockFace, ClockFace];
+}
+
+const mmss = (ms: number) => {
+  const s = Math.ceil(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+};
 
 const POLL_MS = 1000;
 const BOT_POLL_MS = 700;
@@ -72,6 +101,9 @@ export default function MatchView({ matchId }: { matchId: string }) {
   const [draftAnim, setDraftAnim] = useState<{ key: string; moves: AnimMove[] } | null>(null);
   const draftSeq = useRef(0);
   const [flip, setFlip] = useState(false);
+  // When the current clock reading arrived, and a ticking "now" while a clock runs.
+  const [clockAt, setClockAt] = useState(0);
+  const [clockNow, setClockNow] = useState(0);
   // The Roll button glows for a few seconds when the turn arrives.
   const [rollPing, setRollPing] = useState(false);
   useEffect(() => {
@@ -205,7 +237,8 @@ export default function MatchView({ matchId }: { matchId: string }) {
         if (!chatLoaded.current && !data.chatFeed) chatLoaded.current = true;
         takeChat(data.chatFeed);
         if ("unchanged" in data) {
-          setSnap((s) => (s ? { ...s, seats: data.seats } : s));
+          setSnap((s) => (s ? { ...s, seats: data.seats, clock: data.clock, hostReturnBy: data.hostReturnBy, serverNow: data.serverNow } : s));
+          setClockAt(Date.now());
           return;
         }
         if (data.stateVersion !== versionRef.current) {
@@ -227,6 +260,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
         }
         statusRef.current = data.status;
         setSnap(data);
+        setClockAt(Date.now());
         setLoadError(null);
         announce(data);
       } catch (e) {
@@ -262,7 +296,8 @@ export default function MatchView({ matchId }: { matchId: string }) {
       if (s.status !== "ACTIVE") return SLOW_POLL_MS;
       if (s.mode === "local") return SLOW_POLL_MS;
       if (s.mode === "bot") return s.seatToAct !== null && s.seats[s.seatToAct].bot ? BOT_POLL_MS : SLOW_POLL_MS;
-      return liveRef.current ? BACKUP_POLL_MS : POLL_MS;
+      // With a clock, check in at least every 4 s so a dropped connection is noticed within its grace.
+      return liveRef.current ? (s.clock ? 4000 : BACKUP_POLL_MS) : POLL_MS;
     };
     // A short tick that fetches only when due, so a faster rate applies at once (e.g. the computer's turn).
     let last = Date.now();
@@ -286,6 +321,28 @@ export default function MatchView({ matchId }: { matchId: string }) {
   }, [refresh, liveRef, snapRef]);
 
   // Leaving an active match asks first; it never resigns.
+  // Clocks tick locally between readings; the last 10 seconds on your own clock tick audibly.
+  const clockRunning = snap?.status === "ACTIVE" && snap.clock?.seat != null;
+  const clockAtRef = useLatest(clockAt);
+  useEffect(() => {
+    if (!clockRunning) return;
+    let lastTick = 0;
+    const t = window.setInterval(() => {
+      const now = Date.now();
+      setClockNow(now);
+      const s = snapRef.current;
+      const faces = s && clockFaces(s.clock, clockAtRef.current, now);
+      const mine = s && s.yourSeats.length === 1 && s.clock?.seat === s.yourSeats[0] ? faces?.[s.yourSeats[0]] : null;
+      const left = mine ? mine.freeMs + mine.bankMs : Infinity;
+      if (mine?.running && left <= 10_000 && left > 0 && Math.ceil(left / 1000) !== lastTick) {
+        lastTick = Math.ceil(left / 1000);
+        if (soundRef.current) sounds.tick();
+      }
+    }, 250);
+    return () => window.clearInterval(t);
+  }, [clockRunning, snapRef, soundRef, clockAtRef]);
+  const faces = snap ? clockFaces(snap.clock, clockAt, Math.max(clockNow, clockAt)) : null;
+
   const activeParticipant = !!snap && snap.status === "ACTIVE" && snap.yourSeats.length > 0;
   useEffect(() => {
     if (!activeParticipant) return;
@@ -595,7 +652,20 @@ export default function MatchView({ matchId }: { matchId: string }) {
 
       {snap.hostReturnBy && !snap.yourSeats.includes(0) && <HostAway name={snap.seats[0].name} until={snap.hostReturnBy} />}
 
-      <PlayerStrip info={top} seat={opp} target={snap.targetPoints} cube={cubeOwner === "opponent" ? game!.cubeValue : null} />
+      {snap.clock?.reconnectBy != null && snap.clock.seat !== null && !snap.yourSeats.includes(snap.clock.seat) && (
+        <div className="notice clock-note" role="status">
+          {snap.seats[snap.clock.seat].name} disconnected ·{" "}
+          <span className="mono">{mmss(Math.max(0, snap.clock.reconnectBy - Date.parse(snap.serverNow) - (Math.max(clockNow, clockAt) - clockAt)))}</span> to
+          return
+        </div>
+      )}
+      {snap.clock?.paused && (
+        <div className="notice clock-note" role="status">
+          Both players are reconnecting · clocks paused
+        </div>
+      )}
+
+      <PlayerStrip info={top} seat={opp} target={snap.targetPoints} cube={cubeOwner === "opponent" ? game!.cubeValue : null} clock={faces?.[opp]} />
 
       <div className="board-wrap">
         <Board
@@ -623,7 +693,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
         />
       </div>
 
-      <PlayerStrip info={bottom} seat={viewer} target={snap.targetPoints} cube={cubeOwner === "viewer" ? game!.cubeValue : null} />
+      <PlayerStrip info={bottom} seat={viewer} target={snap.targetPoints} cube={cubeOwner === "viewer" ? game!.cubeValue : null} clock={faces?.[viewer]} />
 
       <div className="controls" aria-live="polite">
         {snap.status === "VOIDED" ? (
@@ -781,7 +851,9 @@ export default function MatchView({ matchId }: { matchId: string }) {
           <p className="muted small">Board appearance (only changes your view — dice, moves and score are unaffected)</p>
           <ThemePicker />
           <div className="muted small">
-            Rules {snap.rulesVersion} · cube cap 128 · Crawford rule · no clocks in this MVP · state v{snap.stateVersion}
+            Rules {snap.rulesVersion} · cube cap 128 · Crawford rule ·{" "}
+            {snap.clockPreset === "none" ? "no clock" : `${snap.clockPreset} clock (${(snap.clock?.perMoveMs ?? 12000) / 1000} s per move + time bank)`} · state
+            v{snap.stateVersion}
           </div>
           {snap.isHost && (snap.mode === "quick" || snap.mode === "private") && snap.status === "ACTIVE" && (
             <>
@@ -888,7 +960,9 @@ function PlayerStrip({
   seat,
   target,
   cube,
+  clock,
 }: {
+  clock?: ClockFace;
   info: {
     name: string;
     you: boolean;
@@ -908,6 +982,12 @@ function PlayerStrip({
     <div className={`strip${info.toAct ? " active" : ""}`}>
       <div className="who">
         <span style={{ position: "relative", display: "inline-flex" }}>
+          {clock?.running && (
+            // The free seconds of this decision, as a ring shrinking around the photo.
+            <svg className="free-ring" viewBox="0 0 44 44" aria-hidden>
+              <circle cx="22" cy="22" r="20" pathLength="100" strokeDasharray={`${(clock.freeMs / clock.perMoveMs) * 100} 100`} />
+            </svg>
+          )}
           <Avatar name={info.name} src={info.avatarUrl} bot={info.bot} size={34} />
           <span
             className="dot"
@@ -935,6 +1015,11 @@ function PlayerStrip({
         <span>Pips {info.pips}</span>
         <span>Off {info.off}</span>
         {cube && <span className="badge">Cube {cube}</span>}
+        {clock && (
+          <span className={`clock${clock.running ? " running" : ""}${clock.low ? " low" : ""}`} aria-label={`Time bank ${mmss(clock.bankMs)}`}>
+            ⏱ {mmss(clock.bankMs)}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -1021,7 +1106,13 @@ function MatchOver({ snap }: { snap: Snapshot }) {
       <h2>{snap.yourSeats.length === 1 ? (youWon ? "You won the match" : "You lost the match") : `${snap.seats[winner].name} wins the match`}</h2>
       <div className="muted">
         Final score {snap.score[0]}–{snap.score[1]} ·{" "}
-        {snap.endReason === "forfeit" ? "by forfeit" : snap.endReason === "abandoned" ? "by abandonment (left the table)" : `${snap.targetPoints}-point match`}
+        {snap.endReason === "forfeit"
+          ? "by forfeit"
+          : snap.endReason === "abandoned"
+            ? "by abandonment (left the table)"
+            : snap.endReason === "timeout"
+              ? "on time (clock ran out)"
+              : `${snap.targetPoints}-point match`}
       </div>
       {last && <ResultDetails r={last} snap={snap} />}
       <details>
@@ -1130,7 +1221,9 @@ function WaitingRoom({ snap, matchId, onChange }: { snap: Snapshot; matchId: str
           </li>
           <li>
             <span>Clock</span>
-            <span className="muted">None in MVP</span>
+            <span>
+              {snap.clockPreset === "none" ? "None" : snap.clockPreset === "fast" ? "Fast · 8 s per move + time bank" : "Standard · 12 s per move + time bank"}
+            </span>
           </li>
           <li>
             <span>Spectators</span>

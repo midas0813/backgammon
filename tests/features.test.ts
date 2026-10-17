@@ -30,8 +30,8 @@ describe("presence", () => {
     const a = await ensureUser(undefined);
     const b = await ensureUser(undefined);
     const { matchId } = await createMatch(a.id, "private", 3);
-    await joinMatch(b.id, matchId);
-    expect((await getSnapshot(a.id, matchId)).seats[1].online).toBe(false);
+    await joinMatch(b.id, matchId); // joining counts as being here
+    expect((await getSnapshot(a.id, matchId)).seats[1].online).toBe(true);
     await getSnapshot(b.id, matchId); // Bob polls
     expect((await tx((t) => t.presence.get(matchId)))[1]).toBeGreaterThan(0);
     expect((await getSnapshot(a.id, matchId)).seats[1].online).toBe(true);

@@ -272,6 +272,7 @@ function CreateTable({ initialPoints, onClose, onCreated }: { initialPoints: num
   const [allowSpectators, setAllowSpectators] = useState(true);
   const [spectatorChat, setSpectatorChat] = useState(true);
   const [spectatorEmoji, setSpectatorEmoji] = useState(true);
+  const [clock, setClock] = useState<"standard" | "fast" | "none">("standard");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submit = async () => {
@@ -280,7 +281,7 @@ function CreateTable({ initialPoints, onClose, onCreated }: { initialPoints: num
     try {
       const { matchId } = await api<{ matchId: string }>("/api/tables", {
         method: "POST",
-        body: { targetPoints: points, visibility, allowSpectators, spectatorChat, spectatorEmoji },
+        body: { targetPoints: points, visibility, allowSpectators, spectatorChat, spectatorEmoji, clock },
       });
       watchTable(matchId);
       onCreated(matchId);
@@ -319,6 +320,31 @@ function CreateTable({ initialPoints, onClose, onCreated }: { initialPoints: num
           </button>
         </div>
       </div>
+      <div>
+        <div className="muted small" style={{ marginBottom: 8 }}>
+          Clock
+        </div>
+        <div className="seg" role="group" aria-label="Clock">
+          {(
+            [
+              ["standard", "Standard"],
+              ["fast", "Fast"],
+              ["none", "No clock"],
+            ] as const
+          ).map(([id, label]) => (
+            <button key={id} className="chip" aria-pressed={clock === id} onClick={() => setClock(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="muted small" style={{ margin: "6px 0 0" }}>
+          {clock === "standard"
+            ? `12 s free per move, then a time bank of ${Math.max(2, points)} min. Running out loses the match.`
+            : clock === "fast"
+              ? `8 s free per move, then a time bank of ${Math.max(1, points / 2)} min.`
+              : "Relaxed play with friends: no time limits."}
+        </p>
+      </div>
       <label className="toggle">
         <span>
           <strong>Allow spectators</strong>
@@ -354,10 +380,6 @@ function CreateTable({ initialPoints, onClose, onCreated }: { initialPoints: num
         <li>
           <span>Stake</span>
           <span>Free · token stakes not enabled</span>
-        </li>
-        <li>
-          <span>Clock</span>
-          <span className="muted">Coming soon</span>
         </li>
         <li>
           <span>Closes</span>

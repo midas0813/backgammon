@@ -17,6 +17,7 @@ import { BOT_NAME, BOT_USER_ID, acceptsDouble, chooseSequence } from "./bot";
 import { ApiError, notFound } from "./errors";
 import { tx, type ClosedReason, type MatchMode, type MatchRecord, type MatchResultRow, type StoredEvent, type Tx, type User } from "./store";
 import { SPECTATOR_WINDOW_MS } from "./store/types";
+import { newClock, nextDecision, noteReturn, timedOut, clockView, type ClockPreset } from "./clock";
 import { publish } from "./realtime";
 import { operatorSettings } from "./settings";
 import { GUEST_IDLE_MS, assertActive, avatarUrl } from "./users";
@@ -79,6 +80,11 @@ function resultRows(rec: MatchRecord): MatchResultRow[] {
 
 /** Save a match, recording finished games and, when it ends, each player's result. */
 async function save(t: Tx, rec: MatchRecord) {
+  // The clock follows whoever must decide next; a finished decision is charged to its bank.
+  if (rec.clock) {
+    const next = rec.state.status === "ACTIVE" ? seatToAct(rec.state) : null;
+    if (next !== rec.clock.seat) nextDecision(rec.clock, next, Date.now());
+  }
   const games = rec.events.filter((e) => e.type === "GAME_COMPLETED").length;
   if (games) await t.counters.add("games", games);
   if (rec.events.some((e) => e.type === "MATCH_COMPLETED")) await t.results.put(resultRows(rec));
@@ -108,7 +114,7 @@ export const OFFLINE_GAME_MS = 24 * 60 * 60 * 1000;
 
 const online = (rec: Pick<MatchRecord, "mode">) => rec.mode === "quick" || rec.mode === "private";
 
-type Settlement = { kind: "expire" } | { kind: "close"; reason: ClosedReason } | { kind: "abandon"; loser: Seat };
+type Settlement = { kind: "expire" } | { kind: "close"; reason: ClosedReason } | { kind: "abandon"; loser: Seat } | { kind: "timeout"; loser: Seat };
 
 /** What, if anything, should happen to a match left alone. Pure: `seen` is each seat's last poll (ms). */
 export function settlementFor(rec: MatchRecord, seen: [number, number], now: number): Settlement | null {
@@ -126,8 +132,15 @@ export function settlementFor(rec: MatchRecord, seen: [number, number], now: num
   const idle = now - (rec.updatedAt ?? created);
   if (!online(rec)) return idle >= OFFLINE_GAME_MS ? { kind: "close", reason: "inactive" } : null;
   if (rec.startedAt && seen[0] < rec.startedAt && now - rec.startedAt >= HOST_RETURN_MS) return { kind: "close", reason: "host-missing" };
+  // The host has not been back since someone joined: the 2-minute rule above applies, not the clock.
+  const hostPending = !!rec.startedAt && seen[0] < rec.startedAt;
+  if (rec.clock && !hostPending) {
+    const loser = timedOut(rec.clock, seen, now);
+    if (loser !== null) return { kind: "timeout", loser };
+  }
   const toAct = seatToAct(st);
-  if (toAct !== null && idle >= ABANDON_MS && now - seen[toAct] >= ABANDON_MS && now - seen[1 - toAct] < OPPONENT_PRESENT_MS) {
+  // With a clock, running out of time replaces the 10-minute abandonment rule.
+  if (!rec.clock && toAct !== null && idle >= ABANDON_MS && now - seen[toAct] >= ABANDON_MS && now - seen[1 - toAct] < OPPONENT_PRESENT_MS) {
     return { kind: "abandon", loser: toAct };
   }
   if (idle >= BOTH_GONE_MS && now - Math.max(seen[0], seen[1]) >= BOTH_GONE_MS) return { kind: "close", reason: "abandoned" };
@@ -150,9 +163,10 @@ export async function settleIn(t: Tx, matchId: string, now = Date.now()) {
   if (s.kind === "expire") closeNoResult(rec, "expired");
   else if (s.kind === "close") closeNoResult(rec, s.reason);
   else {
+    const reason = s.kind === "timeout" ? "timeout" : "abandoned";
     const events = applyAction(rec.state, s.loser, { actionType: "FORFEIT_MATCH", payload: { confirm: true } }, env);
-    rec.state.endReason = "abandoned";
-    for (const e of events) if (e.type === "MATCH_COMPLETED") e.payload.reason = "abandoned";
+    rec.state.endReason = reason;
+    for (const e of events) if (e.type === "MATCH_COMPLETED") e.payload.reason = reason;
     rec.version += 1;
     pushEvents(rec, events);
   }
@@ -242,13 +256,14 @@ export async function join(t: Tx, rec: MatchRecord, userId: string) {
   pushEvents(rec, [{ type: "MATCH_READY", payload: {} }]);
   pushEvents(rec, startMatch(rec.state, env));
   await save(t, rec);
+  await t.presence.touch(rec.id, 1, Date.now()); // the joiner is here
 }
 
 export async function createMatch(
   userId: string,
   mode: MatchMode,
   targetPoints: number,
-  opts: { allowSpectators?: boolean; spectatorChat?: boolean; spectatorEmoji?: boolean } = {},
+  opts: { allowSpectators?: boolean; spectatorChat?: boolean; spectatorEmoji?: boolean; clock?: ClockPreset } = {},
 ): Promise<{ matchId: string }> {
   if (!ALLOWED_POINTS.includes(targetPoints)) throw new ApiError(400, "INVALID_INPUT", "Unsupported match length");
   if (!["quick", "private", "local", "bot"].includes(mode)) throw new ApiError(400, "INVALID_INPUT", "Unsupported mode");
@@ -273,6 +288,8 @@ export async function createMatch(
       eventSeq: 0,
       actions: {},
       allowSpectators: opts.allowSpectators !== false,
+      // Online matches get a clock (standard unless the host chose otherwise); computer and pass & play none.
+      clock: mode === "quick" || mode === "private" ? newClock(opts.clock ?? "standard", targetPoints) : undefined,
       spectatorChat: opts.spectatorChat !== false,
       spectatorEmoji: opts.spectatorEmoji !== false,
     };
@@ -449,6 +466,8 @@ export async function submitAction(userId: string, matchId: string, req: ActionR
     const seats = seatOf(rec, userId);
     if (seats.length === 0) throw new ApiError(403, "NOT_PARTICIPANT", "You are not a player in this match");
 
+    // Acting proves the player is here (keeps their clock in normal mode).
+    for (const seat of seats) await t.presence.touch(matchId, seat, Date.now());
     const prior = await t.matches.action(matchId, actionId);
     if (prior) {
       if (prior.fingerprint !== fingerprint) throw new ApiError(409, "DUPLICATE_ACTION_CONFLICT", "actionId reused with a different payload");
@@ -497,13 +516,21 @@ export function assertMayWatch(rec: MatchRecord, userId: string, spectatorsOn: b
 }
 
 /** Snapshot for a player or a spectator. Never includes user IDs, wallets or payment data. */
-export async function getSnapshot(userId: string, matchId: string, settled = false): Promise<MatchSnapshot> {
+export async function getSnapshot(userId: string, matchId: string, settled = false, returnNoted = false): Promise<MatchSnapshot> {
   const now = Date.now();
-  const { rec, users, seen, spectators, events, due } = await tx(async (t) => {
+  const { rec, users, seen, spectators, events, due, returned } = await tx(async (t) => {
     const m = await t.matches.get(matchId);
-    if (!m) return { rec: undefined, users: {}, seen: [0, 0] as [number, number], spectators: 0, events: [], due: false };
+    if (!m) return { rec: undefined, users: {}, seen: [0, 0] as [number, number], spectators: 0, events: [], due: false, returned: null };
     assertMayWatch(m, userId, (await operatorSettings(t)).spectators);
     const mine = seatOf(m, userId);
+    // Back after a drop on your turn? The time away comes off the reconnect allowance, not the bank.
+    if (!returnNoted && m.clock && m.clock.seat !== null && mine.includes(m.clock.seat) && m.state.status === "ACTIVE") {
+      const before = await t.presence.get(matchId);
+      const free = !!m.startedAt && before[0] < m.startedAt;
+      if (noteReturn({ ...m.clock, awayUsedMs: [...m.clock.awayUsedMs] }, m.clock.seat, before, now, free)) {
+        return { rec: m, users: {}, seen: before, spectators: 0, events: [], due: false, returned: { seat: m.clock.seat, before } };
+      }
+    }
     for (const s of mine) {
       const key = `${matchId}:${s}`;
       if (now - (lastPresenceWrite.get(key) ?? 0) >= PRESENCE_WRITE_MS) {
@@ -520,7 +547,7 @@ export async function getSnapshot(userId: string, matchId: string, settled = fal
     }
     const seen = await t.presence.get(matchId);
     // A match left alone is settled when someone looks at it (the timers also run in the sweep).
-    if (!settled && settlementFor(m, seen, now)) return { rec: m, users: {}, seen, spectators: 0, events: [], due: true };
+    if (!settled && settlementFor(m, seen, now)) return { rec: m, users: {}, seen, spectators: 0, events: [], due: true, returned: null };
     const ids = m.seats.filter((s) => s && s !== BOT_USER_ID) as string[];
     return {
       rec: m,
@@ -529,12 +556,24 @@ export async function getSnapshot(userId: string, matchId: string, settled = fal
       spectators: online(m) ? await t.spectators.count(matchId, now - SPECTATOR_WINDOW_MS) : 0,
       events: await t.matches.events(matchId, { last: 30 }),
       due: false,
+      returned: null,
     };
   });
   if (!rec) throw notFound("Match");
   if (due) {
     await tx((t) => settleIn(t, matchId, now));
-    return getSnapshot(userId, matchId, true);
+    return getSnapshot(userId, matchId, true, true);
+  }
+  if (returned) {
+    await tx(async (t) => {
+      const r = await t.matches.get(matchId, { lock: true });
+      const free = !!r?.startedAt && returned.before[0] < r.startedAt;
+      if (r?.clock && r.state.status === "ACTIVE" && noteReturn(r.clock, returned.seat, returned.before, now, free)) {
+        await t.presence.touch(matchId, returned.seat, now);
+        await t.matches.put(r);
+      }
+    });
+    return getSnapshot(userId, matchId, settled, true);
   }
   return snapshotOf(rec, userId, users, seen, spectators, events, now);
 }
@@ -581,6 +620,9 @@ function snapshotOf(
     isHost: rec.createdBy === userId && mySeats.length > 0,
     closedReason: rec.closedReason ?? null,
     /** Set while the host has not come back since someone joined: the match is called off at this time. */
+    /** Clocks as of `serverNow`; the browser counts down from there. */
+    clock: rec.clock && st.status === "ACTIVE" ? { preset: rec.clock.preset, perMoveMs: rec.clock.perMoveMs, ...clockView(rec.clock, seen, now) } : null,
+    clockPreset: rec.clock?.preset ?? "none",
     hostReturnBy:
       online(rec) && st.status === "ACTIVE" && rec.startedAt && seen[0] < rec.startedAt ? new Date(rec.startedAt + HOST_RETURN_MS).toISOString() : null,
     voided: rec.voided ? { reason: rec.voided.reason, at: rec.voided.at } : null,

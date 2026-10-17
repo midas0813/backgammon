@@ -139,6 +139,7 @@ function toLobbyRow(r: Row): LobbyRow {
     hostId: string;
     seats?: [string | null, string | null];
     seatToAct?: number | null;
+    clock?: string;
   }>(r.summary);
   return {
     id: String(r.id),
@@ -154,6 +155,7 @@ function toLobbyRow(r: Row): LobbyRow {
     cube: num(s.cube),
     gameNumber: num(s.gameNumber),
     seatToAct: s.seatToAct ?? null,
+    clock: s.clock ?? "none",
     allowSpectators: Boolean(r.allow_spectators),
     entryFee: num(r.entry_fee),
     hostSeenAt: num(r.host_seen_ms),

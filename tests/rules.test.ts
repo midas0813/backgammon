@@ -23,11 +23,11 @@ afterEach(() => {
 
 const later = (ms: number) => vi.setSystemTime(Date.now() + ms);
 
-async function liveMatch(seed: number) {
+async function liveMatch(seed: number, clock: "standard" | "none" = "none") {
   setEnvForTests(randomEnv(seed));
   const host = await ensureAccount();
   const guest = await ensureAccount();
-  const { matchId } = await createTable(host.id, { targetPoints: 3 });
+  const { matchId } = await createTable(host.id, { targetPoints: 3, clock });
   await joinMatch(guest.id, matchId);
   await getSnapshot(host.id, matchId); // the host is at the board
   const ids = [host.id, guest.id];

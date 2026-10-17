@@ -1,4 +1,5 @@
 import type { MatchState } from "../../engine/match";
+import type { ClockState } from "../clock";
 import type { DepositMethod, DepositStatus, WithdrawalStatus } from "../payments/adapter";
 
 /** Accounts are wallet-based: one EVM address = one account. Guests have no wallet yet. */
@@ -172,6 +173,8 @@ export interface MatchRecord {
   closedReason?: ClosedReason;
   /** When the second player sat down (ms). */
   startedAt?: number;
+  /** Match clocks (online matches with a clock); absent = no clock. */
+  clock?: ClockState;
   voided?: { by: string; reason: string; at: string };
 }
 
@@ -191,6 +194,8 @@ export interface LobbyRow {
   gameNumber: number;
   /** Seat that must act next, null when nobody (or unknown for rows saved before it was stored). */
   seatToAct: number | null;
+  /** Clock preset ("none" for rows saved before clocks). */
+  clock: string;
   allowSpectators: boolean;
   entryFee: number;
   hostSeenAt: number; // ms, 0 when never seen

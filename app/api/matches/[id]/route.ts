@@ -19,7 +19,16 @@ export async function GET(req: NextRequest, ctx: RouteContext<"/api/matches/[id]
     const online = snap.mode === "quick" || snap.mode === "private";
     const chatFeed = chatAfter !== null && online && snap.status !== "WAITING" ? await chatSince(user.id, id, chatAfter) : undefined;
     if (since && since === snap.stateVersion) {
-      return { unchanged: true, stateVersion: snap.stateVersion, seats: snap.seats, serverNow: snap.serverNow, chatFeed };
+      // Clocks and presence change without a new version, so they always come along.
+      return {
+        unchanged: true,
+        stateVersion: snap.stateVersion,
+        seats: snap.seats,
+        serverNow: snap.serverNow,
+        clock: snap.clock,
+        hostReturnBy: snap.hostReturnBy,
+        chatFeed,
+      };
     }
     return { ...snap, chatFeed };
   });

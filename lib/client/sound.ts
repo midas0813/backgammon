@@ -101,6 +101,10 @@ export const sounds = {
     clack(0, 0.3);
     tone(180, 0, 0.08, 0.05, "triangle");
   },
+  /** Soft tick for the last seconds on your clock. */
+  tick() {
+    tone(1200, 0, 0.04, 0.025, "square");
+  },
   turn() {
     [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.07, 0.3, 0.05, "triangle"));
     tone(1568, 0.3, 0.45, 0.025);
