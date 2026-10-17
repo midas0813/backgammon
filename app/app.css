@@ -2570,3 +2570,64 @@ html[data-reduced-motion="true"]::view-transition-group(*) {
   width: 100%;
   accent-color: var(--action);
 }
+
+/* ---- Tournaments ----------------------------------------------------------------------------- */
+.tourney-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+.tourney {
+  display: grid;
+  gap: 10px;
+}
+.tourney-seats {
+  display: flex;
+  gap: 6px;
+}
+.tourney-seats span {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.1);
+}
+.tourney-seats span.taken {
+  background: var(--action);
+}
+.bracket {
+  display: grid;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.bracket-round {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  gap: 10px;
+}
+.bracket-match {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border-soft);
+  background: rgb(255 255 255 / 0.04);
+  color: var(--text);
+  text-decoration: none;
+}
+.bracket-match.mine {
+  border-color: var(--action);
+}
+.bracket-player {
+  font-weight: 650;
+  font-size: 14px;
+}
+.bracket-player.won {
+  color: var(--action);
+}
+.bracket-player.out {
+  color: var(--text-2);
+  text-decoration: line-through;
+  opacity: 0.7;
+}

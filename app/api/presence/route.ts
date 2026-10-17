@@ -1,6 +1,7 @@
 import { handle } from "@/lib/server/http";
 import { ONLINE_WINDOW_MS } from "@/lib/server/lobby";
 import { pendingInvites } from "@/lib/server/social";
+import { readyMatches } from "@/lib/server/tournaments";
 import { tx } from "@/lib/server/store";
 
 /**
@@ -15,6 +16,6 @@ export async function POST(req: Request) {
       if (away) await t.users.markAway(user.id, now - ONLINE_WINDOW_MS - 1000);
       else await t.users.touchSeen(user.id, now);
       return { ok: true };
-    }).then(async (r) => (away ? r : { ...r, invites: await pendingInvites(user.id) })),
+    }).then(async (r) => (away ? r : { ...r, invites: await pendingInvites(user.id), ready: await readyMatches(user.id) })),
   );
 }

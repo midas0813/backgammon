@@ -25,14 +25,24 @@ interface Invite {
 export default function OnlineHeartbeat() {
   const router = useRouter();
   const [invite, setInvite] = useState<Invite | null>(null);
+  const [ready, setReady] = useState<{ matchId: string; opponent: string; tournament: string } | null>(null);
   const shown = useRef(new Set<number>());
+  const shownMatches = useRef(new Set<string>());
 
   useEffect(() => {
     const beat = async () => {
       if (document.visibilityState !== "visible") return;
       const r = await fetch("/api/presence", { method: "POST", keepalive: true })
-        .then((x) => (x.ok ? (x.json() as Promise<{ invites?: Invite[] }>) : null))
+        .then((x) => (x.ok ? (x.json() as Promise<{ invites?: Invite[]; ready?: { matchId: string; opponent: string; tournament: string }[] }>) : null))
         .catch(() => null);
+      // A tournament round is ready: call the player to the board (unless they're already there).
+      const round = r?.ready?.find((m) => !shownMatches.current.has(m.matchId) && !window.location.pathname.endsWith(m.matchId));
+      if (round) {
+        shownMatches.current.add(round.matchId);
+        setReady(round);
+        sounds.joined();
+        navigator.vibrate?.([80, 40, 80]);
+      }
       const next = r?.invites?.find((i) => !shown.current.has(i.id));
       if (next) {
         shown.current.add(next.id);
@@ -54,6 +64,22 @@ export default function OnlineHeartbeat() {
     };
   }, []);
 
+  if (ready) {
+    return (
+      <Modal title={`Your ${ready.tournament} match is ready`} onClose={() => setReady(null)}>
+        <p className="muted">You play {ready.opponent}. Your clock starts in about 2 minutes, so head to the board now.</p>
+        <button
+          className="btn primary block"
+          onClick={() => {
+            setReady(null);
+            router.push(`/match/${ready.matchId}`);
+          }}
+        >
+          Go to the board
+        </button>
+      </Modal>
+    );
+  }
   if (!invite) return null;
   const respond = async (accept: boolean) => {
     const i = invite;

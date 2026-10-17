@@ -93,6 +93,7 @@ export function noteReturn(c: ClockState, seat: Seat, seenBefore: [number, numbe
   const away = awaySince(c, seenBefore, now);
   if (away === null) return false;
   const gone = now - away;
+  if (gone <= 0) return false; // the decision has not started yet (e.g. a tournament round's grace period)
   // If the opponent was gone too, nobody was waiting: nothing is charged. `free`: a host arriving after
   // someone joined their table is not "reconnecting".
   if (!free && !offline(seenBefore, (1 - seat) as Seat, now)) c.awayUsedMs[seat] = Math.min(AWAY_TOTAL_MS, c.awayUsedMs[seat] + gone);

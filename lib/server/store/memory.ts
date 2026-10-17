@@ -18,6 +18,7 @@ import {
   type MatchResultRow,
   type PrizeWeek,
   type CheatFlag,
+  type TournamentDoc,
   type Friendship,
   type MatchInvite,
   type Session,
@@ -86,6 +87,7 @@ interface Data {
   prizes: Record<string, PrizeWeek>;
   flags: Record<string, CheatFlag>;
   friends: Record<string, Friendship>;
+  tournaments: Record<string, TournamentDoc>;
   invites: Record<string, MatchInvite>;
   ledger: { balances: Record<string, number>; transactions: Txn[] };
 }
@@ -125,6 +127,7 @@ const empty = (): Data => ({
   prizes: {},
   flags: {},
   friends: {},
+  tournaments: {},
   invites: {},
   ledger: { balances: {}, transactions: [] },
 });
@@ -166,6 +169,7 @@ export function createMemoryStore(file: string | null): Store {
         "prizes",
         "flags",
         "friends",
+        "tournaments",
         "invites",
       ] as const) {
         (data as unknown as Record<string, object>)[k] ??= {};
@@ -544,6 +548,15 @@ export function createMemoryStore(file: string | null): Store {
           put("quests", k, { ...cur, claimedAt: new Date().toISOString() });
           return true;
         },
+      },
+      tournaments: {
+        get: async (id) => get("tournaments", id),
+        put: async (d) => put("tournaments", d.id, d),
+        list: async (statuses, limit) =>
+          values<TournamentDoc>("tournaments")
+            .filter((d) => statuses.includes(d.status))
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+            .slice(0, limit),
       },
       friends: {
         get: async (a, b) => get("friends", [a, b].sort().join("|")),

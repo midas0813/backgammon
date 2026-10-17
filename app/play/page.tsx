@@ -243,7 +243,9 @@ export default function LobbyPage() {
 
       <div className="row">
         <span className="badge">Ranked · coming soon</span>
-        <span className="badge">Tournaments · coming soon</span>
+        <Link className="badge" href="/tournaments">
+          Tournaments · free sit &amp; go →
+        </Link>
         <span className="badge">Token stakes · not enabled</span>
       </div>
 

@@ -191,6 +191,8 @@ export interface MatchRecord {
   fair?: FairState;
   /** Counts for ratings. */
   ranked?: boolean;
+  /** Part of a tournament bracket. */
+  tournamentId?: string;
   voided?: { by: string; reason: string; at: string };
 }
 
@@ -296,6 +298,23 @@ export interface MatchInvite {
   rematchOf?: string;
   status: "PENDING" | "ACCEPTED" | "DECLINED" | "EXPIRED";
   createdAt: string;
+}
+
+export interface TournamentDoc {
+  id: string;
+  name: string;
+  template: string;
+  size: number;
+  points: number;
+  clock: "standard" | "fast" | "none";
+  status: "REGISTERING" | "RUNNING" | "COMPLETED" | "CANCELLED";
+  players: { userId: string; name: string; seed: number }[];
+  /** rounds[r][k]: a pairing; its winner goes to rounds[r + 1][k / 2]. */
+  rounds: { a: string | null; b: string | null; matchId: string | null; winner: string | null; walkover?: boolean }[][];
+  winner?: string;
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
 }
 
 export interface PlayerTotals {
@@ -553,6 +572,11 @@ export interface Tx {
     /** A pending rematch invite after `matchId`, from `fromUser`. */
     rematch(matchId: string, fromUser: string): Promise<MatchInvite | undefined>;
     setStatus(id: number, status: MatchInvite["status"]): Promise<void>;
+  };
+  tournaments: {
+    get(id: string, opts?: { lock?: boolean }): Promise<TournamentDoc | undefined>;
+    put(d: TournamentDoc): Promise<void>;
+    list(status: TournamentDoc["status"][], limit: number): Promise<TournamentDoc[]>;
   };
   /** Site-wide running totals (games played, …). */
   counters: {

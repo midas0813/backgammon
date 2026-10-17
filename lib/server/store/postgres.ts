@@ -10,6 +10,7 @@ import {
   type ChatMessage,
   type PrizeWeek,
   type CheatFlag,
+  type TournamentDoc,
   type Friendship,
   type MatchInvite,
   type DepositIntent,
@@ -843,6 +844,23 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
           [userId, periodKey, questId, target],
         );
         return rows.length > 0;
+      },
+    },
+    tournaments: {
+      async get(id, opts) {
+        const [r] = await q(`select data from tournaments where id = $1 ${opts?.lock ? "for update" : ""}`, [id]);
+        return r ? parse<TournamentDoc>(r.data) : undefined;
+      },
+      async put(d) {
+        await q(
+          `insert into tournaments (id, status, created_at, data) values ($1, $2, $3, $4::jsonb)
+           on conflict (id) do update set status = excluded.status, data = excluded.data`,
+          [d.id, d.status, d.createdAt, JSON.stringify(d)],
+        );
+      },
+      async list(statuses, limit) {
+        const rows = await q(`select data from tournaments where status = any($1::text[]) order by created_at desc limit $2`, [statuses, limit]);
+        return rows.map((r) => parse<TournamentDoc>(r.data));
       },
     },
     friends: {

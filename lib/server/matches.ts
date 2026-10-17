@@ -24,6 +24,7 @@ import { levelOf } from "../quests";
 import { scanFinishedMatch } from "./anticheat";
 import { applyRatings, closeWeek, withLeaderboardPoints } from "./leaderboard";
 import { recordProgress } from "./quests";
+import { advanceTournament } from "./tournaments";
 import { publish } from "./realtime";
 import { operatorSettings } from "./settings";
 import { GUEST_IDLE_MS, assertActive, avatarUrl } from "./users";
@@ -110,6 +111,7 @@ async function save(t: Tx, rec: MatchRecord) {
   await recordProgress(t, rec);
   await t.matches.put(rec);
   if (rec.events.some((e) => e.type === "MATCH_COMPLETED")) await scanFinishedMatch(t, rec);
+  if (rec.tournamentId && rec.events.some((e) => e.type === "MATCH_COMPLETED" || e.type === "MATCH_CANCELLED")) await advanceTournament(t, rec);
   const version = rec.version;
   t.afterCommit(() => publish(rec.id, "match", { v: version }));
 }
@@ -336,6 +338,45 @@ export async function createMatch(
     if (online(rec)) await t.presence.touch(rec.id, 0, Date.now());
     return { matchId: rec.id };
   });
+}
+
+/** Tournament rounds: players get this long to arrive before their clocks start. */
+export const ROUND_GRACE_MS = 2 * 60 * 1000;
+
+/**
+ * A match between two seated players that starts at once (tournament rounds). Clocks start after a
+ * grace period; a player who never arrives loses on time, and if neither arrives the match closes.
+ */
+export async function createPairedMatchIn(t: Tx, a: string, b: string, targetPoints: number, opts: { clock: ClockPreset; tournamentId: string }) {
+  const users = await t.users.getMany([a, b]);
+  const now = Date.now();
+  const rec: MatchRecord = {
+    id: shortId(),
+    mode: "private",
+    createdAt: new Date(now).toISOString(),
+    createdBy: a,
+    seats: [a, b],
+    names: [users[a]?.name ?? "Player", users[b]?.name ?? "Player"],
+    lastSeen: [0, 0],
+    version: 1,
+    state: newMatch(targetPoints),
+    events: [],
+    eventSeq: 0,
+    actions: {},
+    allowSpectators: true,
+    clock: newClock(opts.clock, targetPoints),
+    fair: newFair(""),
+    tournamentId: opts.tournamentId,
+  };
+  pushEvents(rec, [{ type: "MATCH_CREATED", payload: { mode: "private", targetPoints, tournamentId: opts.tournamentId } }]);
+  rec.version += 1;
+  pushEvents(rec, startMatch(rec.state, envFor(rec)));
+  if (rec.clock) {
+    rec.clock.seat = seatToAct(rec.state);
+    rec.clock.turnStartedAt = now + ROUND_GRACE_MS;
+  }
+  await save(t, rec);
+  return rec.id;
 }
 
 export function joinMatch(userId: string, matchId: string, clientSeed?: unknown) {
