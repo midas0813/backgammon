@@ -34,6 +34,8 @@ export interface User {
   rating?: number;
   ratingExperience?: number;
   ratingGames?: number;
+  /** The invite code the account signed up with (where the player came from). */
+  inviteCode?: string;
 }
 
 /** A user as the admin area lists them. */
@@ -317,6 +319,28 @@ export interface TournamentDoc {
   completedAt?: string;
 }
 
+export interface InviteCode {
+  code: string;
+  label: string;
+  maxUses: number | null;
+  uses: number;
+  expiresAt?: string;
+  createdBy?: string;
+  createdAt: string;
+  active: boolean;
+}
+
+export interface Feedback {
+  id: number;
+  userId?: string;
+  kind: "idea" | "bug" | "other";
+  message: string;
+  path?: string;
+  userAgent?: string;
+  status: "NEW" | "READ" | "DONE";
+  createdAt: string;
+}
+
 export interface PlayerTotals {
   played: number;
   wins: number;
@@ -577,6 +601,16 @@ export interface Tx {
     get(id: string, opts?: { lock?: boolean }): Promise<TournamentDoc | undefined>;
     put(d: TournamentDoc): Promise<void>;
     list(status: TournamentDoc["status"][], limit: number): Promise<TournamentDoc[]>;
+  };
+  beta: {
+    getCode(code: string, opts?: { lock?: boolean }): Promise<InviteCode | undefined>;
+    putCode(c: InviteCode): Promise<void>;
+    listCodes(): Promise<InviteCode[]>;
+    /** Accounts per invite code. */
+    signupsByCode(): Promise<Record<string, number>>;
+    addFeedback(f: Omit<Feedback, "id" | "status" | "createdAt">): Promise<number>;
+    listFeedback(status: Feedback["status"] | undefined, limit: number): Promise<Feedback[]>;
+    setFeedbackStatus(id: number, status: Feedback["status"]): Promise<void>;
   };
   /** Site-wide running totals (games played, …). */
   counters: {

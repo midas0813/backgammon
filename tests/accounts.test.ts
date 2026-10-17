@@ -5,7 +5,7 @@ import { sniffImage } from "@/lib/server/avatars";
 import { createMatch } from "@/lib/server/matches";
 import { createNonce, verifySiwe } from "@/lib/server/siwe";
 import { tx } from "@/lib/server/store";
-import { logOut, profileOf, resolveSession } from "@/lib/server/users";
+import { ensureUser, logOut, profileOf, resolveSession } from "@/lib/server/users";
 import { getWallet } from "@/lib/server/wallet";
 
 const HOST = "localhost:3000";
@@ -97,5 +97,34 @@ describe("avatar upload validation", () => {
     expect(sniffImage(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe("jpg");
     expect(sniffImage(new TextEncoder().encode("RIFF\0\0\0\0WEBPVP8 "))).toBe("webp");
     expect(sniffImage(new TextEncoder().encode("<svg onload=alert(1)>"))).toBeNull();
+  });
+});
+
+describe("beta invite codes", () => {
+  it("counts the code a new account signs up with, respects limits, and gates sign-up when invite-only", async () => {
+    const { submitFeedback } = await import("@/lib/server/beta");
+    const { invalidateSettings } = await import("@/lib/server/settings");
+    await tx((t) => t.beta.putCode({ code: "DISCORD", label: "Discord", maxUses: 1, uses: 0, createdAt: new Date().toISOString(), active: true }));
+    const sign = async (token: string, account: typeof alice, inviteCode?: string) => {
+      await resolveSession(token);
+      const message = await siweMessage(token, account.address);
+      return verifySiwe({ sessionToken: token, host: HOST }, { message, signature: await account.signMessage({ message }), inviteCode });
+    };
+    await sign(T1, alice, "discord");
+    expect((await tx((t) => t.users.byWallet(alice.address)))?.inviteCode).toBe("DISCORD");
+    expect((await tx((t) => t.beta.getCode("DISCORD")))?.uses).toBe(1);
+
+    // Invite-only: a used-up code (or none) can't create an account; existing accounts sign in as usual.
+    await tx((t) => t.admin.putSetting("inviteOnly", true, "00000000-0000-4000-8000-000000000001"));
+    invalidateSettings();
+    await expect(sign(T2, mallory, "DISCORD")).rejects.toMatchObject({ code: "INELIGIBLE" });
+    await expect(sign(T2, mallory)).rejects.toMatchObject({ code: "INELIGIBLE" });
+    await sign("33333333-3333-4333-8333-333333333333", alice); // returning account
+    await tx((t) => t.admin.putSetting("inviteOnly", false, "00000000-0000-4000-8000-000000000001"));
+    invalidateSettings();
+
+    const guest = await ensureUser(undefined);
+    expect((await submitFeedback(guest.id, { kind: "bug", message: "The dice froze", path: "/match/x" })).id).toBeGreaterThan(0);
+    await expect(submitFeedback(guest.id, { message: "x" })).rejects.toMatchObject({ code: "INVALID_INPUT" });
   });
 });

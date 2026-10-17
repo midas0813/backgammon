@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createPublicClient, getAddress, http, verifyMessage, type Chain } from "viem";
 import { arbitrum, base, baseSepolia, mainnet, optimism, polygon, sepolia } from "viem/chains";
 import { generateSiweNonce, parseSiweMessage, validateSiweMessage } from "viem/siwe";
+import { claimInviteCode } from "./beta";
 import { ApiError } from "./errors";
 import { tx, type User } from "./store";
 import { assertActive, createGuest, grantWelcomeCredits, profileIn } from "./users";
@@ -39,7 +40,7 @@ export interface VerifyContext {
   host: string; // expected SIWE domain
 }
 
-export async function verifySiwe(ctx: VerifyContext, body: { message?: unknown; signature?: unknown }) {
+export async function verifySiwe(ctx: VerifyContext, body: { message?: unknown; signature?: unknown; inviteCode?: unknown }) {
   if (typeof body.message !== "string" || body.message.length > 4000) throw new ApiError(400, "INVALID_INPUT", "Invalid sign-in message");
   if (typeof body.signature !== "string" || !/^0x[0-9a-fA-F]+$/.test(body.signature)) {
     throw new ApiError(400, "INVALID_INPUT", "Invalid signature");
@@ -69,11 +70,14 @@ export async function verifySiwe(ctx: VerifyContext, body: { message?: unknown; 
     let isNew = false;
     if (!user) {
       isNew = true;
+      // A new account: count its invite code (and require one while the beta is invite-only).
+      const inviteCode = await claimInviteCode(t, body.inviteCode);
       const sessionUser = await t.users.get(current.userId);
       // A guest who signs in for the first time keeps their games and practice credits.
       user = sessionUser && !sessionUser.walletAddress ? sessionUser : await createGuest(t);
       user.walletAddress = address;
       user.registeredAt = new Date().toISOString();
+      if (inviteCode) user.inviteCode = inviteCode;
       if (user.name.startsWith("Guest-")) user.name = `Player ${address.slice(2, 6).toUpperCase()}`;
     }
     user.chainId = fields.chainId;

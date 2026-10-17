@@ -12,6 +12,7 @@ import ThemePicker from "@/components/ThemePicker";
 import { api } from "@/lib/client/api";
 import { FRAMES } from "@/lib/quests";
 import FriendsCard from "@/components/FriendsCard";
+import FeedbackButton from "@/components/FeedbackButton";
 import { uploadAvatar } from "@/lib/client/avatar";
 import { setMe, useMe, type Profile } from "@/lib/client/me";
 
@@ -401,6 +402,19 @@ export default function ProfilePage() {
       </section>
 
       <FriendsCard />
+
+      <section className="card spread">
+        <span>
+          <strong>Beta</strong>
+          <span className="muted small"> · ideas, problems, anything</span>
+        </span>
+        <span className="row" style={{ gap: 6 }}>
+          <Link className="btn sm ghost" href="/beta">
+            Tester guide
+          </Link>
+          <FeedbackButton className="btn sm" />
+        </span>
+      </section>
 
       <section className="card">
         <h2>Board appearance</h2>

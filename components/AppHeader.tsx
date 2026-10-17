@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Brand } from "@/components/BrandMark";
+import FeedbackButton from "@/components/FeedbackButton";
 import WalletButton from "@/components/WalletButton";
 
 const APP_ROUTES = ["/home", "/play", "/leaderboard", "/wallet", "/profile", "/welcome"];
@@ -30,6 +31,7 @@ export default function AppHeader() {
           <Link className="btn sm ghost desktop-only" href="/wallet">
             Wallet
           </Link>
+          <FeedbackButton className="btn sm ghost desktop-only" />
           <WalletButton />
         </nav>
       </div>

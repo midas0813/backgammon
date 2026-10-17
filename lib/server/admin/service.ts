@@ -5,6 +5,7 @@ import { HOST_ONLINE_MS, cancelTableIn, voidMatchIn } from "../matches";
 import { ONLINE_WINDOW_MS, pulse } from "../lobby";
 import { chatForAdmin } from "../chat";
 import { FLAG_LABELS } from "../anticheat";
+import { normalizeCode } from "../beta";
 import { closeWeek, decidePrizeWeekIn } from "../leaderboard";
 import { publish } from "../realtime";
 import { invalidateSettings, mergeSettings, operatorSettings } from "../settings";
@@ -361,6 +362,74 @@ export async function decideFlag(ctx: AdminContext, id: number, body: { decision
   });
 }
 
+// ---- Beta: invite codes and feedback --------------------------------------------------------------
+
+export function listBeta(ctx: AdminContext) {
+  need(ctx, "disputes.view");
+  return tx(async (t) => {
+    const codes = await t.beta.listCodes();
+    const signups = await t.beta.signupsByCode();
+    const feedback = await t.beta.listFeedback(undefined, 100);
+    const users = await t.users.getMany([...new Set(feedback.map((f) => f.userId).filter((x): x is string => !!x))]);
+    return {
+      inviteOnly: (await operatorSettings(t, true)).inviteOnly,
+      codes: codes.map((c) => ({ ...c, signups: signups[c.code] ?? 0 })),
+      feedback: feedback.map((f) => ({ ...f, userName: f.userId ? (users[f.userId]?.name ?? "Deleted guest") : "Visitor" })),
+    };
+  });
+}
+
+export function createInviteCode(ctx: AdminContext, body: { code?: unknown; label?: unknown; maxUses?: unknown; days?: unknown }) {
+  need(ctx, "settings.manage");
+  const code = normalizeCode(body.code) || randomBytes(4).toString("hex").toUpperCase();
+  const label =
+    typeof body.label === "string"
+      ? body.label
+          .replace(/[\u0000-\u001f]/g, " ")
+          .trim()
+          .slice(0, 60)
+      : "";
+  if (label.length < 2) throw new ApiError(400, "INVALID_INPUT", "Name the community or partner for this code");
+  const maxUses = Number(body.maxUses) > 0 ? Math.min(100_000, Math.floor(Number(body.maxUses))) : null;
+  const days = Number(body.days) > 0 ? Math.min(365, Number(body.days)) : null;
+  return tx(async (t) => {
+    if (await t.beta.getCode(code)) throw new ApiError(409, "WRONG_PHASE", "That code already exists");
+    const c = {
+      code,
+      label,
+      maxUses,
+      uses: 0,
+      expiresAt: days ? new Date(Date.now() + days * 86_400_000).toISOString() : undefined,
+      createdBy: ctx.userId,
+      createdAt: new Date().toISOString(),
+      active: true,
+    };
+    await t.beta.putCode(c);
+    await writeAudit(t, ctx, { action: "INVITE_CODE_CREATE", targetType: "invite", targetId: code, details: { label, maxUses, days } });
+    return { code: c };
+  });
+}
+
+export function setInviteCodeActive(ctx: AdminContext, code: string, active: boolean) {
+  need(ctx, "settings.manage");
+  return tx(async (t) => {
+    const c = await t.beta.getCode(normalizeCode(code), { lock: true });
+    if (!c) throw notFound("Invite code");
+    await t.beta.putCode({ ...c, active });
+    await writeAudit(t, ctx, { action: active ? "INVITE_CODE_ENABLE" : "INVITE_CODE_DISABLE", targetType: "invite", targetId: c.code });
+    return { active };
+  });
+}
+
+export function setFeedbackStatus(ctx: AdminContext, id: number, status: unknown) {
+  need(ctx, "disputes.manage");
+  const s = status === "READ" || status === "DONE" ? status : "NEW";
+  return tx(async (t) => {
+    await t.beta.setFeedbackStatus(id, s);
+    return { status: s };
+  });
+}
+
 // ---- Weekly prizes --------------------------------------------------------------------------------
 
 export async function listPrizeWeeks(ctx: AdminContext) {
@@ -483,6 +552,7 @@ export async function updateSettings(ctx: AdminContext, body: { patch?: unknown;
     await t.admin.putSetting("spectators", next.spectators, ctx.userId);
     await t.admin.putSetting("prizePool", next.prizePool, ctx.userId);
     await t.admin.putSetting("spectatorDelaySec", next.spectatorDelaySec, ctx.userId);
+    await t.admin.putSetting("inviteOnly", next.inviteOnly, ctx.userId);
     invalidateSettings();
     await writeAudit(t, ctx, { action: "SETTINGS_UPDATE", targetType: "settings", targetId: "operator", reason, signature, details: { before, after: next } });
     return { settings: next };

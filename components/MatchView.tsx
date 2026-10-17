@@ -8,6 +8,7 @@ import Board, { boardSpot, type AnimMove, type DieView } from "@/components/Boar
 import Confetti from "@/components/Confetti";
 import FxLayer, { type FxHandle } from "@/components/FxLayer";
 import DelayedWatch from "@/components/DelayedWatch";
+import FeedbackButton from "@/components/FeedbackButton";
 import Emoji from "@/components/Emoji";
 import { ChatSheet, FloatingReactions, type ChatMessageView } from "@/components/MatchChat";
 import Modal from "@/components/Modal";
@@ -919,6 +920,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
               Report a problem with this match
             </Link>
           )}
+          <FeedbackButton className="btn block" />
           <button className="btn block" onClick={() => setMenuOpen(false)}>
             Close
           </button>

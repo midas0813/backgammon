@@ -11,6 +11,8 @@ import {
   type PrizeWeek,
   type CheatFlag,
   type TournamentDoc,
+  type InviteCode,
+  type Feedback,
   type Friendship,
   type MatchInvite,
   type DepositIntent,
@@ -92,6 +94,7 @@ function toUser(r: Row): User {
     rating: r.rating === undefined || r.rating === null ? 1500 : Number(r.rating),
     ratingExperience: num(r.rating_experience),
     ratingGames: num(r.rating_games),
+    inviteCode: (r.invite_code as string) ?? undefined,
   };
 }
 
@@ -124,6 +127,19 @@ function toAdjustment(r: Row): Adjustment {
     decidedBy: (r.decided_by as string) ?? undefined,
     decidedAt: r.decided_at ? iso(r.decided_at) : undefined,
     txnKey: (r.txn_key as string) ?? undefined,
+  };
+}
+
+function toCode(r: Row): InviteCode {
+  return {
+    code: String(r.code),
+    label: String(r.label),
+    maxUses: r.max_uses === null ? null : num(r.max_uses),
+    uses: num(r.uses),
+    expiresAt: r.expires_at ? iso(r.expires_at) : undefined,
+    createdBy: (r.created_by as string) ?? undefined,
+    createdAt: iso(r.created_at),
+    active: Boolean(r.active),
   };
 }
 
@@ -289,14 +305,14 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
       async put(u) {
         await q(
           `insert into app_users (id, wallet_address, chain_id, name, theme_id, reduced_motion, bio, country, avatar, created_at, registered_at,
-             sound, high_contrast, board_orientation, status, suspended_until, suspended_reason, frame, created_ip)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+             sound, high_contrast, board_orientation, status, suspended_until, suspended_reason, frame, created_ip, invite_code)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
            on conflict (id) do update set wallet_address = excluded.wallet_address, chain_id = excluded.chain_id,
              name = excluded.name, theme_id = excluded.theme_id, reduced_motion = excluded.reduced_motion, bio = excluded.bio,
              country = excluded.country, avatar = excluded.avatar, registered_at = excluded.registered_at,
              sound = excluded.sound, high_contrast = excluded.high_contrast, board_orientation = excluded.board_orientation,
              status = excluded.status, suspended_until = excluded.suspended_until, suspended_reason = excluded.suspended_reason,
-             frame = excluded.frame`,
+             frame = excluded.frame, invite_code = coalesce(app_users.invite_code, excluded.invite_code)`,
           [
             u.id,
             u.walletAddress ?? null,
@@ -317,6 +333,7 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
             u.suspendedReason ?? null,
             u.frame ?? "none",
             u.createdIp ?? null,
+            u.inviteCode ?? null,
           ],
         );
       },
@@ -844,6 +861,54 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
           [userId, periodKey, questId, target],
         );
         return rows.length > 0;
+      },
+    },
+    beta: {
+      async getCode(code, opts) {
+        const [r] = await q(`select * from invite_codes where code = $1 ${opts?.lock ? "for update" : ""}`, [code]);
+        return r ? toCode(r) : undefined;
+      },
+      async putCode(c) {
+        await q(
+          `insert into invite_codes (code, label, max_uses, uses, expires_at, created_by, created_at, active) values ($1, $2, $3, $4, $5, $6, $7, $8)
+           on conflict (code) do update set label = excluded.label, max_uses = excluded.max_uses, uses = excluded.uses,
+             expires_at = excluded.expires_at, active = excluded.active`,
+          [c.code, c.label, c.maxUses, c.uses, c.expiresAt ?? null, c.createdBy ?? null, c.createdAt, c.active],
+        );
+      },
+      async listCodes() {
+        const rows = await q(`select * from invite_codes order by created_at desc limit 200`);
+        return rows.map(toCode);
+      },
+      async signupsByCode() {
+        const rows = await q(`select invite_code, count(*) as n from app_users where invite_code is not null group by invite_code`);
+        return Object.fromEntries(rows.map((r) => [String(r.invite_code), num(r.n)]));
+      },
+      async addFeedback(f) {
+        const [r] = await q(`insert into feedback (user_id, kind, message, path, user_agent) values ($1, $2, $3, $4, $5) returning id`, [
+          f.userId ?? null,
+          f.kind,
+          f.message,
+          f.path ?? null,
+          f.userAgent ?? null,
+        ]);
+        return num(r.id);
+      },
+      async listFeedback(status, limit) {
+        const rows = await q(`select * from feedback where ($1::text is null or status = $1) order by id desc limit $2`, [status ?? null, limit]);
+        return rows.map((r): Feedback => ({
+          id: num(r.id),
+          userId: (r.user_id as string) ?? undefined,
+          kind: r.kind as Feedback["kind"],
+          message: String(r.message),
+          path: (r.path as string) ?? undefined,
+          userAgent: (r.user_agent as string) ?? undefined,
+          status: r.status as Feedback["status"],
+          createdAt: iso(r.created_at),
+        }));
+      },
+      async setFeedbackStatus(id, status) {
+        await q(`update feedback set status = $2 where id = $1`, [id, status]);
       },
     },
     tournaments: {

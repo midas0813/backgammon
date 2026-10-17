@@ -6,6 +6,8 @@ export interface OperatorSettings {
   maintenance: { enabled: boolean; message: string };
   /** Global switch for watching other players' matches. */
   spectators: boolean;
+  /** New wallet accounts need a valid invite code (guests can still play free games). */
+  inviteOnly: boolean;
   /** Spectators of ranked and tournament matches see them this many seconds late (0 = live). */
   spectatorDelaySec: number;
   /** Weekly free prize pool for the leaderboard (amount in token minor units; split in percent). */
@@ -16,6 +18,7 @@ export const DEFAULT_SETTINGS: OperatorSettings = {
   maintenance: { enabled: false, message: "We are doing quick maintenance. New matches will open again shortly." },
   spectators: true,
   spectatorDelaySec: 20,
+  inviteOnly: false,
   prizePool: { enabled: true, units: 5000, split: [50, 30, 20], minOpponents: 5 },
 };
 
@@ -46,6 +49,7 @@ export function mergeSettings(raw: Record<string, unknown>): OperatorSettings {
     },
     spectators: typeof raw.spectators === "boolean" ? raw.spectators : DEFAULT_SETTINGS.spectators,
     prizePool: mergePrizePool(raw.prizePool),
+    inviteOnly: typeof raw.inviteOnly === "boolean" ? raw.inviteOnly : DEFAULT_SETTINGS.inviteOnly,
     spectatorDelaySec:
       Number.isInteger(raw.spectatorDelaySec) && (raw.spectatorDelaySec as number) >= 0 && (raw.spectatorDelaySec as number) <= 600
         ? (raw.spectatorDelaySec as number)

@@ -11,6 +11,15 @@ import { closeWalletDialog, walletDialogStore } from "@/lib/client/wallet";
 
 const STATEMENT = "Sign in to Backgammon. This free signature proves you own this wallet. It does not send a transaction, cost gas or move funds.";
 
+/** The invite code from the link the player arrived with (counted when their account is created). */
+const savedInvite = () => {
+  try {
+    return localStorage.getItem("bg:invite") ?? undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 const inTenMinutes = () => new Date(Date.now() + 10 * 60 * 1000);
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
@@ -67,7 +76,7 @@ function Dialog() {
       const res = await fetch("/api/auth/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, signature }),
+        body: JSON.stringify({ message, signature, inviteCode: savedInvite() }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error?.message ?? "Sign-in failed");

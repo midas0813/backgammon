@@ -93,6 +93,21 @@ export default function Settings() {
         </label>
         <label className="toggle">
           <span>
+            <strong>Invite-only beta</strong>
+            <span className="muted small" style={{ display: "block" }}>
+              New wallet accounts need a valid invite code (Beta section). Guests can still play free games.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            disabled={!manage}
+            checked={draft.inviteOnly}
+            onChange={(e) => setDraft({ ...draft, inviteOnly: e.target.checked })}
+          />
+        </label>
+        <label className="toggle">
+          <span>
             <strong>Weekly prize pool</strong>
             <span className="muted small" style={{ display: "block" }}>
               Top {draft.prizePool.split.length} eligible players each week ({draft.prizePool.split.join(" / ")}%), paid after an admin&apos;s check under

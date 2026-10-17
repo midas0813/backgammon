@@ -19,6 +19,8 @@ import {
   type PrizeWeek,
   type CheatFlag,
   type TournamentDoc,
+  type InviteCode,
+  type Feedback,
   type Friendship,
   type MatchInvite,
   type Session,
@@ -88,6 +90,8 @@ interface Data {
   flags: Record<string, CheatFlag>;
   friends: Record<string, Friendship>;
   tournaments: Record<string, TournamentDoc>;
+  codes: Record<string, InviteCode>;
+  feedback: Record<string, Feedback>;
   invites: Record<string, MatchInvite>;
   ledger: { balances: Record<string, number>; transactions: Txn[] };
 }
@@ -128,6 +132,8 @@ const empty = (): Data => ({
   flags: {},
   friends: {},
   tournaments: {},
+  codes: {},
+  feedback: {},
   invites: {},
   ledger: { balances: {}, transactions: [] },
 });
@@ -170,6 +176,8 @@ export function createMemoryStore(file: string | null): Store {
         "flags",
         "friends",
         "tournaments",
+        "codes",
+        "feedback",
         "invites",
       ] as const) {
         (data as unknown as Record<string, object>)[k] ??= {};
@@ -547,6 +555,30 @@ export function createMemoryStore(file: string | null): Store {
           if (!cur || cur.claimedAt || cur.progress < target) return false;
           put("quests", k, { ...cur, claimedAt: new Date().toISOString() });
           return true;
+        },
+      },
+      beta: {
+        getCode: async (code) => get("codes", code),
+        putCode: async (c) => put("codes", c.code, c),
+        listCodes: async () => values<InviteCode>("codes").sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+        signupsByCode: async () => {
+          const out: Record<string, number> = {};
+          for (const u of values<User>("users")) if (u.inviteCode) out[u.inviteCode] = (out[u.inviteCode] ?? 0) + 1;
+          return out;
+        },
+        addFeedback: async (f) => {
+          const id = values("feedback").length + 1;
+          put("feedback", String(id), { ...f, id, status: "NEW", createdAt: new Date().toISOString() });
+          return id;
+        },
+        listFeedback: async (status, limit) =>
+          values<Feedback>("feedback")
+            .filter((f) => !status || f.status === status)
+            .sort((a, b) => b.id - a.id)
+            .slice(0, limit),
+        setFeedbackStatus: async (id, status) => {
+          const f = get<Feedback>("feedback", String(id));
+          if (f) put("feedback", String(id), { ...f, status });
         },
       },
       tournaments: {

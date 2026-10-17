@@ -29,6 +29,21 @@ export default function OnlineHeartbeat() {
   const shown = useRef(new Set<number>());
   const shownMatches = useRef(new Set<string>());
 
+  // An invite link (?invite=CODE) is remembered until the player creates an account.
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get("invite");
+    if (!code) return;
+    try {
+      localStorage.setItem(
+        "bg:invite",
+        code
+          .toUpperCase()
+          .replace(/[^A-Z0-9-]/g, "")
+          .slice(0, 24),
+      );
+    } catch {}
+  }, []);
+
   useEffect(() => {
     const beat = async () => {
       if (document.visibilityState !== "visible") return;
