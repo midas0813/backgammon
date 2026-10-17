@@ -2553,3 +2553,20 @@ html[data-reduced-motion="true"]::view-transition-group(*) {
   font-weight: 800;
   font-size: 17px;
 }
+
+/* ---- Replays --------------------------------------------------------------------------------- */
+.replay-caption {
+  display: grid;
+  gap: 2px;
+  text-align: center;
+  min-height: 46px;
+}
+.replay-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr 2fr 1fr 1fr;
+  gap: 8px;
+}
+.replay input[type="range"] {
+  width: 100%;
+  accent-color: var(--action);
+}

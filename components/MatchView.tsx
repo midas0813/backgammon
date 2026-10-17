@@ -15,7 +15,8 @@ import { REACTIONS } from "@/lib/chat";
 import { applyMove, diceUses, legalSequences, nextMoves, pipCount, type Move, type Seat } from "@/lib/engine/board";
 import type { GameResult } from "@/lib/engine/match";
 import type { MatchSnapshot } from "@/lib/server/matches";
-import { ClientApiError, api, sendIdempotent } from "@/lib/client/api";
+import { ClientApiError, api, isHandled, sendIdempotent } from "@/lib/client/api";
+import { toast } from "@/lib/client/toast";
 import { effectsFor, longestBlock, type Effect } from "@/lib/client/fx";
 import { useMe } from "@/lib/client/me";
 import { useLatest } from "@/lib/client/hooks";
@@ -1149,6 +1150,12 @@ function MatchOver({ snap }: { snap: Snapshot }) {
           ))}
         </ul>
       </details>
+      {snap.yourSeats.length === 1 && (snap.mode === "quick" || snap.mode === "private") && (
+        <AfterMatch matchId={snap.matchId} opponent={snap.seats[1 - snap.yourSeats[0]].name} />
+      )}
+      <Link className="btn block" href={`/replay/${snap.matchId}`}>
+        Watch the replay
+      </Link>
       {snap.fair && (
         <Link className="btn block" href={`/fair?match=${snap.matchId}`}>
           Verify this game&apos;s dice
@@ -1157,6 +1164,47 @@ function MatchOver({ snap }: { snap: Snapshot }) {
       <Link className="btn primary block" href="/play">
         Back to lobby
       </Link>
+    </div>
+  );
+}
+
+/** Rematch and add-friend, after an online match. */
+function AfterMatch({ matchId, opponent }: { matchId: string; opponent: string }) {
+  const router = useRouter();
+  const [friend, setFriend] = useState<"PENDING" | "ACCEPTED" | null>(null);
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="grid2">
+      <button
+        className="btn primary"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            const r = await api<{ matchId: string; joined: boolean }>(`/api/matches/${matchId}/rematch`, { method: "POST", body: {} });
+            if (!r.joined) toast(`Rematch sent to ${opponent}.`, { tone: "ok" });
+            router.push(`/match/${r.matchId}`);
+          } catch (e) {
+            if (!isHandled(e)) toast(e instanceof Error ? e.message : "Could not start a rematch", { tone: "warn" });
+            setBusy(false);
+          }
+        }}
+      >
+        Rematch
+      </button>
+      <button
+        className="btn"
+        disabled={!!friend}
+        onClick={async () => {
+          try {
+            setFriend((await api<{ status: "PENDING" | "ACCEPTED" }>(`/api/matches/${matchId}/friend`, { method: "POST", body: {} })).status);
+          } catch (e) {
+            toast(e instanceof Error ? e.message : "Could not send", { tone: "warn" });
+          }
+        }}
+      >
+        {friend === "ACCEPTED" ? "Friends ✓" : friend === "PENDING" ? "Request sent" : `Add ${opponent}`}
+      </button>
     </div>
   );
 }

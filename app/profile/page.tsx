@@ -11,6 +11,7 @@ import SupportCard from "@/components/SupportCard";
 import ThemePicker from "@/components/ThemePicker";
 import { api } from "@/lib/client/api";
 import { FRAMES } from "@/lib/quests";
+import FriendsCard from "@/components/FriendsCard";
 import { uploadAvatar } from "@/lib/client/avatar";
 import { setMe, useMe, type Profile } from "@/lib/client/me";
 
@@ -398,6 +399,8 @@ export default function ProfilePage() {
           })}
         </div>
       </section>
+
+      <FriendsCard />
 
       <section className="card">
         <h2>Board appearance</h2>

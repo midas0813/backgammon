@@ -10,6 +10,8 @@ import {
   type ChatMessage,
   type PrizeWeek,
   type CheatFlag,
+  type Friendship,
+  type MatchInvite,
   type DepositIntent,
   type Dispute,
   type LobbyRow,
@@ -121,6 +123,29 @@ function toAdjustment(r: Row): Adjustment {
     decidedBy: (r.decided_by as string) ?? undefined,
     decidedAt: r.decided_at ? iso(r.decided_at) : undefined,
     txnKey: (r.txn_key as string) ?? undefined,
+  };
+}
+
+function toFriendship(r: Row): Friendship {
+  return {
+    id: num(r.id),
+    userA: String(r.user_a),
+    userB: String(r.user_b),
+    requestedBy: String(r.requested_by),
+    status: r.status as Friendship["status"],
+    createdAt: iso(r.created_at),
+  };
+}
+
+function toInvite(r: Row): MatchInvite {
+  return {
+    id: num(r.id),
+    fromUser: String(r.from_user),
+    toUser: String(r.to_user),
+    matchId: String(r.match_id),
+    rematchOf: (r.rematch_of as string) ?? undefined,
+    status: r.status as MatchInvite["status"],
+    createdAt: iso(r.created_at),
   };
 }
 
@@ -330,6 +355,14 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
       },
       async markAway(id, at) {
         await q(`update app_users set last_seen_at = least(coalesce(last_seen_at, 'infinity'), to_timestamp($2::float8 / 1000)) where id = $1`, [id, at]);
+      },
+      async seenMany(ids) {
+        if (!ids.length) return {};
+        const rows = await q(
+          `select id, (extract(epoch from last_seen_at) * 1000)::float8 as ms from app_users where id = any($1::uuid[]) and last_seen_at is not null`,
+          [ids],
+        );
+        return Object.fromEntries(rows.map((r) => [String(r.id), num(r.ms)]));
       },
       async countSeenSince(at) {
         const [r] = await q(`select count(*) as n from app_users where last_seen_at >= to_timestamp($1::float8 / 1000)`, [at]);
@@ -810,6 +843,63 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
           [userId, periodKey, questId, target],
         );
         return rows.length > 0;
+      },
+    },
+    friends: {
+      async get(a, b) {
+        const [x, y] = [a, b].sort();
+        const [r] = await q(`select * from friendships where user_a = $1 and user_b = $2`, [x, y]);
+        return r ? toFriendship(r) : undefined;
+      },
+      async byId(id) {
+        const [r] = await q(`select * from friendships where id = $1`, [id]);
+        return r ? toFriendship(r) : undefined;
+      },
+      async put(f) {
+        const [x, y] = [f.userA, f.userB].sort();
+        await q(
+          `insert into friendships (user_a, user_b, requested_by, status, accepted_at)
+           values ($1, $2, $3, $4, case when $4 = 'ACCEPTED' then now() end)
+           on conflict (user_a, user_b) do update set status = excluded.status, requested_by = excluded.requested_by,
+             accepted_at = coalesce(friendships.accepted_at, excluded.accepted_at)`,
+          [x, y, f.requestedBy, f.status],
+        );
+      },
+      async remove(id) {
+        await q(`delete from friendships where id = $1`, [id]);
+      },
+      async list(userId) {
+        const rows = await q(`select * from friendships where user_a = $1 or user_b = $1 order by created_at desc limit 200`, [userId]);
+        return rows.map(toFriendship);
+      },
+    },
+    invites: {
+      async add(i) {
+        const [r] = await q(`insert into match_invites (from_user, to_user, match_id, rematch_of) values ($1, $2, $3, $4) returning *`, [
+          i.fromUser,
+          i.toUser,
+          i.matchId,
+          i.rematchOf ?? null,
+        ]);
+        return toInvite(r);
+      },
+      async get(id) {
+        const [r] = await q(`select * from match_invites where id = $1`, [id]);
+        return r ? toInvite(r) : undefined;
+      },
+      async pendingFor(userId) {
+        const rows = await q(`select * from match_invites where to_user = $1 and status = 'PENDING' order by id desc limit 10`, [userId]);
+        return rows.map(toInvite);
+      },
+      async rematch(matchId, fromUser) {
+        const [r] = await q(`select * from match_invites where rematch_of = $1 and from_user = $2 and status = 'PENDING' order by id desc limit 1`, [
+          matchId,
+          fromUser,
+        ]);
+        return r ? toInvite(r) : undefined;
+      },
+      async setStatus(id, status) {
+        await q(`update match_invites set status = $2 where id = $1`, [id, status]);
       },
     },
     flags: {

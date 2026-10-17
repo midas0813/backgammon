@@ -18,6 +18,8 @@ import {
   type MatchResultRow,
   type PrizeWeek,
   type CheatFlag,
+  type Friendship,
+  type MatchInvite,
   type Session,
   type StoredEvent,
   type Store,
@@ -83,6 +85,8 @@ interface Data {
   quests: Record<string, { userId: string; periodKey: string; questId: string; progress: number; claimedAt?: string }>;
   prizes: Record<string, PrizeWeek>;
   flags: Record<string, CheatFlag>;
+  friends: Record<string, Friendship>;
+  invites: Record<string, MatchInvite>;
   ledger: { balances: Record<string, number>; transactions: Txn[] };
 }
 
@@ -120,6 +124,8 @@ const empty = (): Data => ({
   quests: {},
   prizes: {},
   flags: {},
+  friends: {},
+  invites: {},
   ledger: { balances: {}, transactions: [] },
 });
 
@@ -159,6 +165,8 @@ export function createMemoryStore(file: string | null): Store {
         "quests",
         "prizes",
         "flags",
+        "friends",
+        "invites",
       ] as const) {
         (data as unknown as Record<string, object>)[k] ??= {};
       }
@@ -275,6 +283,7 @@ export function createMemoryStore(file: string | null): Store {
           return xp;
         },
         markAway: async (id, at) => put("seen", id, Math.min(get<number>("seen", id) ?? at, at)),
+        seenMany: async (ids) => Object.fromEntries(ids.map((id) => [id, get<number>("seen", id)]).filter(([, v]) => v !== undefined)),
         countSeenSince: async (at) => values<number>("seen").filter((v) => v >= at).length,
         deleteInactiveGuests: async (before, limit) => {
           const matches = values<MatchRecord>("matches");
@@ -534,6 +543,41 @@ export function createMemoryStore(file: string | null): Store {
           if (!cur || cur.claimedAt || cur.progress < target) return false;
           put("quests", k, { ...cur, claimedAt: new Date().toISOString() });
           return true;
+        },
+      },
+      friends: {
+        get: async (a, b) => get("friends", [a, b].sort().join("|")),
+        byId: async (id) => values<Friendship>("friends").find((f) => f.id === id),
+        put: async (f) => {
+          const [x, y] = [f.userA, f.userB].sort();
+          const key = `${x}|${y}`;
+          const cur = get<Friendship>("friends", key);
+          put("friends", key, { ...f, userA: x, userB: y, id: cur?.id ?? values("friends").length + 1, createdAt: cur?.createdAt ?? new Date().toISOString() });
+        },
+        remove: async (id) => {
+          const f = values<Friendship>("friends").find((x) => x.id === id);
+          if (f) del("friends", `${f.userA}|${f.userB}`);
+        },
+        list: async (userId) => values<Friendship>("friends").filter((f) => f.userA === userId || f.userB === userId),
+      },
+      invites: {
+        add: async (i) => {
+          const inv: MatchInvite = { ...i, id: values("invites").length + 1, status: "PENDING", createdAt: new Date().toISOString() };
+          put("invites", String(inv.id), inv);
+          return inv;
+        },
+        get: async (id) => get("invites", String(id)),
+        pendingFor: async (userId) =>
+          values<MatchInvite>("invites")
+            .filter((i) => i.toUser === userId && i.status === "PENDING")
+            .sort((a, b) => b.id - a.id),
+        rematch: async (matchId, fromUser) =>
+          values<MatchInvite>("invites")
+            .filter((i) => i.rematchOf === matchId && i.fromUser === fromUser && i.status === "PENDING")
+            .sort((a, b) => b.id - a.id)[0],
+        setStatus: async (id, status) => {
+          const i = get<MatchInvite>("invites", String(id));
+          if (i) put("invites", String(id), { ...i, status });
         },
       },
       flags: {

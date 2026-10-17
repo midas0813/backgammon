@@ -279,6 +279,25 @@ export interface CheatFlag {
   note?: string;
 }
 
+export interface Friendship {
+  id: number;
+  userA: string;
+  userB: string;
+  requestedBy: string;
+  status: "PENDING" | "ACCEPTED";
+  createdAt: string;
+}
+
+export interface MatchInvite {
+  id: number;
+  fromUser: string;
+  toUser: string;
+  matchId: string;
+  rematchOf?: string;
+  status: "PENDING" | "ACCEPTED" | "DECLINED" | "EXPIRED";
+  createdAt: string;
+}
+
 export interface PlayerTotals {
   played: number;
   wins: number;
@@ -405,6 +424,8 @@ export interface Tx {
     /** Add XP atomically; returns the new total. */
     addXp(id: string, n: number): Promise<number>;
     countSeenSince(at: number): Promise<number>;
+    /** Last activity (ms) per user; missing = never. */
+    seenMany(ids: string[]): Promise<Record<string, number>>;
     /**
      * Remove up to `limit` guests (no wallet) last active before `before` (ms) who are not in an
      * online game, with their computer, pass & play and unjoined games, results, reports and sessions.
@@ -516,6 +537,22 @@ export interface Tx {
     list(status: CheatFlag["status"] | undefined, limit: number): Promise<CheatFlag[]>;
     decide(id: number, status: "DISMISSED" | "ACTIONED", by: string, note: string): Promise<void>;
     countOpen(): Promise<number>;
+  };
+  friends: {
+    get(a: string, b: string): Promise<Friendship | undefined>;
+    byId(id: number): Promise<Friendship | undefined>;
+    put(f: Omit<Friendship, "id" | "createdAt">): Promise<void>;
+    remove(id: number): Promise<void>;
+    /** All of this user's friendships (either side), any status. */
+    list(userId: string): Promise<Friendship[]>;
+  };
+  invites: {
+    add(i: Omit<MatchInvite, "id" | "status" | "createdAt">): Promise<MatchInvite>;
+    get(id: number): Promise<MatchInvite | undefined>;
+    pendingFor(userId: string): Promise<MatchInvite[]>;
+    /** A pending rematch invite after `matchId`, from `fromUser`. */
+    rematch(matchId: string, fromUser: string): Promise<MatchInvite | undefined>;
+    setStatus(id: number, status: MatchInvite["status"]): Promise<void>;
   };
   /** Site-wide running totals (games played, …). */
   counters: {

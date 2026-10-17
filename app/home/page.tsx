@@ -12,6 +12,7 @@ import { setMe } from "@/lib/client/me";
 import { formatTokens } from "@/lib/fees";
 import type { HomeData } from "@/lib/server/home";
 import QuestsCard from "@/components/QuestsCard";
+import FriendsCard from "@/components/FriendsCard";
 
 const POLL_MS = 8000;
 
@@ -149,6 +150,7 @@ export default function Home() {
       )}
 
       <QuestsCard />
+      <FriendsCard />
 
       <section className="card today">
         <div className="spread">

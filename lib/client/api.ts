@@ -41,7 +41,7 @@ export function deviceSeed() {
   return [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 
-const STARTS_GAME = /^\/api\/(tables|matches)(\/[0-9a-z]+\/join)?$/;
+const STARTS_GAME = /^\/api\/((tables|matches)(\/[0-9a-z]+\/(join|rematch))?|friends\/\d+\/invite|invites\/\d+)$/;
 
 export async function api<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
   // Starting or joining a match: this device contributes its seed to the dice.
