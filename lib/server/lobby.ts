@@ -43,6 +43,7 @@ export async function createTable(
     spectatorChat?: unknown;
     spectatorEmoji?: unknown;
     clock?: unknown;
+    clientSeed?: unknown;
   },
 ) {
   const targetPoints = Number(body.targetPoints);
@@ -53,6 +54,7 @@ export async function createTable(
     spectatorChat: body.spectatorChat !== false,
     spectatorEmoji: body.spectatorEmoji !== false,
     clock: body.clock === "fast" || body.clock === "none" ? body.clock : "standard",
+    clientSeed: body.clientSeed,
   });
 }
 

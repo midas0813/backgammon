@@ -2321,3 +2321,45 @@ html[data-reduced-motion="true"]::view-transition-group(*) {
   margin: 0;
   font-size: 13.5px;
 }
+
+/* ---- Fair play ------------------------------------------------------------------------------- */
+.fair-steps {
+  display: grid;
+  gap: 8px;
+  padding-left: 18px;
+}
+.fair-ok {
+  color: var(--action);
+  font-weight: 700;
+}
+.fair-rolls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.fair-rolls span {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: #f7f1e6;
+  color: #0b1220;
+  font-weight: 800;
+  font-size: 13px;
+}
+.fair-rolls span.bad {
+  background: var(--error);
+}
+.fair-badge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgb(101 226 188 / 0.45);
+  border-radius: 12px;
+  color: var(--action);
+  font-weight: 750;
+  text-decoration: none;
+}

@@ -848,6 +848,11 @@ export default function MatchView({ matchId }: { matchId: string }) {
 
       {menuOpen && (
         <Modal title="Match menu" onClose={() => setMenuOpen(false)}>
+          {snap.fair && (
+            <Link className="fair-badge" href={`/fair?match=${matchId}`}>
+              Fair dice ✓ <span className="muted small">sealed {snap.fair.commit.slice(0, 10)}… · how it works</span>
+            </Link>
+          )}
           <p className="muted small">Board appearance (only changes your view — dice, moves and score are unaffected)</p>
           <ThemePicker />
           <div className="muted small">
@@ -1130,6 +1135,11 @@ function MatchOver({ snap }: { snap: Snapshot }) {
           ))}
         </ul>
       </details>
+      {snap.fair && (
+        <Link className="btn block" href={`/fair?match=${snap.matchId}`}>
+          Verify this game&apos;s dice
+        </Link>
+      )}
       <Link className="btn primary block" href="/play">
         Back to lobby
       </Link>

@@ -34,7 +34,20 @@ export class ClientApiError extends Error {
 }
 
 /** JSON fetch with the contract's error envelope. Network failures surface as code NETWORK (outcome unknown). */
+/** A fresh random seed from this device, mixed into the dice of a match it starts or joins (fair dice). */
+export function deviceSeed() {
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  return [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+const STARTS_GAME = /^\/api\/(tables|matches)(\/[0-9a-z]+\/join)?$/;
+
 export async function api<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
+  // Starting or joining a match: this device contributes its seed to the dice.
+  if (init?.method === "POST" && STARTS_GAME.test(path) && typeof window !== "undefined") {
+    init = { ...init, body: { ...((init.body as object) ?? {}), clientSeed: deviceSeed() } };
+  }
   let res: Response;
   try {
     res = await fetch(path, {

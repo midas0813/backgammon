@@ -18,6 +18,8 @@ import { ApiError, notFound } from "./errors";
 import { tx, type ClosedReason, type MatchMode, type MatchRecord, type MatchResultRow, type StoredEvent, type Tx, type User } from "./store";
 import { SPECTATOR_WINDOW_MS } from "./store/types";
 import { newClock, nextDecision, noteReturn, timedOut, clockView, type ClockPreset } from "./clock";
+import { cleanSeed } from "../fair";
+import { fairView, newFair, nextDie } from "./fair";
 import { publish } from "./realtime";
 import { operatorSettings } from "./settings";
 import { GUEST_IDLE_MS, assertActive, avatarUrl } from "./users";
@@ -25,10 +27,20 @@ import { GUEST_IDLE_MS, assertActive, avatarUrl } from "./users";
 const ALLOWED_POINTS = [1, 3, 5, 7];
 const ACTION_TYPES: ActionType[] = ["ROLL", "CONFIRM_TURN", "OFFER_DOUBLE", "ACCEPT_DOUBLE", "PASS_DOUBLE", "FORFEIT_MATCH"];
 
-/** Server dice: cryptographically random, never supplied by the client. */
-let env: Env = { roll: () => randomInt(1, 7), newId: () => randomUUID() };
-export function setEnvForTests(e: Env) {
-  env = e;
+/** Tests only: scripted or seeded dice instead of each match's provably fair dice. */
+let testEnv: Env | null = null;
+export function setEnvForTests(e: Env | null) {
+  testEnv = e;
+}
+
+/**
+ * Dice for one match: derived from the match's sealed server seed and the players' device seeds, so
+ * they can be verified afterwards (lib/fair.ts). Never supplied by the client.
+ */
+function envFor(rec: MatchRecord): Env {
+  if (testEnv) return testEnv;
+  const fair = rec.fair;
+  return { roll: fair ? () => nextDie(fair) : () => randomInt(1, 7), newId: () => randomUUID() };
 }
 
 function shortId() {
@@ -164,7 +176,7 @@ export async function settleIn(t: Tx, matchId: string, now = Date.now()) {
   else if (s.kind === "close") closeNoResult(rec, s.reason);
   else {
     const reason = s.kind === "timeout" ? "timeout" : "abandoned";
-    const events = applyAction(rec.state, s.loser, { actionType: "FORFEIT_MATCH", payload: { confirm: true } }, env);
+    const events = applyAction(rec.state, s.loser, { actionType: "FORFEIT_MATCH", payload: { confirm: true } }, envFor(rec));
     rec.state.endReason = reason;
     for (const e of events) if (e.type === "MATCH_COMPLETED") e.payload.reason = reason;
     rec.version += 1;
@@ -243,18 +255,20 @@ export async function assertNoOtherGame(t: Tx, userId: string, except?: string) 
   }
 }
 
-export async function join(t: Tx, rec: MatchRecord, userId: string) {
+export async function join(t: Tx, rec: MatchRecord, userId: string, clientSeed?: unknown) {
   if (rec.state.status !== "WAITING") throw new ApiError(409, "EVENT_FULL", "Someone just took this seat");
   if (rec.seats[0] === userId) throw new ApiError(409, "ALREADY_SEATED", "You are already in this match");
   const user = await t.users.get(userId);
   assertActive(user);
   await assertNoOtherGame(t, userId, rec.id);
   rec.seats[1] = userId;
+  // The joiner's device seed goes in before the first roll.
+  if (rec.fair) rec.fair.clientSeeds[1] = cleanSeed(clientSeed);
   rec.names[1] = user?.name ?? "Player";
   rec.startedAt = Date.now();
   rec.version += 1;
   pushEvents(rec, [{ type: "MATCH_READY", payload: {} }]);
-  pushEvents(rec, startMatch(rec.state, env));
+  pushEvents(rec, startMatch(rec.state, envFor(rec)));
   await save(t, rec);
   await t.presence.touch(rec.id, 1, Date.now()); // the joiner is here
 }
@@ -263,7 +277,7 @@ export async function createMatch(
   userId: string,
   mode: MatchMode,
   targetPoints: number,
-  opts: { allowSpectators?: boolean; spectatorChat?: boolean; spectatorEmoji?: boolean; clock?: ClockPreset } = {},
+  opts: { allowSpectators?: boolean; spectatorChat?: boolean; spectatorEmoji?: boolean; clock?: ClockPreset; clientSeed?: unknown } = {},
 ): Promise<{ matchId: string }> {
   if (!ALLOWED_POINTS.includes(targetPoints)) throw new ApiError(400, "INVALID_INPUT", "Unsupported match length");
   if (!["quick", "private", "local", "bot"].includes(mode)) throw new ApiError(400, "INVALID_INPUT", "Unsupported mode");
@@ -290,13 +304,14 @@ export async function createMatch(
       allowSpectators: opts.allowSpectators !== false,
       // Online matches get a clock (standard unless the host chose otherwise); computer and pass & play none.
       clock: mode === "quick" || mode === "private" ? newClock(opts.clock ?? "standard", targetPoints) : undefined,
+      fair: newFair(opts.clientSeed),
       spectatorChat: opts.spectatorChat !== false,
       spectatorEmoji: opts.spectatorEmoji !== false,
     };
     pushEvents(rec, [{ type: "MATCH_CREATED", payload: { mode, targetPoints } }]);
     if (mode === "local" || mode === "bot") {
       rec.version += 1;
-      pushEvents(rec, startMatch(rec.state, env));
+      pushEvents(rec, startMatch(rec.state, envFor(rec)));
     }
     await save(t, rec);
     if (online(rec)) await t.presence.touch(rec.id, 0, Date.now());
@@ -304,7 +319,7 @@ export async function createMatch(
   });
 }
 
-export function joinMatch(userId: string, matchId: string) {
+export function joinMatch(userId: string, matchId: string, clientSeed?: unknown) {
   return tx(async (t) => {
     const rec = await t.matches.get(matchId, { lock: true });
     if (!rec) throw notFound("Match");
@@ -312,7 +327,7 @@ export function joinMatch(userId: string, matchId: string) {
     if (rec.state.status === "WAITING" && settlementFor(rec, await t.presence.get(matchId), Date.now())) {
       throw new ApiError(409, "EVENT_FULL", "This table has closed");
     }
-    await join(t, rec, userId);
+    await join(t, rec, userId, clientSeed);
     return { matchId };
   });
 }
@@ -349,7 +364,7 @@ export function leaveMatch(userId: string, matchId: string) {
       closeNoResult(rec, "ended");
     } else if (st.status === "ACTIVE") {
       rec.version += 1;
-      pushEvents(rec, applyAction(st, seats[0], { actionType: "FORFEIT_MATCH", payload: { confirm: true } }, env));
+      pushEvents(rec, applyAction(st, seats[0], { actionType: "FORFEIT_MATCH", payload: { confirm: true } }, envFor(rec)));
     } else {
       return { matchId, status: st.status };
     }
@@ -481,7 +496,7 @@ export async function submitAction(userId: string, matchId: string, req: ActionR
     const actor: Seat = seats.length === 2 ? (seatToAct(rec.state) ?? 0) : seats[0];
     let events: DomainEvent[];
     try {
-      events = applyAction(rec.state, actor, action, env);
+      events = applyAction(rec.state, actor, action, envFor(rec));
     } catch (e) {
       if (e instanceof GameError) throw new ApiError(422, e.code, e.message, { currentVersion: rec.version });
       throw e;
@@ -623,6 +638,7 @@ function snapshotOf(
     /** Clocks as of `serverNow`; the browser counts down from there. */
     clock: rec.clock && st.status === "ACTIVE" ? { preset: rec.clock.preset, perMoveMs: rec.clock.perMoveMs, ...clockView(rec.clock, seen, now) } : null,
     clockPreset: rec.clock?.preset ?? "none",
+    fair: fairView(rec.fair, st.status !== "WAITING" && st.status !== "ACTIVE"),
     hostReturnBy:
       online(rec) && st.status === "ACTIVE" && rec.startedAt && seen[0] < rec.startedAt ? new Date(rec.startedAt + HOST_RETURN_MS).toISOString() : null,
     voided: rec.voided ? { reason: rec.voided.reason, at: rec.voided.at } : null,
@@ -669,7 +685,7 @@ export async function tickBot(matchId: string) {
     } else {
       action = { actionType: "CONFIRM_TURN", payload: { moves: chooseSequence(g.board, seat, currentSequences(g)) } };
     }
-    const events = applyAction(rec.state, seat, action, env);
+    const events = applyAction(rec.state, seat, action, envFor(rec));
     rec.version += 1;
     pushEvents(rec, events);
     await save(t, rec);

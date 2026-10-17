@@ -1,5 +1,6 @@
 import type { MatchState } from "../../engine/match";
 import type { ClockState } from "../clock";
+import type { FairState } from "../fair";
 import type { DepositMethod, DepositStatus, WithdrawalStatus } from "../payments/adapter";
 
 /** Accounts are wallet-based: one EVM address = one account. Guests have no wallet yet. */
@@ -175,6 +176,8 @@ export interface MatchRecord {
   startedAt?: number;
   /** Match clocks (online matches with a clock); absent = no clock. */
   clock?: ClockState;
+  /** Provably fair dice (absent on matches created before it). */
+  fair?: FairState;
   voided?: { by: string; reason: string; at: string };
 }
 
