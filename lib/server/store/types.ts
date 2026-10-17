@@ -30,6 +30,10 @@ export interface User {
   /** Salted hashes of the network address at sign-up and last seen (anti-cheat; never the address). */
   createdIp?: string;
   lastIp?: string;
+  /** Rating (changed only through users.applyRating) and ranked experience. */
+  rating?: number;
+  ratingExperience?: number;
+  ratingGames?: number;
 }
 
 /** A user as the admin area lists them. */
@@ -185,6 +189,8 @@ export interface MatchRecord {
   clock?: ClockState;
   /** Provably fair dice (absent on matches created before it). */
   fair?: FairState;
+  /** Counts for ratings. */
+  ranked?: boolean;
   voided?: { by: string; reason: string; at: string };
 }
 
@@ -206,6 +212,7 @@ export interface LobbyRow {
   seatToAct: number | null;
   /** Clock preset ("none" for rows saved before clocks). */
   clock: string;
+  ranked: boolean;
   allowSpectators: boolean;
   entryFee: number;
   hostSeenAt: number; // ms, 0 when never seen
@@ -231,6 +238,8 @@ export interface MatchResultRow {
   lbPoints?: number;
   /** Under anti-cheat review: not counted for prizes until cleared. */
   flagged?: boolean;
+  /** Rating change from this result (ranked matches only). */
+  ratingChange?: number | null;
   score: [number, number]; // this player's, then the opponent's
   targetPoints: number;
   endReason: string;
@@ -387,6 +396,12 @@ export interface Tx {
     countCreatedFrom(ipHash: string, since: number): Promise<number>;
     /** The player closed the app: no longer counted online (last activity set to `at`, in the past). */
     markAway(id: string, at: number): Promise<void>;
+    /** A ranked result: add `delta` to the rating and `points` of experience, one more rated match. */
+    applyRating(id: string, delta: number, points: number): Promise<void>;
+    /** Best-rated players with at least `minGames` rated matches. */
+    topRated(minGames: number, limit: number): Promise<User[]>;
+    /** Players rated above `rating` (with at least `minGames`). */
+    countRatedAbove(rating: number, minGames: number): Promise<number>;
     /** Add XP atomically; returns the new total. */
     addXp(id: string, n: number): Promise<number>;
     countSeenSince(at: number): Promise<number>;

@@ -204,6 +204,7 @@ export default function RoomBrowser({
                       <span className="room-badge">{t.targetPoints}-pt</span>
                       <span className={`room-badge ${t.entryFee ? "paid" : "free"}`}>{feeLabel(t.entryFee)}</span>
                       {t.clock !== "none" && <span className="room-badge">⏱ {t.clock === "fast" ? "Fast" : "Clock"}</span>}
+                      {t.ranked && <span className="room-badge ranked">Ranked</span>}
                     </div>
                     <div className="room-seats">
                       <span className="room-seat">

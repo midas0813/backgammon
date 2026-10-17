@@ -1,4 +1,5 @@
 import { levelOf, weekKey } from "../quests";
+import { PROVISIONAL_GAMES, START_RATING, ratingChange } from "../rating";
 import { ApiError, notFound } from "./errors";
 import { SYSTEM, post, userAccount } from "./ledger";
 import { operatorSettings } from "./settings";
@@ -30,6 +31,32 @@ export async function withLeaderboardPoints(t: Tx, rec: MatchRecord, rows: Match
     if (earlier >= DAILY_PAIR_CAP) continue;
     r.lbPoints = (r.won ? POINTS.winPerMatchPoint * r.targetPoints : POINTS.loss) + POINTS.gammonBonus * r.gammons;
   }
+  return rows;
+}
+
+/**
+ * Ranked matches between two people move both ratings (FIBS formula; instant forfeits never count).
+ * Sets each row's ratingChange and applies it to the accounts.
+ */
+export async function applyRatings(t: Tx, rec: MatchRecord, rows: MatchResultRow[]) {
+  if (!rec.ranked || rows.length !== 2 || !rec.state.results.some((r) => r.kind !== "forfeit")) return rows;
+  const winRow = rows.find((r) => r.won);
+  const loseRow = rows.find((r) => !r.won);
+  if (!winRow || !loseRow) return rows;
+  const users = await t.users.getMany([winRow.userId, loseRow.userId]);
+  const w = users[winRow.userId];
+  const l = users[loseRow.userId];
+  if (!w || !l) return rows;
+  const n = rec.state.targetPoints;
+  const [gain, loss] = ratingChange(
+    { rating: w.rating ?? START_RATING, experience: w.ratingExperience ?? 0 },
+    { rating: l.rating ?? START_RATING, experience: l.ratingExperience ?? 0 },
+    n,
+  );
+  winRow.ratingChange = Math.round(gain * 100) / 100;
+  loseRow.ratingChange = -Math.round(loss * 100) / 100;
+  await t.users.applyRating(w.id, winRow.ratingChange, n);
+  await t.users.applyRating(l.id, loseRow.ratingChange, n);
   return rows;
 }
 
@@ -95,6 +122,38 @@ export function leaderboard(userId: string | null, period: "week" | "season", no
 }
 
 export type Leaderboard = Awaited<ReturnType<typeof leaderboard>>;
+
+/** Players by rating (at least one ranked match), with your own position. */
+export function ratingBoard(userId: string | null) {
+  return tx(async (t) => {
+    const top = await t.users.topRated(1, 50);
+    const me = userId ? await t.users.get(userId) : undefined;
+    const myGames = me?.ratingGames ?? 0;
+    return {
+      rows: top.map((u, i) => ({
+        rank: i + 1,
+        name: u.name,
+        avatarUrl: avatarUrl(u),
+        frame: u.frame ?? "none",
+        level: levelOf(u.xp ?? 0).level,
+        rating: Math.round(u.rating ?? START_RATING),
+        games: u.ratingGames ?? 0,
+        provisional: (u.ratingGames ?? 0) < PROVISIONAL_GAMES,
+        me: u.id === userId,
+      })),
+      me: me
+        ? {
+            rating: Math.round(me.rating ?? START_RATING),
+            games: myGames,
+            provisional: myGames < PROVISIONAL_GAMES,
+            rank: myGames > 0 ? (await t.users.countRatedAbove(me.rating ?? START_RATING, 1)) + 1 : null,
+          }
+        : null,
+    };
+  });
+}
+
+export type RatingBoard = Awaited<ReturnType<typeof ratingBoard>>;
 
 /**
  * After a week ends, record its proposed winners for an admin to check (once). Players under review

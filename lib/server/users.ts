@@ -154,6 +154,7 @@ export async function matchHistoryPage(t: Tx, userId: string, offset: number) {
       targetPoints: r.targetPoints,
       reason: r.endReason,
       date: r.completedAt,
+      ratingChange: r.ratingChange ?? null,
     })),
     hasMore: rows.length > HISTORY_PAGE,
   };
@@ -191,6 +192,8 @@ export async function profileIn(t: Tx, userId: string) {
     avatarUrl: avatarUrl(u),
     xp: u.xp ?? 0,
     level: levelOf(u.xp ?? 0).level,
+    rating: Math.round(u.rating ?? 1500),
+    ratedGames: u.ratingGames ?? 0,
     frame: u.frame ?? "none",
     bio: u.bio ?? "",
     country: u.country ?? "",

@@ -287,7 +287,8 @@ export default function ProfilePage() {
                     </span>
                     <span className="muted small">
                       {new Date(h.date).toLocaleDateString()} · {h.targetPoints}-pt
-                      {h.reason === "forfeit" ? " · forfeit" : h.reason === "abandoned" ? " · abandoned" : ""}
+                      {h.reason === "forfeit" ? " · forfeit" : h.reason === "abandoned" ? " · abandoned" : h.reason === "timeout" ? " · on time" : ""}
+                      {h.ratingChange ? ` · rating ${h.ratingChange > 0 ? "+" : ""}${h.ratingChange.toFixed(1)}` : ""}
                     </span>
                   </span>
                 </span>
@@ -369,7 +370,10 @@ export default function ProfilePage() {
           <h2>Level {me.level}</h2>
           <span className="muted small">{me.xp} XP</span>
         </div>
-        <p className="muted small">Earn XP by playing and from quests on Home. Levels unlock avatar frames.</p>
+        <p className="muted small">
+          Rating <strong>{me.rating}</strong> · {me.ratedGames} ranked match{me.ratedGames === 1 ? "" : "es"}
+          {me.ratedGames < 20 ? " (provisional)" : ""} · earn XP by playing and from quests on Home. Levels unlock avatar frames.
+        </p>
         <div className="frames" role="group" aria-label="Avatar frame">
           {FRAMES.map((f) => {
             const locked = f.level > me.level;

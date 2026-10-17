@@ -22,7 +22,7 @@ import { cleanSeed } from "../fair";
 import { fairView, newFair, nextDie } from "./fair";
 import { levelOf } from "../quests";
 import { scanFinishedMatch } from "./anticheat";
-import { closeWeek, withLeaderboardPoints } from "./leaderboard";
+import { applyRatings, closeWeek, withLeaderboardPoints } from "./leaderboard";
 import { recordProgress } from "./quests";
 import { publish } from "./realtime";
 import { operatorSettings } from "./settings";
@@ -104,7 +104,9 @@ async function save(t: Tx, rec: MatchRecord) {
   }
   const games = rec.events.filter((e) => e.type === "GAME_COMPLETED").length;
   if (games) await t.counters.add("games", games);
-  if (rec.events.some((e) => e.type === "MATCH_COMPLETED")) await t.results.put(await withLeaderboardPoints(t, rec, resultRows(rec)));
+  if (rec.events.some((e) => e.type === "MATCH_COMPLETED")) {
+    await t.results.put(await applyRatings(t, rec, await withLeaderboardPoints(t, rec, resultRows(rec))));
+  }
   await recordProgress(t, rec);
   await t.matches.put(rec);
   if (rec.events.some((e) => e.type === "MATCH_COMPLETED")) await scanFinishedMatch(t, rec);
@@ -285,7 +287,14 @@ export async function createMatch(
   userId: string,
   mode: MatchMode,
   targetPoints: number,
-  opts: { allowSpectators?: boolean; spectatorChat?: boolean; spectatorEmoji?: boolean; clock?: ClockPreset; clientSeed?: unknown } = {},
+  opts: {
+    allowSpectators?: boolean;
+    spectatorChat?: boolean;
+    spectatorEmoji?: boolean;
+    clock?: ClockPreset;
+    clientSeed?: unknown;
+    ranked?: boolean;
+  } = {},
 ): Promise<{ matchId: string }> {
   if (!ALLOWED_POINTS.includes(targetPoints)) throw new ApiError(400, "INVALID_INPUT", "Unsupported match length");
   if (!["quick", "private", "local", "bot"].includes(mode)) throw new ApiError(400, "INVALID_INPUT", "Unsupported mode");
@@ -313,6 +322,8 @@ export async function createMatch(
       // Online matches get a clock (standard unless the host chose otherwise); computer and pass & play none.
       clock: mode === "quick" || mode === "private" ? newClock(opts.clock ?? "standard", targetPoints) : undefined,
       fair: newFair(opts.clientSeed),
+      // Public tables with a clock count for ratings unless the host says otherwise.
+      ranked: mode === "quick" && (opts.clock ?? "standard") !== "none" && opts.ranked !== false,
       spectatorChat: opts.spectatorChat !== false,
       spectatorEmoji: opts.spectatorEmoji !== false,
     };
@@ -632,6 +643,7 @@ function snapshotOf(
       occupied: rec.seats[s] !== null,
       avatarUrl: rec.seats[s] ? avatarUrl(users[rec.seats[s]!]) : null,
       level: rec.seats[s] && users[rec.seats[s]!] ? levelOf(users[rec.seats[s]!].xp ?? 0).level : null,
+      rating: rec.seats[s] && users[rec.seats[s]!] ? Math.round(users[rec.seats[s]!].rating ?? 1500) : null,
       frame: rec.seats[s] && users[rec.seats[s]!] ? (users[rec.seats[s]!].frame ?? "none") : "none",
       bot: rec.seats[s] === BOT_USER_ID,
       online: rec.mode === "local" || rec.seats[s] === BOT_USER_ID || mySeats.includes(s) ? true : now - seen[s] < ONLINE_MS,
@@ -648,6 +660,7 @@ function snapshotOf(
     /** Clocks as of `serverNow`; the browser counts down from there. */
     clock: rec.clock && st.status === "ACTIVE" ? { preset: rec.clock.preset, perMoveMs: rec.clock.perMoveMs, ...clockView(rec.clock, seen, now) } : null,
     clockPreset: rec.clock?.preset ?? "none",
+    ranked: !!rec.ranked,
     fair: fairView(rec.fair, st.status !== "WAITING" && st.status !== "ACTIVE"),
     hostReturnBy:
       online(rec) && st.status === "ACTIVE" && rec.startedAt && seen[0] < rec.startedAt ? new Date(rec.startedAt + HOST_RETURN_MS).toISOString() : null,

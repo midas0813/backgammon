@@ -598,7 +598,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
           ← Lobby
         </Link>
         <div className="info">
-          {snap.mode === "bot" ? "vs Computer" : "Free"} · {snap.targetPoints}-pt · Game {game!.gameNumber}
+          {snap.mode === "bot" ? "vs Computer" : snap.ranked ? "Ranked" : "Free"} · {snap.targetPoints}-pt · Game {game!.gameNumber}
           {game!.crawford ? " · Crawford" : ""}
           {snap.spectators > 0 && (
             <span className="eye-count" aria-label={`${snap.spectators} watching`}>
@@ -980,6 +980,7 @@ function PlayerStrip({
     bot?: boolean;
     level?: number | null;
     frame?: string | null;
+    rating?: number | null;
   };
   seat: Seat;
   target: number;
@@ -1012,7 +1013,12 @@ function PlayerStrip({
           {info.name}
           {info.you ? " (you)" : ""}
         </span>
-        {info.level && <span className="level-chip small">Lv {info.level}</span>}
+        {info.level && (
+          <span className="level-chip small" title={info.rating ? `Rating ${info.rating}` : undefined}>
+            Lv {info.level}
+            {info.rating ? ` · ${info.rating}` : ""}
+          </span>
+        )}
         {!info.online && <span className="badge warn">offline</span>}
         {info.toAct && <span className="badge ok">to act</span>}
       </div>

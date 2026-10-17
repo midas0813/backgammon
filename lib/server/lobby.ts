@@ -44,6 +44,7 @@ export async function createTable(
     spectatorEmoji?: unknown;
     clock?: unknown;
     clientSeed?: unknown;
+    ranked?: unknown;
   },
 ) {
   const targetPoints = Number(body.targetPoints);
@@ -55,6 +56,7 @@ export async function createTable(
     spectatorEmoji: body.spectatorEmoji !== false,
     clock: body.clock === "fast" || body.clock === "none" ? body.clock : "standard",
     clientSeed: body.clientSeed,
+    ranked: body.ranked !== false,
   });
 }
 
@@ -191,6 +193,7 @@ export async function publicTables(input: PublicTableQuery) {
           targetPoints: r.targetPoints,
           entryFee: r.entryFee,
           clock: r.clock,
+          ranked: r.ranked,
           createdAt: r.createdAt,
           host,
           // Away hosts stay listed (phones pause background pages); they hear about a join when they return.

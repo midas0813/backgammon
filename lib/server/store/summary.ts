@@ -12,6 +12,7 @@ export function summarize(m: MatchRecord) {
     seats: m.seats,
     seatToAct: seatToAct(m.state),
     clock: m.clock?.preset ?? "none",
+    ranked: !!m.ranked,
   };
 }
 
@@ -32,6 +33,7 @@ export function lobbyRow(m: MatchRecord, hostSeenAt: number, spectators: number)
     gameNumber: s.gameNumber,
     seatToAct: s.seatToAct,
     clock: s.clock,
+    ranked: s.ranked,
     allowSpectators: m.allowSpectators !== false,
     entryFee: m.entryFee ?? 0,
     hostSeenAt,

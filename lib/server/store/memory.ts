@@ -250,6 +250,23 @@ export function createMemoryStore(file: string | null): Store {
           if (u && ipHash) put("users", id, { ...u, lastIp: ipHash });
         },
         countCreatedFrom: async (ipHash, since) => values<User>("users").filter((u) => u.createdIp === ipHash && Date.parse(u.createdAt) >= since).length,
+        applyRating: async (id, delta, points) => {
+          const u = get<User>("users", id);
+          if (u)
+            put("users", id, {
+              ...u,
+              rating: (u.rating ?? 1500) + delta,
+              ratingExperience: (u.ratingExperience ?? 0) + points,
+              ratingGames: (u.ratingGames ?? 0) + 1,
+            });
+        },
+        topRated: async (minGames, limit) =>
+          values<User>("users")
+            .filter((u) => (u.ratingGames ?? 0) >= minGames)
+            .sort((a, b) => (b.rating ?? 1500) - (a.rating ?? 1500) || (b.ratingGames ?? 0) - (a.ratingGames ?? 0))
+            .slice(0, limit),
+        countRatedAbove: async (rating, minGames) =>
+          values<User>("users").filter((u) => (u.ratingGames ?? 0) >= minGames && (u.rating ?? 1500) > rating).length,
         addXp: async (id, n) => {
           const u = get<User>("users", id);
           if (!u) return 0;

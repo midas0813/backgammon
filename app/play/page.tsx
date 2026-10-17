@@ -273,6 +273,7 @@ function CreateTable({ initialPoints, onClose, onCreated }: { initialPoints: num
   const [spectatorChat, setSpectatorChat] = useState(true);
   const [spectatorEmoji, setSpectatorEmoji] = useState(true);
   const [clock, setClock] = useState<"standard" | "fast" | "none">("standard");
+  const [ranked, setRanked] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submit = async () => {
@@ -281,7 +282,7 @@ function CreateTable({ initialPoints, onClose, onCreated }: { initialPoints: num
     try {
       const { matchId } = await api<{ matchId: string }>("/api/tables", {
         method: "POST",
-        body: { targetPoints: points, visibility, allowSpectators, spectatorChat, spectatorEmoji, clock },
+        body: { targetPoints: points, visibility, allowSpectators, spectatorChat, spectatorEmoji, clock, ranked },
       });
       watchTable(matchId);
       onCreated(matchId);
@@ -345,6 +346,17 @@ function CreateTable({ initialPoints, onClose, onCreated }: { initialPoints: num
               : "Relaxed play with friends: no time limits."}
         </p>
       </div>
+      {visibility === "public" && clock !== "none" && (
+        <label className="toggle">
+          <span>
+            <strong>Ranked</strong>
+            <span className="muted small" style={{ display: "block" }}>
+              The result moves both players&apos; ratings.
+            </span>
+          </span>
+          <input type="checkbox" role="switch" checked={ranked} onChange={(e) => setRanked(e.target.checked)} />
+        </label>
+      )}
       <label className="toggle">
         <span>
           <strong>Allow spectators</strong>

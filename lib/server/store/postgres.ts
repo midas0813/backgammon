@@ -86,6 +86,9 @@ function toUser(r: Row): User {
     frame: (r.frame as string) ?? "none",
     createdIp: (r.created_ip as string) ?? undefined,
     lastIp: (r.last_ip as string) ?? undefined,
+    rating: r.rating === undefined || r.rating === null ? 1500 : Number(r.rating),
+    ratingExperience: num(r.rating_experience),
+    ratingGames: num(r.rating_games),
   };
 }
 
@@ -175,6 +178,7 @@ function toLobbyRow(r: Row): LobbyRow {
     seats?: [string | null, string | null];
     seatToAct?: number | null;
     clock?: string;
+    ranked?: boolean;
   }>(r.summary);
   return {
     id: String(r.id),
@@ -191,6 +195,7 @@ function toLobbyRow(r: Row): LobbyRow {
     gameNumber: num(s.gameNumber),
     seatToAct: s.seatToAct ?? null,
     clock: s.clock ?? "none",
+    ranked: !!s.ranked,
     allowSpectators: Boolean(r.allow_spectators),
     entryFee: num(r.entry_fee),
     hostSeenAt: num(r.host_seen_ms),
@@ -302,6 +307,21 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
       },
       async countCreatedFrom(ipHash, since) {
         const [r] = await q(`select count(*) as n from app_users where created_ip = $1 and created_at >= to_timestamp($2::float8 / 1000)`, [ipHash, since]);
+        return num(r.n);
+      },
+      async applyRating(id, delta, points) {
+        await q(`update app_users set rating = rating + $2, rating_experience = rating_experience + $3, rating_games = rating_games + 1 where id = $1`, [
+          id,
+          delta,
+          points,
+        ]);
+      },
+      async topRated(minGames, limit) {
+        const rows = await q(`select * from app_users where rating_games >= $1 order by rating desc, rating_games desc limit $2`, [minGames, limit]);
+        return rows.map(toUser);
+      },
+      async countRatedAbove(rating, minGames) {
+        const [r] = await q(`select count(*) as n from app_users where rating_games >= $2 and rating > $1`, [rating, minGames]);
         return num(r.n);
       },
       async addXp(id, n) {
@@ -552,12 +572,12 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
       async put(rows) {
         if (rows.length === 0) return;
         await q(
-          `insert into match_results (match_id, user_id, mode, won, points, games, gammons, opponent, opponent_id, lb_points, score_for, score_against,
+          `insert into match_results (match_id, user_id, mode, won, points, games, gammons, opponent, opponent_id, lb_points, rating_change, score_for, score_against,
              target_points, end_reason, completed_at)
-           select x.match_id, x.user_id, x.mode, x.won, x.points, x.games, x.gammons, x.opponent, x.opponent_id, x.lb_points, x.score_for, x.score_against,
+           select x.match_id, x.user_id, x.mode, x.won, x.points, x.games, x.gammons, x.opponent, x.opponent_id, x.lb_points, x.rating_change, x.score_for, x.score_against,
              x.target_points, x.end_reason, x.completed_at
            from jsonb_to_recordset($1::jsonb) as x(match_id text, user_id uuid, mode text, won boolean, points int, games int,
-             gammons int, opponent text, opponent_id uuid, lb_points int, score_for int, score_against int, target_points int, end_reason text, completed_at timestamptz)
+             gammons int, opponent text, opponent_id uuid, lb_points int, rating_change float8, score_for int, score_against int, target_points int, end_reason text, completed_at timestamptz)
            on conflict do nothing`,
           [
             JSON.stringify(
@@ -572,6 +592,7 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
                 opponent: r.opponent,
                 opponent_id: r.opponentId,
                 lb_points: r.lbPoints ?? 0,
+                rating_change: r.ratingChange ?? null,
                 score_for: r.score[0],
                 score_against: r.score[1],
                 target_points: r.targetPoints,
@@ -680,6 +701,7 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
           opponent: String(r.opponent),
           opponentId: (r.opponent_id as string) ?? null,
           lbPoints: num(r.lb_points),
+          ratingChange: r.rating_change === null || r.rating_change === undefined ? null : Number(r.rating_change),
           flagged: Boolean(r.flagged),
           score: [num(r.score_for), num(r.score_against)] as [number, number],
           targetPoints: num(r.target_points),

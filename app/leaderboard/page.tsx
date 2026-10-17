@@ -5,7 +5,7 @@ import Avatar from "@/components/Avatar";
 import WalletButton from "@/components/WalletButton";
 import { api } from "@/lib/client/api";
 import { formatTokens } from "@/lib/fees";
-import type { Leaderboard } from "@/lib/server/leaderboard";
+import type { Leaderboard, RatingBoard } from "@/lib/server/leaderboard";
 
 function countdown(iso: string, now: number) {
   const ms = Math.max(0, Date.parse(iso) - now);
@@ -17,13 +17,20 @@ function countdown(iso: string, now: number) {
 
 /** Weekly and season standings, the prize zone and your own rank. */
 export default function LeaderboardPage() {
-  const [period, setPeriod] = useState<"week" | "season">("week");
+  const [period, setPeriod] = useState<"week" | "season" | "rating">("week");
   const [data, setData] = useState<Leaderboard | null>(null);
+  const [ratings, setRatings] = useState<RatingBoard | null>(null);
   const [now, setNow] = useState(0);
   const load = useCallback(() => {
+    if (period === "rating") {
+      api<RatingBoard>("/api/leaderboard?period=rating")
+        .then(setRatings)
+        .catch(() => {});
+      return;
+    }
     api<Leaderboard>(`/api/leaderboard?period=${period}`)
       .then((d) => {
-        setData(d);
+        setData(d.period === period ? d : null);
         setNow(Date.now());
       })
       .catch(() => {});
@@ -48,10 +55,15 @@ export default function LeaderboardPage() {
           <button className="chip" aria-pressed={period === "season"} onClick={() => setPeriod("season")}>
             Season
           </button>
+          <button className="chip" aria-pressed={period === "rating"} onClick={() => setPeriod("rating")}>
+            Ratings
+          </button>
         </div>
       </section>
 
-      {data && (
+      {period === "rating" && <RatingList board={ratings} />}
+
+      {period !== "rating" && data && (
         <section className="card lb-summary">
           <div className="spread">
             <span className="muted small">Resets in {countdown(data.endsAt, now)}</span>
@@ -87,7 +99,7 @@ export default function LeaderboardPage() {
         </section>
       )}
 
-      {!data ? (
+      {period === "rating" ? null : !data ? (
         <div className="skeleton" style={{ height: 320, borderRadius: 18 }} />
       ) : data.rows.length === 0 ? (
         <section className="card empty">
@@ -115,7 +127,7 @@ export default function LeaderboardPage() {
         </ol>
       )}
 
-      {data?.lastWinners && (
+      {period !== "rating" && data?.lastWinners && (
         <section className="card">
           <h2>Last winners · week of {data.lastWinners.weekKey}</h2>
           <ul className="list">
@@ -133,5 +145,55 @@ export default function LeaderboardPage() {
         </section>
       )}
     </main>
+  );
+}
+
+function RatingList({ board }: { board: RatingBoard | null }) {
+  if (!board) return <div className="skeleton" style={{ height: 320, borderRadius: 18 }} />;
+  return (
+    <>
+      <section className="card lb-summary">
+        {board.me && (
+          <div className="lb-me">
+            <span>
+              <strong>Your rating {board.me.rating}</strong>
+              <span className="muted small">
+                {" "}
+                · {board.me.rank ? `#${board.me.rank}` : "not ranked yet"} · {board.me.games} ranked match{board.me.games === 1 ? "" : "es"}
+                {board.me.provisional ? " · provisional" : ""}
+              </span>
+            </span>
+          </div>
+        )}
+        <p className="muted small" style={{ margin: 0 }}>
+          Ranked tables (public, with a clock) move your rating. Everyone starts at 1500; ratings are provisional for the first 20 ranked matches and move
+          faster then. Beating a stronger player gains more.
+        </p>
+      </section>
+      {board.rows.length === 0 ? (
+        <section className="card empty">
+          <p className="muted">No ranked matches yet. Open or join a ranked table in the lobby.</p>
+        </section>
+      ) : (
+        <ol className="lb-list">
+          {board.rows.map((r) => (
+            <li key={r.rank} className={r.me ? "me" : ""}>
+              <span className={`lb-rank${r.rank <= 3 ? ` top${r.rank}` : ""}`}>{r.rank}</span>
+              <Avatar name={r.name} src={r.avatarUrl} size={36} frame={r.frame} />
+              <span className="lb-name">
+                <strong className="ellipsis">
+                  {r.name}
+                  {r.me ? " (you)" : ""}
+                </strong>
+                <span className="muted small">
+                  Lv {r.level} · {r.games} ranked{r.provisional ? " · provisional" : ""}
+                </span>
+              </span>
+              <span className="lb-points mono">{r.rating}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </>
   );
 }
