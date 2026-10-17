@@ -412,6 +412,9 @@ export default function ProfilePage() {
           <Link className="btn sm ghost" href="/beta">
             Tester guide
           </Link>
+          <Link className="btn sm ghost" href="/legal/privacy">
+            Privacy
+          </Link>
           <FeedbackButton className="btn sm" />
         </span>
       </section>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { createSiweMessage } from "viem/siwe";
@@ -116,7 +117,10 @@ function Dialog() {
   const busy = step.kind === "connecting" || step.kind === "signing";
   return (
     <Modal title="Connect a wallet" onClose={() => !busy && closeWalletDialog()}>
-      <p className="muted small">Your wallet is your account. Signing in is a free signature — no transaction, no gas, no funds moved.</p>
+      <p className="muted small">
+        Your wallet is your account. Signing in is a free signature — no transaction, no gas, no funds moved. By continuing you agree to the{" "}
+        <Link href="/legal/terms">Terms</Link> and <Link href="/legal/privacy">Privacy Policy</Link>.
+      </p>
 
       {connection.status === "connected" && connection.address && (
         <div className="wallet-current">

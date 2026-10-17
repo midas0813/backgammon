@@ -2631,3 +2631,20 @@ html[data-reduced-motion="true"]::view-transition-group(*) {
   text-decoration: line-through;
   opacity: 0.7;
 }
+
+/* ---- Legal pages ----------------------------------------------------------------------------- */
+.legal-doc h1 {
+  font-size: 26px;
+}
+.legal-doc h2 {
+  font-size: 17px;
+  margin-top: 18px;
+}
+.legal-doc ul {
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+.legal nav {
+  gap: 14px;
+}

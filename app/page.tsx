@@ -244,6 +244,9 @@ export default function Landing() {
             <Link href="/wallet">Wallet</Link>
             <Link href="/fair">Fair play</Link>
             <Link href="/beta">Beta testers</Link>
+            <Link href="/legal/terms">Terms</Link>
+            <Link href="/legal/privacy">Privacy</Link>
+            <Link href="/legal/cookies">Cookies</Link>
           </nav>
           <p className="muted small">
             © {new Date().getFullYear()} {BRAND.name}. Free play is available to everyone. Token play will open only where permitted and only for adults (18+).
