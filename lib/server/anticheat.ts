@@ -18,6 +18,8 @@ export const THRESHOLDS = {
   /** Decision times with almost no variation (coefficient of variation below this) over enough turns. */
   evenTimingTurns: 15,
   evenTimingCv: 0.12,
+  /** …and only at human speeds: an average of at least this long per decision (ms). */
+  evenTimingMinMeanMs: 1500,
   /** Accounts created from one network in a day. */
   guestsPerNetworkPerDay: 10,
 };
@@ -112,7 +114,8 @@ export async function scanFinishedMatch(t: Tx, rec: MatchRecord, now = Date.now(
   for (const seat of [0, 1] as const) {
     const xs = times[seat];
     const cv = coefficientOfVariation(xs);
-    if (xs.length >= THRESHOLDS.evenTimingTurns && cv < THRESHOLDS.evenTimingCv) {
+    const mean = xs.length ? xs.reduce((x, y) => x + y, 0) / xs.length : 0;
+    if (xs.length >= THRESHOLDS.evenTimingTurns && cv < THRESHOLDS.evenTimingCv && mean >= THRESHOLDS.evenTimingMinMeanMs) {
       const id = rec.seats[seat]!;
       await flag(t, "even-timing", `${id}:${rec.id}`, [id], [rec.id], {
         turns: xs.length,

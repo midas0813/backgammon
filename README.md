@@ -11,9 +11,10 @@ Live: https://backgammon-iota-gules.vercel.app
 ```bash
 npm install
 npm run dev              # http://localhost:3000 (data in .data/db.json)
-npm test                 # 94 unit/integration tests on the in-memory store
+npm test                 # 126 unit/integration tests on the in-memory store
 npm run test:pg          # the same tests on Postgres (PGlite + the Supabase migrations)
-npm run build && npm run e2e   # 20 browser tests (Playwright); PW_CHANNEL=chrome uses installed Chrome
+npm run test:postgres    # the same tests through the production driver on a real Postgres (CI)
+npm run build && npm run e2e   # 22 browser tests (Playwright); PW_CHANNEL=chrome uses installed Chrome
 npm run typecheck        # route types + TypeScript
 npm run lint             # ESLint (Next.js, React hooks, TypeScript rules)
 npm run format           # Prettier
@@ -52,6 +53,12 @@ variables (Project → Settings → Environment Variables; redeploy after changi
 | Cube | Offer before rolling, ownership, accept/pass, cap 128, Crawford game, dead-cube block |
 | Authoritative server | Server-only dice; every action carries `actionId` + `expectedVersion`; retries are idempotent; append-only event log per match |
 | Lobby | Room browser: open tables and live matches, filters (length, fee), sorting and paging, cached at the edge. Public and invite-only tables; host-away tables stay listed |
+| Clocks | Free seconds per move plus a time bank; timeouts; disconnect protection with a reconnect window; Standard, Fast or No clock |
+| Fair dice | Sealed server seed + players' device seeds; verify any finished match in the browser (`/fair`) |
+| Progress | Daily and weekly quests, XP, levels, avatar frames; ratings (FIBS) on ranked tables; weekly/season leaderboard with a free weekly prize pool (admin-approved) |
+| Social | Friends with online status, direct invites, rematch, replays (`/replay/:id`), sit & go tournaments (`/tournaments`) |
+| Fair-play review | Anti-cheat flags reviewed by admins; spectator delay on ranked and tournament matches |
+| Beta | Invite codes per community (optional invite-only), Feedback button, tester guide (`/beta`), Terms / Privacy / Cookies (`/legal`) |
 | Fair play rules | **One game per player** (any tab or device). Left games end on their own: the player to act loses after 10 min away while the opponent waits; matches both left close after 30 min with no result; a host who doesn't return within 2 min of someone joining → called off; invites expire after 15 min; public tables close 15 min after the host leaves or after 1 h; computer and pass & play games close after a day alone |
 | Spectating & chat | Watch live matches; players and spectators chat with preset phrases or their own words; emoji reactions float over the board. The host decides whether spectators may watch, chat and react, and can remove a spectator; anyone can report a message; admins can remove messages |
 | Instant updates | Supabase Realtime notices make moves and chat appear at once; polling remains as a backup |
@@ -64,8 +71,9 @@ variables (Project → Settings → Environment Variables; redeploy after changi
 
 ## Not yet
 
-Ranked play and tournaments, token-stake matches (ledger functions exist and are tested, not exposed),
-move clocks, real payment providers. See `../specifications`.
+Token-stake matches and paid tournaments (ledger functions exist and are tested; blocked on the open
+decisions in spec 05), real payment providers and identity checks, an on-chain record of the dice. See
+`../specifications`.
 
 ## More
 

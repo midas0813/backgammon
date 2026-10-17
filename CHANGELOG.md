@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-10-18
+
+**Next phase (the plan shared with the client)**
+- Match clocks: 12 free seconds per move (8 on Fast) and a time bank (1 min per point, at least 2); running out loses on time. A dropped player's bank stops and a 90-second reconnect window runs (3 minutes per match); clocks pause if both drop. Hosts choose Standard, Fast or No clock. The clock counts down from the moment a turn starts.
+- Provably fair dice: a sealed server seed, a seed from each player's device, a "Fair dice" badge, "Verify this game" after the match and a public Fair Play page that checks any finished match in the browser.
+- Quests: 3 daily and 3 weekly, XP and levels, practice-credit rewards for wallet accounts, avatar frames unlocked by level.
+- Weekly and season leaderboard (win 2 × match length, loss 1, +1 per gammon; up to 3 matches a day against the same opponent count) and a free weekly prize pool (default 50 tokens, 50/30/20) paid after an admin's signed approval.
+- Anti-cheat: flags for repeated pairings, thrown losses, shared networks, new-account streaks, robotic move timing and account farming; admins review replays and dismiss or void; flagged matches leave the prize count until decided.
+- Ratings (FIBS formula) for ranked tables — public tables with a clock — with a ratings board and rating changes in match history.
+- Friends with online status, direct invites, one-tap rematch, move-by-move replays.
+- Free sit & go tournaments (4 and 8 players) with automatic brackets and called-to-the-board alerts.
+- Spectators see ranked and tournament matches 20 s late (enforced by the server; adjustable).
+- Beta tools: invite codes per community with an optional invite-only switch, a Feedback button on every screen, a tester guide.
+- Terms, Privacy and Cookies pages.
+
+**Fixes**
+- Finishing or forfeiting a match failed on the production database (a driver difference); CI now runs the whole suite on a real Postgres too.
+- Selecting a checker highlights its moves again (no instant move); animated Noto emojis with a full picker; "online now" counts players actually online; MetaMask's phone app connects without WalletConnect.
+
 ## 2026-10-17
 
 **Game rules**
