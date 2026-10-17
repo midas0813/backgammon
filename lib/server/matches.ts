@@ -21,6 +21,7 @@ import { newClock, nextDecision, noteReturn, timedOut, clockView, type ClockPres
 import { cleanSeed } from "../fair";
 import { fairView, newFair, nextDie } from "./fair";
 import { levelOf } from "../quests";
+import { closeWeek, withLeaderboardPoints } from "./leaderboard";
 import { recordProgress } from "./quests";
 import { publish } from "./realtime";
 import { operatorSettings } from "./settings";
@@ -102,7 +103,7 @@ async function save(t: Tx, rec: MatchRecord) {
   }
   const games = rec.events.filter((e) => e.type === "GAME_COMPLETED").length;
   if (games) await t.counters.add("games", games);
-  if (rec.events.some((e) => e.type === "MATCH_COMPLETED")) await t.results.put(resultRows(rec));
+  if (rec.events.some((e) => e.type === "MATCH_COMPLETED")) await t.results.put(await withLeaderboardPoints(t, rec, resultRows(rec)));
   await recordProgress(t, rec);
   await t.matches.put(rec);
   const version = rec.version;
@@ -220,6 +221,7 @@ export async function sweep(now = Date.now(), force = false) {
   }
   if (now - lastSweep.pruned > 60 * 60_000) {
     lastSweep.pruned = now;
+    await closeWeek(now); // last week's prize winners, for an admin to check
     await tx(async (t) => {
       await t.rateLimits.prune(now - 24 * 60 * 60_000);
       await t.errors.prune(now - 30 * 24 * 60 * 60_000);

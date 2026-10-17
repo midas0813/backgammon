@@ -2484,3 +2484,72 @@ html[data-reduced-motion="true"]::view-transition-group(*) {
     0 0 0 5px rgb(244 207 135 / 0.25),
     0 0 18px rgb(244 207 135 / 0.7);
 }
+
+/* ---- Leaderboard ----------------------------------------------------------------------------- */
+.lb-summary {
+  display: grid;
+  gap: 10px;
+}
+.lb-me {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgb(101 226 188 / 0.08);
+}
+.gold-badge {
+  background: rgb(244 207 135 / 0.16);
+  color: var(--gold);
+  border-color: rgb(244 207 135 / 0.4);
+}
+.lb-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lb-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: var(--glass);
+  border: 1px solid var(--border-soft);
+}
+.lb-list li.prize {
+  border-color: rgb(244 207 135 / 0.55);
+  background: linear-gradient(90deg, rgb(244 207 135 / 0.12), var(--glass));
+}
+.lb-list li.me {
+  outline: 2px solid var(--action);
+}
+.lb-rank {
+  width: 28px;
+  text-align: center;
+  font-weight: 800;
+  color: var(--text-2);
+}
+.lb-rank.top1 {
+  color: var(--gold);
+  font-size: 18px;
+}
+.lb-rank.top2 {
+  color: #d9e2ee;
+}
+.lb-rank.top3 {
+  color: #e2a679;
+}
+.lb-name {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+.lb-points {
+  font-weight: 800;
+  font-size: 17px;
+}

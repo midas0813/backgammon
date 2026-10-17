@@ -8,6 +8,12 @@ if (process.env.BG_STORE === "pglite") {
   setStore(await createPgliteStore());
 }
 
+// BG_STORE=postgres runs it against a real Postgres server through the production driver (CI).
+if (process.env.BG_STORE === "postgres") {
+  const { createRealPgStore } = await import("./pgreal");
+  setStore(createRealPgStore(process.env.TEST_DATABASE_URL ?? "postgresql://postgres:postgres@localhost:5432/postgres"));
+}
+
 beforeEach(async () => {
   await getStore().reset();
   invalidateSettings();

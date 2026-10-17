@@ -63,6 +63,8 @@ export const STEP_UP_ACTIONS = [
   "ROLE_GRANT",
   "ROLE_REVOKE",
   "SETTINGS_UPDATE",
+  "PRIZE_PAY",
+  "PRIZE_SKIP",
 ] as const;
 export type StepUpAction = (typeof STEP_UP_ACTIONS)[number];
 

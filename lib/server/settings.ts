@@ -6,11 +6,14 @@ export interface OperatorSettings {
   maintenance: { enabled: boolean; message: string };
   /** Global switch for watching other players' matches. */
   spectators: boolean;
+  /** Weekly free prize pool for the leaderboard (amount in token minor units; split in percent). */
+  prizePool: { enabled: boolean; units: number; split: number[]; minOpponents: number };
 }
 
 export const DEFAULT_SETTINGS: OperatorSettings = {
   maintenance: { enabled: false, message: "We are doing quick maintenance. New matches will open again shortly." },
   spectators: true,
+  prizePool: { enabled: true, units: 5000, split: [50, 30, 20], minOpponents: 5 },
 };
 
 const CACHE_MS = 10_000;
@@ -18,6 +21,18 @@ const cache = ((globalThis as unknown as { __bgSettings?: { at: number; value: O
   at: 0,
   value: DEFAULT_SETTINGS,
 });
+
+function mergePrizePool(raw: unknown): OperatorSettings["prizePool"] {
+  const d = DEFAULT_SETTINGS.prizePool;
+  const p = (raw ?? {}) as Partial<OperatorSettings["prizePool"]>;
+  const split = Array.isArray(p.split) && p.split.length >= 1 && p.split.length <= 10 && p.split.every((x) => Number.isInteger(x) && x > 0) ? p.split : d.split;
+  return {
+    enabled: typeof p.enabled === "boolean" ? p.enabled : d.enabled,
+    units: Number.isSafeInteger(p.units) && p.units! >= 0 && p.units! <= 10_000_000 ? p.units! : d.units,
+    split: split.reduce((a, b) => a + b, 0) <= 100 ? split : d.split,
+    minOpponents: Number.isInteger(p.minOpponents) && p.minOpponents! >= 1 && p.minOpponents! <= 50 ? p.minOpponents! : d.minOpponents,
+  };
+}
 
 export function mergeSettings(raw: Record<string, unknown>): OperatorSettings {
   const m = (raw.maintenance ?? {}) as Partial<OperatorSettings["maintenance"]>;
@@ -27,6 +42,7 @@ export function mergeSettings(raw: Record<string, unknown>): OperatorSettings {
       message: typeof m.message === "string" && m.message.trim() ? m.message : DEFAULT_SETTINGS.maintenance.message,
     },
     spectators: typeof raw.spectators === "boolean" ? raw.spectators : DEFAULT_SETTINGS.spectators,
+    prizePool: mergePrizePool(raw.prizePool),
   };
 }
 

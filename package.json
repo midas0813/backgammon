@@ -13,7 +13,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "knip": "knip",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "test:postgres": "BG_STORE=postgres vitest run --no-file-parallelism"
   },
   "dependencies": {
     "@coinbase/wallet-sdk": "4.4.0",

@@ -11,6 +11,7 @@ import Audit from "./Audit";
 import Dashboard from "./Dashboard";
 import Finance from "./Finance";
 import Matches from "./Matches";
+import Prizes from "./Prizes";
 import Reports from "./Reports";
 import Settings from "./Settings";
 import Users from "./Users";
@@ -27,6 +28,7 @@ const SECTIONS = [
   { id: "matches", label: "Matches", perm: "matches.view", icon: "M4 4h16v16H4zM4 12h16M12 4v16" },
   { id: "reports", label: "Reports", perm: "disputes.view", icon: "M4 4h16v12H8l-4 4z" },
   { id: "finance", label: "Finance", perm: "finance.view", icon: "M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" },
+  { id: "prizes", label: "Prizes", perm: "finance.view", icon: "M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4" },
   {
     id: "settings",
     label: "Settings",
@@ -211,6 +213,7 @@ export default function AdminApp() {
           {section === "matches" && <Matches id={id} />}
           {section === "reports" && <Reports id={id} />}
           {section === "finance" && <Finance />}
+          {section === "prizes" && <Prizes />}
           {section === "settings" && <Settings />}
           {section === "admins" && <Admins />}
           {section === "audit" && <Audit />}

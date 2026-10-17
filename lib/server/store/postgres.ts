@@ -8,6 +8,7 @@ import {
   type AuditEntry,
   type Avatar,
   type ChatMessage,
+  type PrizeWeek,
   type DepositIntent,
   type Dispute,
   type LobbyRow,
@@ -114,6 +115,19 @@ function toAdjustment(r: Row): Adjustment {
     decidedBy: (r.decided_by as string) ?? undefined,
     decidedAt: r.decided_at ? iso(r.decided_at) : undefined,
     txnKey: (r.txn_key as string) ?? undefined,
+  };
+}
+
+function toPrizeWeek(r: Row): PrizeWeek {
+  return {
+    weekKey: String(r.week_key),
+    status: r.status as PrizeWeek["status"],
+    poolUnits: num(r.pool_units),
+    winners: parse<PrizeWeek["winners"]>(r.winners),
+    createdAt: iso(r.created_at),
+    decidedBy: (r.decided_by as string) ?? undefined,
+    decidedAt: r.decided_at ? iso(r.decided_at) : undefined,
+    note: (r.note as string) ?? undefined,
   };
 }
 
@@ -510,12 +524,12 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
       async put(rows) {
         if (rows.length === 0) return;
         await q(
-          `insert into match_results (match_id, user_id, mode, won, points, games, gammons, opponent, opponent_id, score_for, score_against,
+          `insert into match_results (match_id, user_id, mode, won, points, games, gammons, opponent, opponent_id, lb_points, score_for, score_against,
              target_points, end_reason, completed_at)
-           select x.match_id, x.user_id, x.mode, x.won, x.points, x.games, x.gammons, x.opponent, x.opponent_id, x.score_for, x.score_against,
+           select x.match_id, x.user_id, x.mode, x.won, x.points, x.games, x.gammons, x.opponent, x.opponent_id, x.lb_points, x.score_for, x.score_against,
              x.target_points, x.end_reason, x.completed_at
            from jsonb_to_recordset($1::jsonb) as x(match_id text, user_id uuid, mode text, won boolean, points int, games int,
-             gammons int, opponent text, opponent_id uuid, score_for int, score_against int, target_points int, end_reason text, completed_at timestamptz)
+             gammons int, opponent text, opponent_id uuid, lb_points int, score_for int, score_against int, target_points int, end_reason text, completed_at timestamptz)
            on conflict do nothing`,
           [
             JSON.stringify(
@@ -529,6 +543,7 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
                 gammons: r.gammons,
                 opponent: r.opponent,
                 opponent_id: r.opponentId,
+                lb_points: r.lbPoints ?? 0,
                 score_for: r.score[0],
                 score_against: r.score[1],
                 target_points: r.targetPoints,
@@ -567,12 +582,54 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
           bestStreak: num(r.best_streak),
         };
       },
-      async countAgainst(userId, opponentId, since) {
+      async countAgainst(userId, opponentId, since, opts) {
         const [r] = await q(
-          `select count(*) as n from match_results where user_id = $1 and opponent_id::text = $2 and won and completed_at >= to_timestamp($3::float8 / 1000)`,
-          [userId, opponentId, since],
+          `select count(*) as n from match_results where user_id = $1 and opponent_id::text = $2 and ($4 or won)
+             and completed_at >= to_timestamp($3::float8 / 1000)`,
+          [userId, opponentId, since, !!opts?.played],
         );
         return num(r.n);
+      },
+      async leaderboard(since, until, limit) {
+        const rows = await q(
+          `select user_id, sum(lb_points) as points, count(*) filter (where won) as wins, count(*) as played,
+                  count(distinct opponent_id) as opponents
+           from match_results
+           where completed_at >= to_timestamp($1::float8 / 1000) and completed_at < to_timestamp($2::float8 / 1000)
+             and opponent_id is not null and not flagged
+           group by user_id having sum(lb_points) > 0
+           order by points desc, wins desc, min(completed_at) asc limit $3`,
+          [since, until, limit],
+        );
+        return rows.map((r) => ({ userId: String(r.user_id), points: num(r.points), wins: num(r.wins), played: num(r.played), opponents: num(r.opponents) }));
+      },
+      async standing(userId, since, until) {
+        const [r] = await q(
+          `with totals as (
+             select user_id, sum(lb_points) as points, count(*) filter (where won) as wins, count(*) as played,
+                    count(distinct opponent_id) as opponents
+             from match_results
+             where completed_at >= to_timestamp($2::float8 / 1000) and completed_at < to_timestamp($3::float8 / 1000)
+               and opponent_id is not null and not flagged
+             group by user_id)
+           select coalesce(me.points, 0) as points, coalesce(me.wins, 0) as wins, coalesce(me.played, 0) as played,
+                  coalesce(me.opponents, 0) as opponents,
+                  case when coalesce(me.points, 0) > 0
+                       then (select count(*) from totals o where o.points > me.points or (o.points = me.points and o.wins > me.wins)) + 1 end as rank
+           from (select 1) one left join totals me on me.user_id = $1`,
+          [userId, since, until],
+        );
+        return {
+          userId,
+          points: num(r.points),
+          wins: num(r.wins),
+          played: num(r.played),
+          opponents: num(r.opponents),
+          rank: r.rank === null ? null : num(r.rank),
+        };
+      },
+      async setFlagged(matchId, flagged) {
+        await q(`update match_results set flagged = $2 where match_id = $1`, [matchId, flagged]);
       },
       async history(userId, offset, limit) {
         const rows = await q(`select * from match_results where user_id = $1 order by completed_at desc limit $2 offset $3`, [userId, limit, offset]);
@@ -586,6 +643,8 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
           gammons: num(r.gammons),
           opponent: String(r.opponent),
           opponentId: (r.opponent_id as string) ?? null,
+          lbPoints: num(r.lb_points),
+          flagged: Boolean(r.flagged),
           score: [num(r.score_for), num(r.score_against)] as [number, number],
           targetPoints: num(r.target_points),
           endReason: String(r.end_reason),
@@ -693,6 +752,25 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
           [userId, periodKey, questId, target],
         );
         return rows.length > 0;
+      },
+    },
+    prizes: {
+      async get(weekKey, opts) {
+        const [r] = await q(`select * from prize_weeks where week_key = $1 ${opts?.lock ? "for update" : ""}`, [weekKey]);
+        return r ? toPrizeWeek(r) : undefined;
+      },
+      async put(w) {
+        await q(
+          `insert into prize_weeks (week_key, status, pool_units, winners, created_at, decided_by, decided_at, note)
+           values ($1, $2, $3, $4::jsonb, $5, $6, $7, $8)
+           on conflict (week_key) do update set status = excluded.status, winners = excluded.winners, decided_by = excluded.decided_by,
+             decided_at = excluded.decided_at, note = excluded.note`,
+          [w.weekKey, w.status, w.poolUnits, JSON.stringify(w.winners), w.createdAt, w.decidedBy ?? null, w.decidedAt ?? null, w.note ?? null],
+        );
+      },
+      async list(limit) {
+        const rows = await q(`select * from prize_weeks order by week_key desc limit $1`, [limit]);
+        return rows.map(toPrizeWeek);
       },
     },
     counters: {

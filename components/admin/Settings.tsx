@@ -91,6 +91,46 @@ export default function Settings() {
             onChange={(e) => setDraft({ ...draft, spectators: e.target.checked })}
           />
         </label>
+        <label className="toggle">
+          <span>
+            <strong>Weekly prize pool</strong>
+            <span className="muted small" style={{ display: "block" }}>
+              Top {draft.prizePool.split.length} eligible players each week ({draft.prizePool.split.join(" / ")}%), paid after an admin&apos;s check under
+              Prizes.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            disabled={!manage}
+            checked={draft.prizePool.enabled}
+            onChange={(e) => setDraft({ ...draft, prizePool: { ...draft.prizePool, enabled: e.target.checked } })}
+          />
+        </label>
+        <div className="grid2">
+          <label>
+            Pool per week (tokens)
+            <input
+              type="number"
+              min={0}
+              step={1}
+              disabled={!manage}
+              value={draft.prizePool.units / 100}
+              onChange={(e) => setDraft({ ...draft, prizePool: { ...draft.prizePool, units: Math.max(0, Math.round(Number(e.target.value) * 100)) } })}
+            />
+          </label>
+          <label>
+            Different opponents needed
+            <input
+              type="number"
+              min={1}
+              max={50}
+              disabled={!manage}
+              value={draft.prizePool.minOpponents}
+              onChange={(e) => setDraft({ ...draft, prizePool: { ...draft.prizePool, minOpponents: Math.max(1, Math.round(Number(e.target.value))) } })}
+            />
+          </label>
+        </div>
         {manage ? (
           <div className="a-actions">
             <button className="btn sm primary" disabled={!changed} onClick={() => setConfirm(true)}>
@@ -172,7 +212,8 @@ export default function Settings() {
           title="Save operator settings?"
           description={
             <>
-              Maintenance {draft.maintenance.enabled ? "ON" : "off"} · Spectators {draft.spectators ? "on" : "OFF"}. Takes effect within about ten seconds.
+              Maintenance {draft.maintenance.enabled ? "ON" : "off"} · Spectators {draft.spectators ? "on" : "OFF"} · Prize pool{" "}
+              {draft.prizePool.enabled ? `${draft.prizePool.units / 100} tokens a week` : "OFF"}. Takes effect within about ten seconds.
             </>
           }
           confirmLabel="Save"

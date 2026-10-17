@@ -4,6 +4,7 @@ import { LedgerError, SYSTEM, post, reconcile, userAccount, userBalances, userTr
 import { HOST_ONLINE_MS, cancelTableIn, voidMatchIn } from "../matches";
 import { ONLINE_WINDOW_MS, pulse } from "../lobby";
 import { chatForAdmin } from "../chat";
+import { closeWeek, decidePrizeWeekIn } from "../leaderboard";
 import { publish } from "../realtime";
 import { invalidateSettings, mergeSettings, operatorSettings } from "../settings";
 import { tx, type Adjustment, type AdminRole, type Announcement, type Dispute, type LobbyRow, type Tx, type User } from "../store";
@@ -306,6 +307,34 @@ export function removeChatMessage(ctx: AdminContext, matchId: string, body: { me
   });
 }
 
+// ---- Weekly prizes --------------------------------------------------------------------------------
+
+export async function listPrizeWeeks(ctx: AdminContext) {
+  need(ctx, "finance.view");
+  await closeWeek();
+  return tx(async (t) => ({ weeks: await t.prizes.list(20), settings: (await operatorSettings(t, true)).prizePool }));
+}
+
+/** Pay a week's prize winners (signed, audited) or skip the week. */
+export async function decidePrizeWeek(ctx: AdminContext, week: string, body: { approve?: unknown; note?: unknown; nonce?: unknown; signature?: unknown }) {
+  need(ctx, "finance.adjust");
+  const approve = body.approve === true;
+  const action = approve ? "PRIZE_PAY" : "PRIZE_SKIP";
+  const note = typeof body.note === "string" ? body.note.slice(0, 300) : undefined;
+  const signature = await stepUp(ctx, body, { action, target: `prizes:${week}`, reason: note });
+  return tx(async (t) => {
+    let w;
+    try {
+      w = await decidePrizeWeekIn(t, week, approve, ctx.userId, note);
+    } catch (e) {
+      if (e instanceof LedgerError) throw new ApiError(422, e.code, e.message);
+      throw e;
+    }
+    await writeAudit(t, ctx, { action, targetType: "prizes", targetId: week, reason: note, signature, details: { winners: w.winners } });
+    return { week: w };
+  });
+}
+
 // ---- Reports (disputes) ---------------------------------------------------------------------------
 
 const DISPUTE_STATUSES = ["OPEN", "IN_REVIEW", "RESOLVED", "REJECTED"];
@@ -398,6 +427,7 @@ export async function updateSettings(ctx: AdminContext, body: { patch?: unknown;
     const next = mergeSettings({ ...before, ...patch });
     await t.admin.putSetting("maintenance", next.maintenance, ctx.userId);
     await t.admin.putSetting("spectators", next.spectators, ctx.userId);
+    await t.admin.putSetting("prizePool", next.prizePool, ctx.userId);
     invalidateSettings();
     await writeAudit(t, ctx, { action: "SETTINGS_UPDATE", targetType: "settings", targetId: "operator", reason, signature, details: { before, after: next } });
     return { settings: next };

@@ -16,6 +16,7 @@ import {
   type DisputeNote,
   type MatchRecord,
   type MatchResultRow,
+  type PrizeWeek,
   type Session,
   type StoredEvent,
   type Store,
@@ -79,6 +80,7 @@ interface Data {
   chat: Record<string, ChatMessage>;
   errors: Record<string, AppError>;
   quests: Record<string, { userId: string; periodKey: string; questId: string; progress: number; claimedAt?: string }>;
+  prizes: Record<string, PrizeWeek>;
   ledger: { balances: Record<string, number>; transactions: Txn[] };
 }
 
@@ -114,6 +116,7 @@ const empty = (): Data => ({
   chat: {},
   errors: {},
   quests: {},
+  prizes: {},
   ledger: { balances: {}, transactions: [] },
 });
 
@@ -151,6 +154,7 @@ export function createMemoryStore(file: string | null): Store {
         "chat",
         "errors",
         "quests",
+        "prizes",
       ] as const) {
         (data as unknown as Record<string, object>)[k] ??= {};
       }
@@ -202,6 +206,25 @@ export function createMemoryStore(file: string | null): Store {
         get<[number, number]>("presence", m.id)?.[0] ?? 0,
         Object.values(get<Record<string, number>>("spectators", m.id) ?? {}).filter((v) => v >= spectatorsSince).length,
       );
+    /** Leaderboard totals in [since, until), best first (same order as the Postgres query). */
+    const totals = (since: number, until: number) => {
+      const by = new Map<string, { userId: string; points: number; wins: number; played: number; opp: Set<string>; first: number }>();
+      for (const r of values<MatchResultRow>("results")) {
+        const at = Date.parse(r.completedAt);
+        if (at < since || at >= until || !r.opponentId || r.flagged) continue;
+        const cur = by.get(r.userId) ?? { userId: r.userId, points: 0, wins: 0, played: 0, opp: new Set<string>(), first: at };
+        cur.points += r.lbPoints ?? 0;
+        cur.wins += r.won ? 1 : 0;
+        cur.played += 1;
+        cur.opp.add(r.opponentId);
+        cur.first = Math.min(cur.first, at);
+        by.set(r.userId, cur);
+      }
+      return [...by.values()]
+        .filter((x) => x.points > 0)
+        .sort((a, b) => b.points - a.points || b.wins - a.wins || a.first - b.first)
+        .map(({ userId, points, wins, played, opp }) => ({ userId, points, wins, played, opponents: opp.size }));
+    };
     const allTxns = () => [...base.ledger.transactions, ...pendingTxns];
     const balance = (a: string) => pendingBalances[a] ?? base.ledger.balances[a] ?? 0;
 
@@ -401,9 +424,19 @@ export function createMemoryStore(file: string | null): Store {
             bestStreak: best,
           };
         },
-        countAgainst: async (userId, opponentId, since) =>
-          values<MatchResultRow>("results").filter((r) => r.userId === userId && r.opponentId === opponentId && r.won && Date.parse(r.completedAt) >= since)
-            .length,
+        countAgainst: async (userId, opponentId, since, opts) =>
+          values<MatchResultRow>("results").filter(
+            (r) => r.userId === userId && r.opponentId === opponentId && (opts?.played || r.won) && Date.parse(r.completedAt) >= since,
+          ).length,
+        leaderboard: async (since, until, limit) => totals(since, until).slice(0, limit),
+        standing: async (userId, since, until) => {
+          const all = totals(since, until);
+          const i = all.findIndex((r) => r.userId === userId);
+          return i >= 0 ? { ...all[i], rank: i + 1 } : { userId, points: 0, wins: 0, played: 0, opponents: 0, rank: null };
+        },
+        setFlagged: async (matchId, flagged) => {
+          for (const r of values<MatchResultRow>("results").filter((r) => r.matchId === matchId)) put("results", `${r.matchId}:${r.userId}`, { ...r, flagged });
+        },
         history: async (userId, offset, limit) =>
           values<MatchResultRow>("results")
             .filter((r) => r.userId === userId)
@@ -472,6 +505,14 @@ export function createMemoryStore(file: string | null): Store {
           put("quests", k, { ...cur, claimedAt: new Date().toISOString() });
           return true;
         },
+      },
+      prizes: {
+        get: async (weekKey) => get("prizes", weekKey),
+        put: async (w) => put("prizes", w.weekKey, w),
+        list: async (limit) =>
+          values<PrizeWeek>("prizes")
+            .sort((a, b) => b.weekKey.localeCompare(a.weekKey))
+            .slice(0, limit),
       },
       counters: {
         add: async (key, n) => put("counters", key, (get<number>("counters", key) ?? 0) + n),

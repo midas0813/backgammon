@@ -224,10 +224,33 @@ export interface MatchResultRow {
   opponent: string;
   /** The opponent's account (null against the computer). */
   opponentId: string | null;
+  /** Leaderboard points this result earned (0 when capped or not eligible). */
+  lbPoints?: number;
+  /** Under anti-cheat review: not counted for prizes until cleared. */
+  flagged?: boolean;
   score: [number, number]; // this player's, then the opponent's
   targetPoints: number;
   endReason: string;
   completedAt: string;
+}
+
+export interface LeaderRow {
+  userId: string;
+  points: number;
+  wins: number;
+  played: number;
+  opponents: number;
+}
+
+export interface PrizeWeek {
+  weekKey: string;
+  status: "PENDING_REVIEW" | "PAID" | "SKIPPED";
+  poolUnits: number;
+  winners: { userId: string; name: string; place: number; points: number; units: number }[];
+  createdAt: string;
+  decidedBy?: string;
+  decidedAt?: string;
+  note?: string;
 }
 
 export interface PlayerTotals {
@@ -408,8 +431,14 @@ export interface Tx {
     deleteForMatch(matchId: string): Promise<string[]>;
     stats(userId: string, since?: number): Promise<PlayerTotals>;
     history(userId: string, offset: number, limit: number): Promise<MatchResultRow[]>;
-    /** Matches this user won against that opponent since `since` (ms). */
-    countAgainst(userId: string, opponentId: string, since: number): Promise<number>;
+    /** Matches this user won (or, with `played`, played) against that opponent since `since` (ms). */
+    countAgainst(userId: string, opponentId: string, since: number, opts?: { played?: boolean }): Promise<number>;
+    /** Points per player in [since, until) (ms), best first. Flagged results are left out. */
+    leaderboard(since: number, until: number, limit: number): Promise<LeaderRow[]>;
+    /** One player's points, 1-based rank and distinct opponents in [since, until). */
+    standing(userId: string, since: number, until: number): Promise<LeaderRow & { rank: number | null }>;
+    /** Mark or clear a match's results as under review. */
+    setFlagged(matchId: string, flagged: boolean): Promise<void>;
   };
   chat: {
     add(m: Omit<ChatMessage, "id" | "createdAt">): Promise<ChatMessage>;
@@ -438,6 +467,11 @@ export interface Tx {
     bump(userId: string, rows: { periodKey: string; questId: string; n: number; target: number }[]): Promise<void>;
     /** Mark a completed, unclaimed quest claimed; false if it was not claimable. */
     claim(userId: string, periodKey: string, questId: string, target: number): Promise<boolean>;
+  };
+  prizes: {
+    get(weekKey: string, opts?: { lock?: boolean }): Promise<PrizeWeek | undefined>;
+    put(w: PrizeWeek): Promise<void>;
+    list(limit: number): Promise<PrizeWeek[]>;
   };
   /** Site-wide running totals (games played, …). */
   counters: {

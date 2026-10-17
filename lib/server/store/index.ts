@@ -36,7 +36,7 @@ export function databaseUrl(env: Record<string, string | undefined> = process.en
 }
 
 /** SQL files in supabase/migrations — bundled into every server function via next.config.ts. */
-function loadMigrations(): Migration[] {
+export function loadMigrations(): Migration[] {
   const dir = path.join(process.cwd(), "supabase", "migrations");
   if (!fs.existsSync(/*turbopackIgnore: true*/ dir)) return [];
   return fs
@@ -46,7 +46,7 @@ function loadMigrations(): Migration[] {
     .map((name) => ({ name, sql: fs.readFileSync(/*turbopackIgnore: true*/ path.join(dir, name), "utf8") }));
 }
 
-function postgresJsDriver(url: string): Driver {
+export function postgresJsDriver(url: string): Driver {
   const sql = postgres(url, {
     prepare: false, // required for Supabase's transaction pooler (port 6543)
     max: Number(process.env.DATABASE_POOL_SIZE ?? 5),
