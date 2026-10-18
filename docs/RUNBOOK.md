@@ -22,12 +22,15 @@ Environment variables: see the table in the README. After changing one, redeploy
 Redeploy). Operator switches that need no deploy (maintenance mode, spectators, announcements) are in
 `/admin` → Settings.
 
-### WalletConnect (QR codes and mobile wallets)
+### Wallet window (Reown AppKit)
 
-1. Sign in at https://cloud.reown.com (WalletConnect's new name is Reown) and create a project.
+With a Reown project ID, **Connect Wallet** opens Reown AppKit (browser wallets, QR codes, 500+ mobile
+wallet apps). Without one, the app's own simpler dialog is used.
+
+1. Sign in at https://dashboard.reown.com (WalletConnect's new name is Reown) and create an AppKit project.
 2. Under the project's domains, add `backgammon-iota-gules.vercel.app` (and your own domain later).
 3. Copy the Project ID into `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` in Vercel, all environments, and redeploy.
-4. Check: on a desktop, **Connect Wallet** now offers WalletConnect with a QR code; on a phone it opens wallet apps.
+4. Check: **Connect Wallet** opens the AppKit window with WalletConnect (QR code) and wallet apps; on a phone it opens as a sheet from the bottom.
 
 ### Instant updates
 

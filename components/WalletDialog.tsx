@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createSiweMessage } from "viem/siwe";
 import { useConnect, useConnection, useConnectors, useDisconnect, useSignMessage } from "wagmi";
+import { getConnection } from "wagmi/actions";
 import Modal from "@/components/Modal";
+import { useLatest } from "@/lib/client/hooks";
 import { setMe, useMe, type Profile } from "@/lib/client/me";
-import { chains, WALLETCONNECT_PROJECT_ID } from "@/lib/client/wagmi";
+import { appKit } from "@/lib/client/appkit";
+import { chains, wagmiConfig } from "@/lib/client/wagmi";
 import { closeWalletDialog, walletDialogStore } from "@/lib/client/wallet";
 
 const STATEMENT = "Sign in to Backgammon. This free signature proves you own this wallet. It does not send a transaction, cost gas or move funds.";
@@ -29,6 +32,8 @@ type Step = { kind: "idle" } | { kind: "connecting"; name: string } | { kind: "s
 /**
  * Connect a wallet and sign in with it (Sign-In with Ethereum). The wallet signs a short message —
  * free, no transaction — and the server checks it; the first sign-in with a wallet creates the account.
+ * With a Reown project the wallet is chosen in AppKit's window and the signature is asked for as soon
+ * as it connects; otherwise this dialog lists the wallets itself.
  */
 export default function WalletDialog() {
   const open = useSyncExternalStore(walletDialogStore.subscribe, walletDialogStore.get, walletDialogStore.server);
@@ -45,6 +50,9 @@ function Dialog() {
   const { mutateAsync: signMessage } = useSignMessage();
   const { disconnect } = useDisconnect();
   const [step, setStep] = useState<Step>({ kind: "idle" });
+  // Connected through AppKit just now: ask for the signature straight away (once).
+  const [autoSign, setAutoSign] = useState(false);
+  const autoSigned = useRef(false);
 
   // Wallets that announced themselves by name replace the generic "Injected" entry.
   const named = connectors.filter((c) => c.type === "injected" && c.id !== "injected");
@@ -114,6 +122,25 @@ function Dialog() {
     if (alreadyYou) closeWalletDialog();
   }, [alreadyYou]);
 
+  const connected = connection.status === "connected" && !!connection.address;
+  const signInRef = useLatest(signIn);
+  useEffect(() => {
+    if (!autoSign || !connected || alreadyYou || autoSigned.current) return;
+    autoSigned.current = true;
+    void signInRef.current(connection.address!, connection.chainId);
+  }, [autoSign, connected, alreadyYou, connection.address, connection.chainId, signInRef]);
+
+  if (appKit && !connected) {
+    return (
+      <AppKitConnect
+        onOpen={() => {
+          autoSigned.current = false;
+          setAutoSign(true);
+        }}
+      />
+    );
+  }
+
   const busy = step.kind === "connecting" || step.kind === "signing";
   return (
     <Modal title="Connect a wallet" onClose={() => !busy && closeWalletDialog()}>
@@ -159,7 +186,7 @@ function Dialog() {
 
       {step.kind === "signing" && connection.status !== "connected" && <p className="small">Check your wallet to sign the message…</p>}
       {step.kind === "error" && <p className="err small">{step.text}</p>}
-      {!WALLETCONNECT_PROJECT_ID && named.length === 0 && (
+      {!appKit && named.length === 0 && (
         <p className="muted small">
           On a phone, open this site in your wallet app&apos;s browser (MetaMask, Coinbase Wallet, Trust…), or install a browser wallet such as MetaMask.
         </p>
@@ -169,4 +196,31 @@ function Dialog() {
       </button>
     </Modal>
   );
+}
+
+/** Opens AppKit's wallet window; closing it without connecting a wallet closes the dialog too. */
+function AppKitConnect({ onOpen }: { onOpen: () => void }) {
+  const onOpenRef = useLatest(onOpen);
+  useEffect(() => {
+    if (!appKit) return;
+    const kit = appKit;
+    onOpenRef.current();
+    void kit.open({ view: "Connect" });
+    let wasOpen = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stop = kit.subscribeState((s) => {
+      if (s.open) wasOpen = true;
+      else if (wasOpen) {
+        // The connection settles a moment after the window closes.
+        timer = setTimeout(() => {
+          if (getConnection(wagmiConfig).status === "disconnected") closeWalletDialog();
+        }, 600);
+      }
+    });
+    return () => {
+      stop();
+      clearTimeout(timer);
+    };
+  }, [onOpenRef]);
+  return null;
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-19
+
+- The Connect Wallet window is Reown AppKit (browser wallets, QR codes, mobile wallet apps), switched on by
+  the Reown project ID; until it is set the built-in dialog stays. Signing in is unchanged.
+
 ## 2026-10-18
 
 **Next phase (the plan shared with the client)**

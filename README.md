@@ -34,7 +34,7 @@ variables (Project → Settings → Environment Variables; redeploy after changi
 | `DATABASE_URL` | yes | Supabase Postgres, *Transaction pooler* (port 6543). Tables are created and upgraded automatically ([docs/DATABASE.md](docs/DATABASE.md)) |
 | `ADMIN_BOOTSTRAP_WALLETS` | yes | Wallet address(es) that become Owner on first admin unlock ([docs/ADMIN.md](docs/ADMIN.md)) |
 | `CRON_SECRET` | yes | Protects the daily clean-up job (`/api/cron/cleanup`, scheduled in `vercel.json`) |
-| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | recommended | QR codes and mobile wallet apps ([docs/WALLET_ACCOUNTS.md](docs/WALLET_ACCOUNTS.md)) |
+| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | recommended | Reown AppKit wallet window: QR codes and mobile wallet apps ([docs/WALLET_ACCOUNTS.md](docs/WALLET_ACCOUNTS.md)) |
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | recommended | Instant match updates and chat via Supabase Realtime; without them pages poll ([docs/RUNBOOK.md](docs/RUNBOOK.md#instant-updates)) |
 | `DISCORD_WEBHOOK_URL` | recommended | Alerts for error spikes and payment errors |
 | `ENABLE_SIMULATED_PAYMENTS`, `SIMULATED_PAYMENTS_SECRET` | demo only | Simulated payment provider (off in production unless enabled) |
@@ -64,7 +64,7 @@ variables (Project → Settings → Environment Variables; redeploy after changi
 | Instant updates | Supabase Realtime notices make moves and chat appear at once; polling remains as a backup |
 | Phones | Edge-to-edge board, one-tap moves, large destination buttons, forgiving taps, landscape layout |
 | Home & profile | Today's progress, games to continue, stats from a results table (correct for any number of matches), paged match history, avatar, settings, problem reports |
-| Accounts | **Wallet = account**: in-app wallet dialog (wagmi 3), Sign-In with Ethereum verified on the server, incl. smart wallets. Guests can play free games; idle guests are removed after 30 minutes; practice credits come with the account |
+| Accounts | **Wallet = account**: Reown AppKit wallet window (wagmi 3; a simpler built-in dialog until a Reown project ID is set), Sign-In with Ethereum verified on the server, incl. smart wallets. Guests can play free games; idle guests are removed after 30 minutes; practice credits come with the account |
 | Admin | Wallet-signed unlock, roles, signed risky actions, append-only audit, players, matches (event log, chat), reports, finance with two-person adjustments, settings, announcements, recent errors |
 | Reliability | Request limits on every write, error screens with reference numbers, offline banner, stored errors with Discord alerts, nightly encrypted backups, daily clean-up job |
 | Wallet / ledger | Double-entry ledger in integer minor units, separate free and paid accounts, reserves, reconciliation, simulated HMAC-signed payment provider |
