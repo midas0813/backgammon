@@ -13,6 +13,7 @@ import { formatTokens } from "@/lib/fees";
 import type { HomeData } from "@/lib/server/home";
 import QuestsCard from "@/components/QuestsCard";
 import FriendsCard from "@/components/FriendsCard";
+import TournamentsCard from "@/components/TournamentsCard";
 
 const POLL_MS = 8000;
 
@@ -150,6 +151,7 @@ export default function Home() {
       )}
 
       <QuestsCard />
+      <TournamentsCard />
       <FriendsCard />
 
       <section className="card today">

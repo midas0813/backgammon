@@ -10,6 +10,7 @@ import RoomBrowser, { type RoomView } from "@/components/RoomBrowser";
 import { ClientApiError, api, isHandled } from "@/lib/client/api";
 import { watchTable, unwatchTable } from "@/lib/client/tables";
 import { toast } from "@/lib/client/toast";
+import type { TournamentList } from "@/components/TournamentsCard";
 import type { Lobby } from "@/lib/server/lobby";
 
 type Poll = Lobby | { unchanged: true; version: string };
@@ -85,6 +86,7 @@ export default function LobbyPage() {
   const [creating, setCreating] = useState(false);
   const [browsing, setBrowsing] = useState<RoomView | null>(null);
   const versionRef = useRef<string | null>(null);
+  const [tournaments, setTournaments] = useState<TournamentList | null>(null);
 
   const load = useCallback(async (force = false) => {
     try {
@@ -129,6 +131,14 @@ export default function LobbyPage() {
       setBusy(null);
     }
   };
+
+  useEffect(() => {
+    api<TournamentList>("/api/tournaments")
+      .then(setTournaments)
+      .catch(() => {});
+  }, []);
+  // The open table closest to starting, shown on the Tournaments tile.
+  const filling = tournaments?.open.filter((t) => t.registered > 0).sort((a, b) => b.registered / b.size - a.registered / a.size)[0];
 
   const vsComputer = () => go("bot", () => api("/api/matches", { method: "POST", body: { mode: "bot", targetPoints: points } }));
   const passAndPlay = () => go("local", () => api("/api/matches", { method: "POST", body: { mode: "local", targetPoints: points } }));
@@ -177,6 +187,19 @@ export default function LobbyPage() {
             ) : undefined
           }
           onClick={() => setBrowsing("open")}
+        />
+        <PlayTile
+          image="tournament"
+          title="Tournaments"
+          text="Free sit & go · 4 or 8 players · win XP"
+          badge={
+            filling ? (
+              <span className="play-tile-badge">
+                <span className="live-dot" aria-hidden /> {filling.name} · {filling.registered}/{filling.size} joined
+              </span>
+            ) : undefined
+          }
+          onClick={() => router.push("/tournaments")}
         />
         <PlayTile image="create-room" title="Create table" text="Public or invite-only · your rules" onClick={() => setCreating(true)} />
         <PlayTile image="vs-computer" title="vs Computer" text={`${points}-point match · starts instantly`} busy={busy === "bot"} onClick={vsComputer} />
@@ -240,14 +263,6 @@ export default function LobbyPage() {
           </ul>
         </section>
       )}
-
-      <div className="row">
-        <span className="badge">Ranked · coming soon</span>
-        <Link className="badge" href="/tournaments">
-          Tournaments · free sit &amp; go →
-        </Link>
-        <span className="badge">Token stakes · not enabled</span>
-      </div>
 
       {browsing && (
         <RoomBrowser

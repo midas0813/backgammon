@@ -4,6 +4,9 @@
 
 - The Connect Wallet window is Reown AppKit (browser wallets, QR codes, mobile wallet apps), switched on by
   the Reown project ID; until it is set the built-in dialog stays. Signing in is unchanged.
+- Tournaments are easier to find: a picture tile second in the Lobby with how many have joined, and a card on
+  Home. Tournament pages have the normal menus and a way back to the Lobby. Only wallet accounts can join
+  tournaments; guests see "Connect a wallet to join".
 
 ## 2026-10-18
 

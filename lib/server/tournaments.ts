@@ -7,7 +7,7 @@ import { assertActive, avatarUrl } from "./users";
 /**
  * Free single-elimination tournaments, "sit & go": a table of 4 or 8 opens, starts the moment it is
  * full, and pairs the bracket automatically. Winners move on as soon as their next opponent is known.
- * Paid tournaments wait on the open decisions (entry, refunds, payouts) in spec 05.
+ * Tournaments are for wallet accounts; guests can watch the brackets. Paid tournaments wait on the open decisions (entry, refunds, payouts) in spec 05.
  */
 export const TEMPLATES = [
   { key: "quick4", name: "Quick 4", size: 4, points: 1, clock: "fast" as const },
@@ -91,7 +91,7 @@ export function getTournament(userId: string | null, id: string) {
 
 export type TournamentView = Awaited<ReturnType<typeof getTournament>>;
 
-/** Join a table; the last seat starts the tournament. */
+/** Join a table (wallet accounts only, not guests); the last seat starts the tournament. */
 export function register(userId: string, id: string) {
   return tx(async (t) => {
     const d = await t.tournaments.get(id, { lock: true });
@@ -100,6 +100,7 @@ export function register(userId: string, id: string) {
     if (d.players.some((p) => p.userId === userId)) return { status: d.status };
     const user = await t.users.get(userId);
     assertActive(user);
+    if (!user?.walletAddress) throw new ApiError(403, "WALLET_REQUIRED", "Connect a wallet to join tournaments. Guests can still play free games.");
     d.players.push({ userId, name: user?.name ?? "Player", seed: 0 });
     if (d.players.length >= d.size) await start(t, d);
     await t.tournaments.put(d);

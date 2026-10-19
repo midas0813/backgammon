@@ -3,14 +3,15 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import Bracket from "@/components/Bracket";
+import WalletButton from "@/components/WalletButton";
 import { api, isHandled } from "@/lib/client/api";
+import { useMe } from "@/lib/client/me";
 import { toast } from "@/lib/client/toast";
-import type { listTournaments } from "@/lib/server/tournaments";
-
-type Data = Awaited<ReturnType<typeof listTournaments>>;
+import type { TournamentList as Data } from "@/components/TournamentsCard";
 
 /** Sit & go tournaments: join a table, it starts when full. */
 export default function TournamentsPage() {
+  const me = useMe();
   const [d, setD] = useState<Data | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const load = useCallback(() => {
@@ -37,6 +38,9 @@ export default function TournamentsPage() {
   };
   return (
     <main className="page">
+      <Link className="btn sm" href="/play" style={{ alignSelf: "flex-start" }}>
+        ← Lobby
+      </Link>
       <section className="lobby-head">
         <div>
           <span className="eyebrow">Free</span>
@@ -47,6 +51,7 @@ export default function TournamentsPage() {
         Sit &amp; go: each table starts the moment it&apos;s full. Matches are paired automatically and you&apos;re called to the board wherever you are in the
         app; the clock starts after a 2-minute grace period. The champion earns 200 XP, the runner-up 100.
       </p>
+      {me && !me.registered && <p className="notice">Tournaments are for wallet accounts. Connect a wallet to join; guests can still play free games.</p>}
       {!d ? (
         <div className="skeleton" style={{ height: 240, borderRadius: 18 }} />
       ) : (
@@ -72,6 +77,8 @@ export default function TournamentsPage() {
                   <button className="btn block" disabled={busy === t.id} onClick={() => act(t.id, "unregister")}>
                     You&apos;re in · leave
                   </button>
+                ) : me && !me.registered ? (
+                  <WalletButton className="btn gold block" label="Connect a wallet to join" />
                 ) : (
                   <button className="btn primary block" disabled={busy === t.id} onClick={() => act(t.id, "register")}>
                     Join

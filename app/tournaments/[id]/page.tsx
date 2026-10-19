@@ -26,7 +26,7 @@ export default function TournamentPage({ params }: { params: Promise<{ id: strin
     );
   return (
     <main className="page">
-      <Link className="btn sm" href="/tournaments">
+      <Link className="btn sm" href="/tournaments" style={{ alignSelf: "flex-start" }}>
         ← Tournaments
       </Link>
       <section className="card">

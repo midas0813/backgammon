@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { getSnapshot, leaveMatch, setEnvForTests, sweep } from "@/lib/server/matches";
 import { tx } from "@/lib/server/store";
 import { getTournament, listTournaments, readyMatches, register, unregister } from "@/lib/server/tournaments";
+import { ensureUser } from "@/lib/server/users";
 import { ensureAccount, randomEnv } from "./helpers";
 
 afterEach(() => vi.useRealTimers());
@@ -40,6 +41,18 @@ describe("sit & go tournaments", () => {
     expect(t.status).toBe("COMPLETED");
     expect(t.winner).toBe(rec!.names[1]);
     expect((await tx((x) => x.users.get(rec!.seats[1]!)))?.xp).toBeGreaterThanOrEqual(200);
+  });
+
+  it("guests cannot join; wallet accounts can", async () => {
+    const { open } = await listTournaments(null);
+    const quick = open.find((t) => t.size === 4)!;
+    const guest = await ensureUser(undefined);
+    await expect(register(guest.id, quick.id)).rejects.toMatchObject({ code: "WALLET_REQUIRED" });
+    expect((await getTournament(guest.id, quick.id)).joined).toBe(false);
+    const player = await ensureAccount();
+    await register(player.id, quick.id);
+    expect((await getTournament(player.id, quick.id)).joined).toBe(true);
+    await unregister(player.id, quick.id);
   });
 
   it("a round nobody turns up for goes to the better seed", async () => {
