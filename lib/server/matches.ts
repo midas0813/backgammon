@@ -397,9 +397,17 @@ export const ROUND_GRACE_MS = 2 * 60 * 1000;
  * A match between two seated players that starts at once (tournament rounds). Clocks start after a
  * grace period; a player who never arrives loses on time, and if neither arrives the match closes.
  */
-export async function createPairedMatchIn(t: Tx, a: string, b: string, targetPoints: number, opts: { clock: ClockPreset; tournamentId: string }) {
+export async function createPairedMatchIn(
+  t: Tx,
+  a: string,
+  b: string,
+  opts: { game?: GameType; points: number; clock: ClockPreset; timeControl?: string; tournamentId: string },
+) {
   const users = await t.users.getMany([a, b]);
   const now = Date.now();
+  const chess = opts.game === "chess";
+  const tc = chess ? (timeControl(opts.timeControl ?? "") ?? timeControl("3+2")!) : undefined;
+  const targetPoints = chess ? 1 : opts.points;
   const rec: MatchRecord = {
     id: shortId(),
     mode: "private",
@@ -414,15 +422,19 @@ export async function createPairedMatchIn(t: Tx, a: string, b: string, targetPoi
     eventSeq: 0,
     actions: {},
     allowSpectators: true,
-    clock: newClock(opts.clock, targetPoints),
-    fair: newFair(""),
+    clock: tc ? newChessClock(tc.id, tc.baseMs, tc.incMs) : newClock(opts.clock, targetPoints),
+    fair: chess ? undefined : newFair(""),
     tournamentId: opts.tournamentId,
   };
-  pushEvents(rec, [{ type: "MATCH_CREATED", payload: { mode: "private", targetPoints, tournamentId: opts.tournamentId } }]);
+  if (chess) {
+    rec.gameType = "chess";
+    rec.chess = { moves: [], white: randomInt(2) as Seat, drawOffer: null, result: null, timeControl: tc!.id };
+  }
+  pushEvents(rec, [{ type: "MATCH_CREATED", payload: { mode: "private", targetPoints, game: rec.gameType ?? "backgammon", tournamentId: opts.tournamentId } }]);
   rec.version += 1;
-  pushEvents(rec, startMatch(rec.state, envFor(rec)));
+  pushEvents(rec, startPlay(rec, envFor(rec)));
   if (rec.clock) {
-    rec.clock.seat = seatToAct(rec.state);
+    rec.clock.seat = seatToActOf(rec);
     rec.clock.turnStartedAt = now + ROUND_GRACE_MS;
   }
   await save(t, rec);

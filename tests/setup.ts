@@ -1,6 +1,7 @@
 import { beforeEach } from "vitest";
 import { invalidateSettings } from "@/lib/server/settings";
 import { getStore, setStore } from "@/lib/server/store";
+import { invalidateTournamentSync } from "@/lib/server/tournaments";
 
 // BG_STORE=pglite runs the whole suite against Postgres (the Supabase schema) instead of memory.
 if (process.env.BG_STORE === "pglite") {
@@ -17,4 +18,5 @@ if (process.env.BG_STORE === "postgres") {
 beforeEach(async () => {
   await getStore().reset();
   invalidateSettings();
+  invalidateTournamentSync();
 });

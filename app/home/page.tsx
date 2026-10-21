@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import Announcements from "@/components/Announcements";
 import Avatar from "@/components/Avatar";
 import CountUp from "@/components/CountUp";
+import GameIcon from "@/components/GameIcon";
 import WalletButton, { shortAddress } from "@/components/WalletButton";
 import { api, isHandled } from "@/lib/client/api";
 import { setMe } from "@/lib/client/me";
@@ -96,7 +97,6 @@ export default function Home() {
   const left = Math.max(0, today.goal - today.matches);
   const recent = me.stats.history.slice(0, 5);
   const arena = levelOf(me.xp);
-  const icon = (g: string) => GAMES.find((x) => x.id === g)?.icon ?? "";
 
   return (
     <main className="page home">
@@ -167,7 +167,7 @@ export default function Home() {
         {data.games.map((g) => (
           <button key={g.id} className={`game-card game-${g.id}`} onClick={() => router.push(lobbyPath(g.id))}>
             <span className="game-card-icon" aria-hidden>
-              {g.icon}
+              <GameIcon name={g.id} size={26} />
             </span>
             <strong>{g.name}</strong>
             <span className="muted small">
@@ -180,8 +180,10 @@ export default function Home() {
           </button>
         ))}
         <Link className="game-card soon" href="/play" aria-label={`${UPCOMING_GAMES.length} more games coming soon`}>
-          <span className="game-card-icon" aria-hidden>
-            {UPCOMING_GAMES.map((g) => g.icon).join("")}
+          <span className="game-card-icon soon-icons" aria-hidden>
+            {UPCOMING_GAMES.map((g) => (
+              <GameIcon key={g.id} name={g.id} size={18} />
+            ))}
           </span>
           <strong>+{UPCOMING_GAMES.length} soon</strong>
           <span className="muted small">{UPCOMING_GAMES.map((g) => g.name).join(", ")}</span>
@@ -202,7 +204,7 @@ export default function Home() {
                     {m.status === "WAITING" ? "Your table" : `vs ${m.opponent}`}
                   </div>
                   <div className="muted small">
-                    {m.gameType === "chess" ? "♟ Chess" : `⚀ Backgammon · ${m.targetPoints}-pt`} ·{" "}
+                    {m.gameType === "chess" ? "Chess" : `Backgammon · ${m.targetPoints}-pt`} ·{" "}
                     {m.status === "WAITING" ? "waiting for an opponent" : m.gameType === "chess" ? "in progress" : `score ${m.score[0]}–${m.score[1]}`}
                   </div>
                 </div>
@@ -230,7 +232,7 @@ export default function Home() {
         <div className="row" style={{ gap: 6 }}>
           {GAMES.map((g) => (
             <span key={g.id} className="badge">
-              {g.icon} {g.name} · {today.byGame[g.id] ?? 0}
+              <GameIcon name={g.id} size={14} /> {g.name} · {today.byGame[g.id] ?? 0}
             </span>
           ))}
         </div>
@@ -264,23 +266,21 @@ export default function Home() {
         <div className="mode-grid">
           <button className="mode-tile primary" disabled={!!busy} onClick={() => playComputer("chess")}>
             <span className="mode-icon" aria-hidden>
-              ♞
+              <GameIcon name="chess" />
             </span>
             <strong>{busy === "chess" ? "Starting…" : "Chess vs Computer"}</strong>
             <span className="muted small">Medium strength, no clock</span>
           </button>
           <button className="mode-tile primary" disabled={!!busy} onClick={() => playComputer("backgammon")}>
             <span className="mode-icon" aria-hidden>
-              ⚀
+              <GameIcon name="backgammon" />
             </span>
             <strong>{busy === "backgammon" ? "Starting…" : "Backgammon vs Computer"}</strong>
             <span className="muted small">3-point match, starts now</span>
           </button>
           <Link className="mode-tile" href="/play">
             <span className="mode-icon" aria-hidden>
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
-                <path d="M13 2 3 14h8l-1 8 10-12h-8z" />
-              </svg>
+              <GameIcon name="games" />
             </span>
             <strong>All games</strong>
             <span className="muted small">
@@ -289,10 +289,10 @@ export default function Home() {
           </Link>
           <Link className="mode-tile" href="/tournaments">
             <span className="mode-icon" aria-hidden>
-              🏆
+              <GameIcon name="trophy" />
             </span>
             <strong>Tournaments</strong>
-            <span className="muted small">Free sit &amp; go · Backgammon</span>
+            <span className="muted small">Weekly, monthly and special events</span>
           </Link>
         </div>
         {error && <p className="err small">{error}</p>}
@@ -344,7 +344,7 @@ export default function Home() {
                     {h.won ? "W" : h.reason === "draw" ? "D" : "L"}
                   </span>
                   <span className="ellipsis">
-                    {icon(h.game)} vs {h.opponent}
+                    <GameIcon name={h.game} size={14} className="inline-icon" /> vs {h.opponent}
                   </span>
                 </span>
                 <span className="row" style={{ gap: 8, flexWrap: "nowrap" }}>

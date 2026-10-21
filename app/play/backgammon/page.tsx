@@ -86,7 +86,7 @@ export default function LobbyPage() {
       .catch(() => {});
   }, []);
   // The open table closest to starting, shown on the Tournaments tile.
-  const filling = tournaments?.open.filter((t) => t.registered > 0).sort((a, b) => b.registered / b.size - a.registered / a.size)[0];
+  const filling = tournaments?.open.filter((t) => t.game === "backgammon" && t.registered > 0).sort((a, b) => b.registered / b.size - a.registered / a.size)[0];
 
   const vsComputer = () => go("bot", () => api("/api/matches", { method: "POST", body: { mode: "bot", targetPoints: points } }));
   const passAndPlay = () => go("local", () => api("/api/matches", { method: "POST", body: { mode: "local", targetPoints: points } }));
@@ -141,7 +141,7 @@ export default function LobbyPage() {
         <PlayTile
           image="tournament"
           title="Tournaments"
-          text="Free sit & go · 4 or 8 players · win XP"
+          text="Weekly & monthly cups · sit & go · rewards"
           badge={
             filling ? (
               <span className="play-tile-badge">
@@ -149,7 +149,7 @@ export default function LobbyPage() {
               </span>
             ) : undefined
           }
-          onClick={() => router.push("/tournaments")}
+          onClick={() => router.push("/tournaments?game=backgammon")}
         />
         <PlayTile image="create-room" title="Create table" text="Public or invite-only · your rules" onClick={() => setCreating(true)} />
         <PlayTile image="vs-computer" title="vs Computer" text={`${points}-point match · starts instantly`} busy={busy === "bot"} onClick={vsComputer} />

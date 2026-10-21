@@ -81,6 +81,20 @@ export function grantFreeCredits(t: Tx, userId: string, units: number) {
   );
 }
 
+/** Practice credits won in a tournament, once per player and tournament. */
+export function grantTournamentCredits(t: Tx, userId: string, tournamentId: string, units: number) {
+  return post(
+    t,
+    `tournament:${tournamentId}:${userId}`,
+    "TOURNAMENT_PRIZE",
+    [
+      { account: SYSTEM.freeIssuance, amount: -units },
+      { account: userAccount(userId, "FREE_CREDITS"), amount: units },
+    ],
+    "Tournament prize (practice credits, no cash value)",
+  );
+}
+
 export function creditDeposit(t: Tx, userId: string, intentId: string, units: number) {
   return post(
     t,

@@ -36,6 +36,9 @@ const STATUS_TONE: Record<string, string> = {
   CREDITED: "ok",
   REVIEW: "bad",
   FAILED: "bad",
+  REGISTERING: "info",
+  RUNNING: "ok",
+  PAUSED: "warn",
 };
 
 /** Status always has a text label; tone is a secondary cue. */

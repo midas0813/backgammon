@@ -30,6 +30,7 @@
     "postgres": "3.4.9",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "three": "0.186.1",
     "viem": "2.56.9",
     "wagmi": "3.7.7"
   },
@@ -39,6 +40,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/three": "0.186.0",
     "eslint": "10.10.0",
     "eslint-config-next": "16.4.0",
     "knip": "6.39.0",

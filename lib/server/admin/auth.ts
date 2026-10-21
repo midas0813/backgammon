@@ -31,6 +31,7 @@ export type Permission =
   | "finance.view"
   | "finance.adjust"
   | "settings.manage"
+  | "tournaments.manage"
   | "admins.manage"
   | "audit.view.all";
 
@@ -44,10 +45,11 @@ export const PERMISSIONS: Record<AdminRole, Permission[]> = {
     "finance.view",
     "finance.adjust",
     "settings.manage",
+    "tournaments.manage",
     "admins.manage",
     "audit.view.all",
   ],
-  operator: [...READ, "users.moderate", "matches.manage", "disputes.manage"],
+  operator: [...READ, "users.moderate", "matches.manage", "disputes.manage", "tournaments.manage"],
   finance: [...READ, "finance.view", "finance.adjust"],
   viewer: [...READ],
 };

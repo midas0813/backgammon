@@ -16,6 +16,7 @@ import Matches from "./Matches";
 import Prizes from "./Prizes";
 import Reports from "./Reports";
 import Settings from "./Settings";
+import Tournaments from "./Tournaments";
 import Users from "./Users";
 import { AdminCtx, type AdminMe } from "./ui";
 
@@ -32,6 +33,12 @@ const SECTIONS = [
   { id: "beta", label: "Beta", perm: "disputes.view", icon: "M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3" },
   { id: "fairplay", label: "Fair play", perm: "matches.view", icon: "M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6zM9 12l2 2 4-4" },
   { id: "finance", label: "Finance", perm: "finance.view", icon: "M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" },
+  {
+    id: "tournaments",
+    label: "Tournaments",
+    perm: "matches.view",
+    icon: "M7.5 4h9v5a4.5 4.5 0 0 1-9 0zM7.5 6h-3a3 3 0 0 0 3.2 4.3M16.5 6h3a3 3 0 0 1-3.2 4.3M12 13.5V17M8.5 20.5h7",
+  },
   { id: "prizes", label: "Prizes", perm: "finance.view", icon: "M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4" },
   {
     id: "settings",
@@ -219,6 +226,7 @@ export default function AdminApp() {
           {section === "fairplay" && <FairPlay />}
           {section === "beta" && <Beta />}
           {section === "finance" && <Finance />}
+          {section === "tournaments" && <Tournaments />}
           {section === "prizes" && <Prizes />}
           {section === "settings" && <Settings />}
           {section === "admins" && <Admins />}

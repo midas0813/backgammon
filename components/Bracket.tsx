@@ -23,6 +23,7 @@ export default function Bracket({ t }: { t: TournamentView }) {
                   </span>
                 ))}
                 {s.walkover && <span className="muted small">no-show</span>}
+                {s.bye && <span className="muted small">bye</span>}
               </>
             );
             return s.matchId ? (

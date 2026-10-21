@@ -156,6 +156,12 @@ export default function ChessLobbyPage() {
           onClick={quickMatch}
         />
         <PlayTile glyph="♜" title="Find a game" text="Browse open chess tables" onClick={() => setBrowsing("open")} />
+        <PlayTile
+          image="tournament"
+          title="Tournaments"
+          text="Weekly & monthly blitz cups · sit & go · rewards"
+          onClick={() => router.push("/tournaments?game=chess")}
+        />
         <PlayTile glyph="♛" title="Create table" text="Public or invite-only · your time control and colour" onClick={() => setCreating(true)} />
         <PlayTile glyph="♚" title="vs Computer" text="Easy, medium or hard · starts instantly" busy={busy === "bot"} onClick={() => setComputer(true)} />
         <PlayTile glyph="♝" title="Pass & play" text="Two players on one device" busy={busy === "local"} onClick={passAndPlay} />

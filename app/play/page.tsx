@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import Announcements from "@/components/Announcements";
 import CountUp from "@/components/CountUp";
+import GameIcon from "@/components/GameIcon";
 import { api } from "@/lib/client/api";
 import { BRAND } from "@/lib/brand";
 import { GAMES, UPCOMING_GAMES, lobbyPath, type GameType } from "@/lib/games";
@@ -91,19 +92,26 @@ export default function PlayHub() {
       </section>
 
       <h2 className="hub-soon-title">Coming soon</h2>
-      <section className="hub-soon" aria-label="Coming soon">
+      <section className="hub-games" aria-label="Coming soon">
         {UPCOMING_GAMES.map((g, i) => (
-          <div key={g.id} className="hub-soon-tile enter" style={{ animationDelay: `${(GAMES.length + i) * 70}ms` }}>
-            <span className="hub-soon-icon" aria-hidden>
-              {g.icon}
+          <div
+            key={g.id}
+            className={`hub-tile hub-${g.id} soon enter`}
+            style={{ animationDelay: `${(GAMES.length + i) * 70}ms` }}
+            aria-disabled="true"
+            aria-label={`${g.name}, coming soon`}
+          >
+            <span className="hub-art hub-icon-art" aria-hidden>
+              <GameIcon name={g.id} size={132} />
             </span>
-            <span>
+            <span className="hub-shade" aria-hidden />
+            <span className="hub-text">
               <strong>{g.name}</strong>
-              <span className="muted small" style={{ display: "block" }}>
-                {g.tagline}
-              </span>
+              <span>{g.tagline}</span>
             </span>
-            <span className="badge">Soon</span>
+            <span className="hub-play soon" aria-hidden>
+              Coming soon
+            </span>
           </div>
         ))}
       </section>

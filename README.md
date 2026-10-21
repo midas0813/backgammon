@@ -11,7 +11,7 @@ Live: https://backgammon-iota-gules.vercel.app
 ```bash
 npm install
 npm run dev              # http://localhost:3000 (data in .data/db.json)
-npm test                 # 135 unit/integration tests on the in-memory store
+npm test                 # 140 unit/integration tests on the in-memory store
 npm run test:pg          # the same tests on Postgres (PGlite + the Supabase migrations)
 npm run test:postgres    # the same tests through the production driver on a real Postgres (CI)
 npm run build && npm run e2e   # 24 browser tests (Playwright); PW_CHANNEL=chrome uses installed Chrome
@@ -57,7 +57,7 @@ variables (Project → Settings → Environment Variables; redeploy after changi
 | Clocks | Free seconds per move plus a time bank; timeouts; disconnect protection with a reconnect window; Standard, Fast or No clock |
 | Fair dice | Sealed server seed + players' device seeds; verify any finished match in the browser (`/fair`) |
 | Progress | Daily and weekly quests, XP, levels, avatar frames; ratings (FIBS) on ranked tables; weekly/season leaderboard with a free weekly prize pool (admin-approved) |
-| Social | Friends with online status, direct invites, rematch, replays (`/replay/:id`), sit & go tournaments for wallet accounts (`/tournaments`, a tile in the Lobby and a card on Home) |
+| Social | Friends with online status, direct invites, rematch, replays (`/replay/:id`), tournaments for wallet accounts in every game: weekly, monthly, events and sit & go, organised by admins with rewards (`/tournaments`, tiles in the lobbies and a card on Home) |
 | Fair-play review | Anti-cheat flags reviewed by admins; spectator delay on ranked and tournament matches |
 | Beta | Invite codes per community (optional invite-only), Feedback button, tester guide (`/beta`), Terms / Privacy / Cookies (`/legal`) |
 | Fair play rules | **One game per player** (any tab or device). Left games end on their own: the player to act loses after 10 min away while the opponent waits; matches both left close after 30 min with no result; a host who doesn't return within 2 min of someone joining → called off; invites expire after 15 min; public tables close 15 min after the host leaves or after 1 h; computer and pass & play games close after a day alone |

@@ -10,6 +10,8 @@ import { closeWeek, decidePrizeWeekIn } from "../leaderboard";
 import { publish } from "../realtime";
 import { invalidateSettings, mergeSettings, operatorSettings } from "../settings";
 import { tx, type Adjustment, type AdminRole, type Announcement, type Dispute, type LobbyRow, type Tx, type User } from "../store";
+import { cleanSeries } from "../../tournaments";
+import { SERIES_SETTING, adminTournamentsIn, cancelTournamentIn, loadSeries, startTournamentNowIn, syncTournaments } from "../tournaments";
 import { avatarUrl, isSuspended, playerStats } from "../users";
 import { ROLES, can, cleanReason, stepUp, writeAudit, type AdminContext, type Permission } from "./auth";
 
@@ -609,6 +611,56 @@ export function activeAnnouncements() {
         .map((a) => ({ id: a.id, message: a.message, tone: a.tone })),
       maintenance: settings.maintenance.enabled ? settings.maintenance.message : null,
     };
+  });
+}
+
+// ---- Tournaments ---------------------------------------------------------------------------------
+
+export function listTournamentsAdmin(_ctx: AdminContext) {
+  return tx((t) => adminTournamentsIn(t));
+}
+
+/** Replace the list of tournament series (sit & go, weekly, monthly, events) and their rewards. */
+export async function saveTournamentSeries(ctx: AdminContext, body: { series?: unknown }) {
+  need(ctx, "tournaments.manage");
+  if (!Array.isArray(body.series) || body.series.length > 40) throw new ApiError(400, "INVALID_INPUT", "Send the list of series (at most 40)");
+  const ids = new Set<string>();
+  const series = body.series.map((raw, i) => {
+    let s;
+    try {
+      s = cleanSeries((raw ?? {}) as Record<string, unknown>, `series-${randomBytes(3).toString("hex")}`);
+    } catch (e) {
+      throw new ApiError(400, "INVALID_INPUT", `Series ${i + 1}: ${(e as Error).message}`);
+    }
+    if (ids.has(s.id)) s.id = `${s.id.slice(0, 33)}-${randomBytes(3).toString("hex")}`;
+    ids.add(s.id);
+    return s;
+  });
+  return tx(async (t) => {
+    const before = await loadSeries(t);
+    await t.admin.putSetting(SERIES_SETTING, series, ctx.userId);
+    await writeAudit(t, ctx, { action: "TOURNAMENT_SERIES_UPDATE", targetType: "tournaments", targetId: "series", details: { before, after: series } });
+    await syncTournaments(t, Date.now(), true);
+    return adminTournamentsIn(t);
+  });
+}
+
+/** Cancel (with a reason) or start now (with whoever registered). */
+export async function tournamentAction(ctx: AdminContext, id: string, body: { action?: unknown; reason?: unknown }) {
+  need(ctx, "tournaments.manage");
+  const action = body.action === "start" ? "start" : body.action === "cancel" ? "cancel" : null;
+  if (!action) throw new ApiError(400, "INVALID_INPUT", "Unknown action");
+  const reason = action === "cancel" ? cleanReason(body.reason) : "";
+  return tx(async (t) => {
+    const d = action === "cancel" ? await cancelTournamentIn(t, id, reason) : await startTournamentNowIn(t, id);
+    await writeAudit(t, ctx, {
+      action: action === "cancel" ? "TOURNAMENT_CANCEL" : "TOURNAMENT_START",
+      targetType: "tournament",
+      targetId: id,
+      reason: reason || undefined,
+      details: { name: d.name, players: d.players.length },
+    });
+    return adminTournamentsIn(t);
   });
 }
 

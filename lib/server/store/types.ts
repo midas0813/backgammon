@@ -1,6 +1,7 @@
 import type { MatchState } from "../../engine/match";
 import type { ChessState } from "../../chess/rules";
 import type { GameType } from "../../games";
+import type { TournamentKind, TournamentReward } from "../../tournaments";
 import type { ClockState } from "../clock";
 import type { FairState } from "../fair";
 import type { DepositMethod, DepositStatus, WithdrawalStatus } from "../payments/adapter";
@@ -326,15 +327,30 @@ export interface MatchInvite {
 export interface TournamentDoc {
   id: string;
   name: string;
+  /** The series it belongs to (older tables: the sit & go template key). */
   template: string;
+  /** Sit & go: the table size. Scheduled: the most players; the bracket is sized when it starts. */
   size: number;
   points: number;
   clock: "standard" | "fast" | "none";
   status: "REGISTERING" | "RUNNING" | "COMPLETED" | "CANCELLED";
   players: { userId: string; name: string; seed: number }[];
-  /** rounds[r][k]: a pairing; its winner goes to rounds[r + 1][k / 2]. */
-  rounds: { a: string | null; b: string | null; matchId: string | null; winner: string | null; walkover?: boolean }[][];
+  /** rounds[r][k]: a pairing; its winner goes to rounds[r + 1][k / 2]. A bye has no `b`. */
+  rounds: { a: string | null; b: string | null; matchId: string | null; winner: string | null; walkover?: boolean; bye?: boolean }[][];
   winner?: string;
+  /** Older tables: backgammon sit & go. */
+  game?: GameType;
+  kind?: TournamentKind;
+  /** Scheduled tournaments start at this time with whoever registered. */
+  startsAt?: string;
+  minPlayers?: number;
+  /** Chess time control. */
+  timeControl?: string;
+  description?: string;
+  rewards?: TournamentReward[];
+  /** What each finisher received. */
+  awards?: { userId: string; name: string; place: number; xp: number; credits: number; prize: string }[];
+  cancelReason?: string;
   createdAt: string;
   startedAt?: string;
   completedAt?: string;

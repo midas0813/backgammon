@@ -482,3 +482,51 @@ button.a-tile:hover {
   text-underline-offset: 3px;
   cursor: pointer;
 }
+
+/* Tournaments: series list and editor. */
+.a-series {
+  display: grid;
+  gap: 8px;
+}
+.a-series-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.a-series-row.off {
+  opacity: 0.6;
+}
+@media (max-width: 720px) {
+  .a-series-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+.a-form {
+  display: grid;
+  gap: 12px;
+}
+.a-rewards {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px 12px;
+  margin: 0;
+}
+.a-rewards legend {
+  padding: 0 6px;
+  font-weight: 700;
+}
+.a-rewards-grid {
+  display: grid;
+  grid-template-columns: minmax(96px, auto) 80px 90px 1fr;
+  gap: 6px 8px;
+  align-items: center;
+}
+.a-rewards-grid input {
+  min-width: 0;
+}

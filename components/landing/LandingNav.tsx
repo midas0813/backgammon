@@ -21,10 +21,10 @@ export default function LandingNav() {
           <Brand />
         </Link>
         <nav className="l-links desktop-only" aria-label="Sections">
-          <a href="#about">About</a>
-          <a href="#how">How to play</a>
-          <a href="#boards">Boards</a>
-          <a href="#modes">Modes</a>
+          <a href="#games">Games</a>
+          <a href="#platform">Platform</a>
+          <a href="#vision">Vision</a>
+          <a href="#roadmap">Roadmap</a>
         </nav>
         <div className="header-actions">
           <OpenAppLink className="btn sm ghost desktop-only" label="Play" />

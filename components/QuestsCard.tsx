@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Confetti from "@/components/Confetti";
+import GameIcon from "@/components/GameIcon";
 import { api, ClientApiError } from "@/lib/client/api";
 import { sounds } from "@/lib/client/sound";
 import { toast } from "@/lib/client/toast";
@@ -88,7 +89,7 @@ export default function QuestsCard() {
               <strong>
                 {q.game && (
                   <span className="quest-game" title={q.game === "chess" ? "Chess" : "Backgammon"}>
-                    {q.game === "chess" ? "♟" : "⚀"}
+                    <GameIcon name={q.game} size={13} />
                   </span>
                 )}
                 {q.title}

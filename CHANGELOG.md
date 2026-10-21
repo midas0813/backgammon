@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-10-21 (evening)
+
+- **Tournaments are organised by admins** (new admin section *Tournaments*, for owners and operators):
+  series of four kinds for any game: weekly and monthly cups (day and time in UTC), one-off events,
+  and sit & go tables. Each series sets its size, the minimum players, when registration opens, the
+  match format, a description and **rewards per place** (XP, practice credits, a prize in words), with
+  defaults per kind that can be changed. Admins can pause, edit or remove a series, and cancel or
+  start a tournament early. Scheduled tournaments start on time with whoever registered (seeded by
+  rating, byes for the top seeds) or are cancelled without enough players. A drawn chess game in a
+  tournament goes to Black. Rewards are recorded on the tournament and shown to players.
+- Tournaments page and the Home card cover every game, with a game filter, start times, countdowns
+  and rewards. Chess has a Tournaments tile in its lobby.
+- Coming-soon games on Play are the same tiles as live games, switched off, with "Coming soon"
+  instead of Play and no level.
+- One line-icon set for games and Arena features (six-sided dice for Backgammon) on Home and Play.
+- Confetti now falls in place on the page and scrolls away with it instead of following the screen,
+  and removes itself when done.
+- New landing page for Liquen Arena: a Three.js 3D arena in the hero (chess pieces, six-sided dice,
+  checkers, draughts, a cribbage board, poker chips and cards on a lit platform), the games (live
+  and in development), the platform, the vision and a roadmap, with scroll and hover animations.
+  three.js loads only on the landing page; reduced motion gets a still frame.
+
 ## 2026-10-21 (later)
 
 - The platform is **Liquen Arena**. Play shows every game as a tile (Backgammon, Chess, and Poker,

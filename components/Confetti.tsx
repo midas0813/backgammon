@@ -1,11 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 const COLORS = ["#65E2BC", "#F4CF87", "#F7F1E6", "#9DB7FF", "#FFA8B6"];
 
-/** One-shot CSS confetti burst (skipped automatically under reduced motion). */
+/**
+ * One-shot CSS confetti burst (skipped automatically under reduced motion). It falls through the part
+ * of the page that was on screen when it fired and scrolls away with the page, then removes itself.
+ */
 export default function Confetti({ pieces = 90 }: { pieces?: number }) {
+  const [area, setArea] = useState<{ top: number; height: number } | null>(null);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- measured once, on the client, when the burst starts
+    setArea({ top: window.scrollY, height: window.innerHeight });
+    const t = window.setTimeout(() => setArea(null), 4200);
+    return () => window.clearTimeout(t);
+  }, []);
   // Random layout chosen once when the burst mounts.
   const [items] = useState(() =>
     Array.from({ length: pieces }, (_, i) => ({
@@ -18,8 +29,9 @@ export default function Confetti({ pieces = 90 }: { pieces?: number }) {
       round: Math.random() < 0.3,
     })),
   );
-  return (
-    <div className="confetti" aria-hidden>
+  if (!area) return null;
+  return createPortal(
+    <div className="confetti" style={{ top: area.top, height: area.height, "--fall": `${area.height}px` } as React.CSSProperties} aria-hidden>
       {items.map((p, i) => (
         <i
           key={i}
@@ -36,6 +48,7 @@ export default function Confetti({ pieces = 90 }: { pieces?: number }) {
           }
         />
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }
