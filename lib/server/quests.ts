@@ -17,6 +17,17 @@ const realWin = (rec: MatchRecord) => rec.state.results.some((r) => r.kind !== "
 
 export async function recordProgress(t: Tx, rec: MatchRecord) {
   if (rec.mode === "local" || rec.events.length === 0) return;
+  // Chess: XP for finishing a game (its own quests come next); backgammon quests don't count it.
+  if (rec.chess) {
+    if (!rec.events.some((e) => e.type === "MATCH_COMPLETED")) return;
+    for (const seat of [0, 1] as Seat[]) {
+      const id = rec.seats[seat];
+      if (!id || id === BOT) continue;
+      const won = rec.state.winner === seat && rec.chess.moves.length >= 2;
+      await t.gameStats.addXp(id, "chess", MATCH_XP.played + (won ? MATCH_XP.won : 0));
+    }
+    return;
+  }
   const counts: Record<string, Partial<Record<QuestMetric, number>>> = {};
   const add = (seat: number, m: QuestMetric, n = 1) => {
     const id = rec.seats[seat];

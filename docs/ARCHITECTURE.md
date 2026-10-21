@@ -9,6 +9,21 @@ browser ──HTTP──▶ app/api/* (route handlers) ──▶ lib/server/* (s
    └──── Supabase Realtime "something changed" ◀────────┘ (after commit)
 ```
 
+## Games
+
+The platform hosts several games on one shared shell: accounts and wallet, lobby, clocks, chat,
+spectators, friends, admin and the one-game-at-a-time rule are common; rules, boards, ratings and XP
+are per game. Each match records its game (`gameType`, `matches.game`), and `lib/games.ts` dispatches
+to the game's rules.
+
+- **Backgammon:** `lib/engine/` (rules), `Board.tsx`, FIBS ratings and XP on the user record.
+- **Chess:** `lib/chess/rules.ts` (on chess.js; the match stores its UCI move list), `lib/chess/bot.ts`
+  (computer, three levels, time-limited search), `lib/server/chess.ts` (moves, draw offers,
+  resignation, results), `ChessBoard.tsx` and `ChessScreen.tsx`. Fischer clocks (base + increment),
+  Elo ratings and XP in `user_game_stats`.
+- Adding a game means a rules module, a board and screen, and a branch in `lib/games.ts` and
+  `lib/server/matches.ts`; the rest of the platform is reused.
+
 ## Layers
 
 | Folder | Role |

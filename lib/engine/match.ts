@@ -57,10 +57,21 @@ export interface MatchState {
   game: GameState | null;
   results: GameResult[];
   winner: Seat | null;
-  endReason: "points" | "forfeit" | "abandoned" | "timeout" | null;
+  endReason: "points" | "forfeit" | "abandoned" | "timeout" | "draw" | null;
 }
 
-export type ActionType = "ROLL" | "CONFIRM_TURN" | "OFFER_DOUBLE" | "ACCEPT_DOUBLE" | "PASS_DOUBLE" | "FORFEIT_MATCH";
+export type ActionType =
+  | "ROLL"
+  | "CONFIRM_TURN"
+  | "OFFER_DOUBLE"
+  | "ACCEPT_DOUBLE"
+  | "PASS_DOUBLE"
+  | "FORFEIT_MATCH"
+  // Chess (lib/server/chess.ts):
+  | "MOVE"
+  | "OFFER_DRAW"
+  | "ACCEPT_DRAW"
+  | "DECLINE_DRAW";
 
 export interface GameAction {
   actionType: ActionType;
@@ -69,6 +80,8 @@ export interface GameAction {
     proposedCube?: number;
     pendingOfferId?: string;
     confirm?: boolean;
+    /** Chess: the move in UCI form, e.g. "e2e4" or "e7e8q". */
+    uci?: string;
   };
 }
 

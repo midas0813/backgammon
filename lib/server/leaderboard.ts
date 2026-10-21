@@ -1,5 +1,5 @@
 import { levelOf, weekKey } from "../quests";
-import { PROVISIONAL_GAMES, START_RATING, ratingChange } from "../rating";
+import { PROVISIONAL_GAMES, START_RATING, eloChange, ratingChange } from "../rating";
 import { ApiError, notFound } from "./errors";
 import { SYSTEM, post, userAccount } from "./ledger";
 import { operatorSettings } from "./settings";
@@ -12,7 +12,7 @@ import { avatarUrl, isSuspended } from "./users";
  * count. Each week the top eligible players (wallet account, enough different opponents) win the pool
  * after an admin's check.
  */
-export const POINTS = { winPerMatchPoint: 2, loss: 1, gammonBonus: 1 };
+export const POINTS = { winPerMatchPoint: 2, loss: 1, gammonBonus: 1, /** chess */ draw: 1 };
 /** Matches against the same opponent that count toward points per day. */
 export const DAILY_PAIR_CAP = 3;
 
@@ -22,14 +22,16 @@ const WEEK = 7 * DAY;
 /** Leaderboard points for each result of a finished match (called before the rows are stored). */
 export async function withLeaderboardPoints(t: Tx, rec: MatchRecord, rows: MatchResultRow[]) {
   const online = rec.mode === "quick" || rec.mode === "private";
-  const realGame = rec.state.results.some((r) => r.kind !== "forfeit");
+  // A game really played: not an instant forfeit (chess: both sides moved).
+  const realGame = rec.chess ? rec.chess.moves.length >= 2 : rec.state.results.some((r) => r.kind !== "forfeit");
+  const draw = !!rec.chess && rec.state.winner === null;
   const dayStart = Date.now() - (Date.now() % DAY);
   for (const r of rows) {
     r.lbPoints = 0;
     if (!online || !r.opponentId || !realGame) continue;
     const earlier = await t.results.countAgainst(r.userId, r.opponentId, dayStart, { played: true });
     if (earlier >= DAILY_PAIR_CAP) continue;
-    r.lbPoints = (r.won ? POINTS.winPerMatchPoint * r.targetPoints : POINTS.loss) + POINTS.gammonBonus * r.gammons;
+    r.lbPoints = draw ? POINTS.draw : (r.won ? POINTS.winPerMatchPoint * r.targetPoints : POINTS.loss) + POINTS.gammonBonus * r.gammons;
   }
   return rows;
 }
@@ -39,6 +41,7 @@ export async function withLeaderboardPoints(t: Tx, rec: MatchRecord, rows: Match
  * Sets each row's ratingChange and applies it to the accounts.
  */
 export async function applyRatings(t: Tx, rec: MatchRecord, rows: MatchResultRow[]) {
+  if (rec.chess) return applyChessRatings(t, rec, rows);
   if (!rec.ranked || rows.length !== 2 || !rec.state.results.some((r) => r.kind !== "forfeit")) return rows;
   const winRow = rows.find((r) => r.won);
   const loseRow = rows.find((r) => !r.won);
@@ -57,6 +60,22 @@ export async function applyRatings(t: Tx, rec: MatchRecord, rows: MatchResultRow
   loseRow.ratingChange = -Math.round(loss * 100) / 100;
   await t.users.applyRating(w.id, winRow.ratingChange, n);
   await t.users.applyRating(l.id, loseRow.ratingChange, n);
+  return rows;
+}
+
+/** Rated chess games move both Elo ratings (draws count half); games where someone never moved don't. */
+async function applyChessRatings(t: Tx, rec: MatchRecord, rows: MatchResultRow[]) {
+  if (!rec.ranked || rows.length !== 2 || rec.chess!.moves.length < 2) return rows;
+  const stats = await t.gameStats.getMany([rows[0].userId, rows[1].userId], "chess");
+  const s = (id: string) => stats[id] ?? { rating: START_RATING, ratingGames: 0 };
+  const [a, b] = rows;
+  const scoreA = rec.state.winner === null ? 0.5 : a.won ? 1 : 0;
+  const da = eloChange(s(a.userId).rating, s(b.userId).rating, scoreA, s(a.userId).ratingGames);
+  const db = eloChange(s(b.userId).rating, s(a.userId).rating, (1 - scoreA) as 0 | 0.5 | 1, s(b.userId).ratingGames);
+  a.ratingChange = Math.round(da * 100) / 100;
+  b.ratingChange = Math.round(db * 100) / 100;
+  await t.gameStats.applyRating(a.userId, "chess", a.ratingChange, 1);
+  await t.gameStats.applyRating(b.userId, "chess", b.ratingChange, 1);
   return rows;
 }
 

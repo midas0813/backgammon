@@ -1,10 +1,12 @@
 import type { Seat } from "../engine/board";
 import { userBalances } from "./ledger";
 import { sweep } from "./matches";
-import { pulse, touchUser } from "./lobby";
+import { LIVE_WINDOW_MS, pulse, touchUser } from "./lobby";
 import { operatorSettings } from "./settings";
 import { tx } from "./store";
 import { profileIn } from "./users";
+import { GAMES } from "../games";
+import { levelOf } from "../quests";
 
 export const DAILY_GOAL = 3;
 
@@ -38,6 +40,7 @@ export async function homeData(userId: string, tzOffset: number) {
       return {
         matchId: m.id,
         mode: m.mode,
+        gameType: m.gameType,
         status: m.status,
         targetPoints: m.targetPoints,
         opponent: m.mode === "local" ? "Pass & play" : m.status === "WAITING" ? null : m.names[opp],
@@ -49,6 +52,18 @@ export async function homeData(userId: string, tzOffset: number) {
     const counts = await pulse(t, now, settings.spectators);
     const myWaiting = continuing.filter((m) => m.mode === "quick" && m.status === "WAITING").length;
     const reports = await t.disputes.listByUser(userId);
+    // One card per game: your level and rating in it, and how many are playing.
+    const games = [];
+    for (const g of GAMES) {
+      const s = (await t.gameStats.getMany([userId], g.id))[userId];
+      games.push({
+        ...g,
+        level: levelOf(s?.xp ?? 0).level,
+        rating: Math.round(s?.rating ?? 1500),
+        rated: (s?.ratingGames ?? 0) > 0,
+        playing: g.id === "backgammon" ? counts.playing : await t.matches.countActiveSince(now - LIVE_WINDOW_MS, g.id),
+      });
+    }
     return {
       profile,
       balances: { ...balances, pendingDeposits },
@@ -64,10 +79,11 @@ export async function homeData(userId: string, tzOffset: number) {
       continuing,
       pulse: {
         online: counts.online,
-        live: counts.playing,
+        live: games.reduce((n, g) => n + g.playing, 0),
         open: Math.max(0, counts.open - myWaiting),
         gamesPlayed: (await t.counters.get(["games"])).games,
       },
+      games,
       openReports: reports.filter((r) => r.status !== "RESOLVED" && r.status !== "REJECTED").length,
     };
   });

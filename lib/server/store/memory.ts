@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { lobbyRow } from "./summary";
 import {
+  type GameStats,
+  type GameType,
   SPECTATOR_WINDOW_MS,
   type Adjustment,
   type AdminChallenge,
@@ -93,6 +95,8 @@ interface Data {
   codes: Record<string, InviteCode>;
   feedback: Record<string, Feedback>;
   invites: Record<string, MatchInvite>;
+  /** Per-game XP and rating for games other than backgammon, by "userId|game". */
+  gameStats: Record<string, GameStats>;
   ledger: { balances: Record<string, number>; transactions: Txn[] };
 }
 
@@ -135,6 +139,7 @@ const empty = (): Data => ({
   codes: {},
   feedback: {},
   invites: {},
+  gameStats: {},
   ledger: { balances: {}, transactions: [] },
 });
 
@@ -179,6 +184,7 @@ export function createMemoryStore(file: string | null): Store {
         "codes",
         "feedback",
         "invites",
+        "gameStats",
       ] as const) {
         (data as unknown as Record<string, object>)[k] ??= {};
       }
@@ -231,11 +237,11 @@ export function createMemoryStore(file: string | null): Store {
         Object.values(get<Record<string, number>>("spectators", m.id) ?? {}).filter((v) => v >= spectatorsSince).length,
       );
     /** Leaderboard totals in [since, until), best first (same order as the Postgres query). */
-    const totals = (since: number, until: number) => {
+    const totals = (since: number, until: number, game: GameType = "backgammon") => {
       const by = new Map<string, { userId: string; points: number; wins: number; played: number; opp: Set<string>; first: number }>();
       for (const r of values<MatchResultRow>("results")) {
         const at = Date.parse(r.completedAt);
-        if (at < since || at >= until || !r.opponentId || r.flagged) continue;
+        if (at < since || at >= until || !r.opponentId || r.flagged || (r.game ?? "backgammon") !== game) continue;
         const cur = by.get(r.userId) ?? { userId: r.userId, points: 0, wins: 0, played: 0, opp: new Set<string>(), first: at };
         cur.points += r.lbPoints ?? 0;
         cur.wins += r.won ? 1 : 0;
@@ -342,6 +348,32 @@ export function createMemoryStore(file: string | null): Store {
             values<User>("users").map((u) => Date.parse(u.createdAt)),
           ),
       },
+      gameStats: {
+        getMany: async (ids, game) => {
+          const out: Record<string, GameStats> = {};
+          for (const id of ids) {
+            if (game === "backgammon") {
+              const u = get<User>("users", id);
+              if (u) out[id] = { xp: u.xp ?? 0, rating: u.rating ?? 1500, ratingExperience: u.ratingExperience ?? 0, ratingGames: u.ratingGames ?? 0 };
+            } else {
+              const s = get<GameStats>("gameStats", `${id}|${game}`);
+              if (s) out[id] = s;
+            }
+          }
+          return out;
+        },
+        addXp: async (id, game, n) => {
+          if (game === "backgammon") return t.users.addXp(id, n);
+          const s = get<GameStats>("gameStats", `${id}|${game}`) ?? { xp: 0, rating: 1500, ratingExperience: 0, ratingGames: 0 };
+          put("gameStats", `${id}|${game}`, { ...s, xp: s.xp + n });
+          return s.xp + n;
+        },
+        applyRating: async (id, game, delta, points) => {
+          if (game === "backgammon") return t.users.applyRating(id, delta, points);
+          const s = get<GameStats>("gameStats", `${id}|${game}`) ?? { xp: 0, rating: 1500, ratingExperience: 0, ratingGames: 0 };
+          put("gameStats", `${id}|${game}`, { ...s, rating: s.rating + delta, ratingExperience: s.ratingExperience + points, ratingGames: s.ratingGames + 1 });
+        },
+      },
       sessions: {
         get: async (token) => get("sessions", token),
         put: async (token, s) => put("sessions", token, s),
@@ -408,11 +440,14 @@ export function createMemoryStore(file: string | null): Store {
             .sort((a, b) => (a.updatedAt ?? 0) - (b.updatedAt ?? 0))
             .slice(0, f.limit)
             .map((m) => m.id),
-        countActiveSince: async (since) => values<MatchRecord>("matches").filter((m) => m.state.status === "ACTIVE" && (m.updatedAt ?? 0) >= since).length,
+        countActiveSince: async (since, game) =>
+          values<MatchRecord>("matches").filter(
+            (m) => m.state.status === "ACTIVE" && (m.updatedAt ?? 0) >= since && (!game || (m.gameType ?? "backgammon") === game),
+          ).length,
         listPublic: async (f) => {
           const since = Date.now() - SPECTATOR_WINDOW_MS;
           const all = values<MatchRecord>("matches")
-            .filter((m) => m.mode === "quick" && m.state.status === f.status)
+            .filter((m) => m.mode === "quick" && m.state.status === f.status && (m.gameType ?? "backgammon") === (f.game ?? "backgammon"))
             .map((m) => row(m, since))
             .filter(
               (r) =>
@@ -475,9 +510,9 @@ export function createMemoryStore(file: string | null): Store {
           values<MatchResultRow>("results").filter(
             (r) => r.userId === userId && r.opponentId === opponentId && (opts?.played || r.won) && Date.parse(r.completedAt) >= since,
           ).length,
-        leaderboard: async (since, until, limit) => totals(since, until).slice(0, limit),
-        standing: async (userId, since, until) => {
-          const all = totals(since, until);
+        leaderboard: async (since, until, limit, game) => totals(since, until, game).slice(0, limit),
+        standing: async (userId, since, until, game) => {
+          const all = totals(since, until, game);
           const i = all.findIndex((r) => r.userId === userId);
           return i >= 0 ? { ...all[i], rank: i + 1 } : { userId, points: 0, wins: 0, played: 0, opponents: 0, rank: null };
         },

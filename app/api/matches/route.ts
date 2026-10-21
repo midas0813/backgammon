@@ -17,7 +17,12 @@ export async function POST(req: Request) {
     (user) =>
       body.mode === "quick" || body.mode === "private"
         ? createTable(user.id, { ...body, visibility: body.mode === "private" ? "private" : "public" })
-        : createMatch(user.id, body.mode as "bot", Number(body.targetPoints), { clientSeed: body.clientSeed }),
+        : createMatch(user.id, body.mode as "bot", Number(body.targetPoints), {
+            clientSeed: body.clientSeed,
+            game: body.game === "chess" ? "chess" : "backgammon",
+            botLevel: Number(body.botLevel) || undefined,
+            color: body.color === "white" || body.color === "black" ? body.color : "random",
+          }),
     { limit: "game" },
   );
 }

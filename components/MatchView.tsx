@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Avatar from "@/components/Avatar";
 import Board, { boardSpot, type AnimMove, type DieView } from "@/components/Board";
+import ChessScreen from "@/components/ChessScreen";
 import Confetti from "@/components/Confetti";
 import FxLayer, { type FxHandle } from "@/components/FxLayer";
 import DelayedWatch from "@/components/DelayedWatch";
@@ -198,6 +199,12 @@ export default function MatchView({ matchId }: { matchId: string }) {
           sounds.move();
         } else if (e.type === "MATCH_COMPLETED" && soundRef.current) {
           sounds.win();
+        } else if (e.type === "MOVE_MADE" && soundRef.current && !s.yourSeats.includes(Number(p.seat) as Seat)) {
+          sounds.move();
+        } else if (e.type === "DRAW_OFFERED" && !s.yourSeats.includes(Number(p.seat) as Seat)) {
+          showToast(`${name(p.seat)} offers a draw.`);
+        } else if (e.type === "DRAW_DECLINED" && !s.yourSeats.includes(Number(p.seat) as Seat)) {
+          showToast(`${name(p.seat)} declined the draw.`);
         }
       }
       cursorRef.current = s.eventCursor;
@@ -373,7 +380,13 @@ export default function MatchView({ matchId }: { matchId: string }) {
       if (soundRef.current) sounds.turn();
       navigator.vibrate?.([25, 40, 25]);
       const g = snap.game;
-      const sub = g?.phase === "CUBE_PENDING" ? "Accept or pass the double" : g?.phase === "ROLLED" ? "Make your move" : "Roll the dice";
+      const sub = snap.chess
+        ? "Your move"
+        : g?.phase === "CUBE_PENDING"
+          ? "Accept or pass the double"
+          : g?.phase === "ROLLED"
+            ? "Make your move"
+            : "Roll the dice";
       // The mini dice show what the opponent just rolled; blank when there is no such roll yet.
       const last = g?.lastTurn;
       const theirs = g?.phase === "BEFORE_ROLL" && last && last.seat !== snap.yourSeats[0] && last.dice.length === 2 ? last : null;
@@ -566,6 +579,87 @@ export default function MatchView({ matchId }: { matchId: string }) {
         targetPoints={snap.targetPoints}
         delayMs={snap.spectatorDelayMs}
         rights={snap.chat}
+      />
+    );
+  }
+
+  const lobbyHref = snap.gameType === "chess" ? "/play/chess" : "/play";
+  // Chat, notices and the leave dialog are the same for every game.
+  const overlays = (
+    <>
+      {chatOpen && (
+        <ChatSheet
+          messages={chat}
+          rights={snap.chat}
+          isPlayer={snap.yourSeats.length > 0}
+          muteSpectators={muteSpectators}
+          onMuteSpectators={setMuteSpectators}
+          onSend={sendChat}
+          onReport={(id) => chatAction(id, "report")}
+          onRemove={(id) => chatAction(id, "remove-spectator")}
+          onClose={() => {
+            setChatOpen(false);
+            setUnread(0);
+          }}
+        />
+      )}
+      {toast && (
+        <div className="toast" role="status">
+          {toast}
+        </div>
+      )}
+      {leaveAsk && (
+        <Modal title="Leave the table?" onClose={() => setLeaveAsk(false)}>
+          <p className="muted">
+            The match keeps going and leaving does <strong>not</strong> forfeit it. Come back from the lobby&apos;s Resume button. If it&apos;s your turn and
+            you stay away for 10 minutes while your opponent waits, you lose the match by abandonment.
+          </p>
+          <div className="grid2">
+            <button className="btn" onClick={() => setLeaveAsk(false)}>
+              Stay
+            </button>
+            <button className="btn primary" onClick={() => router.push(lobbyHref)}>
+              Go to lobby
+            </button>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+
+  if (snap.gameType === "chess" && snap.chess) {
+    const online = snap.mode === "quick" || snap.mode === "private";
+    return (
+      <ChessScreen
+        snap={snap}
+        matchId={matchId}
+        faces={faces}
+        busy={busy}
+        message={message}
+        onSend={send}
+        onLeave={(e) => {
+          if (activeParticipant) {
+            e.preventDefault();
+            setLeaveAsk(true);
+          }
+        }}
+        chatButton={
+          online && (
+            <button
+              className="btn sm chat-btn"
+              onClick={() => {
+                setChatOpen(true);
+                setUnread(0);
+              }}
+              aria-haspopup="dialog"
+              aria-label={unread ? `Chat, ${unread} unread` : "Chat"}
+            >
+              💬{unread > 0 && <span className="chat-badge">{unread > 9 ? "9+" : unread}</span>}
+            </button>
+          )
+        }
+        after={online && snap.yourSeats.length === 1 && <AfterMatch matchId={snap.matchId} opponent={snap.seats[1 - snap.yourSeats[0]].name} />}
+        overlays={overlays}
       />
     );
   }
@@ -794,28 +888,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
         {busy && <div className="status">Sending…</div>}
       </div>
 
-      {chatOpen && (
-        <ChatSheet
-          messages={chat}
-          rights={snap.chat}
-          isPlayer={snap.yourSeats.length > 0}
-          muteSpectators={muteSpectators}
-          onMuteSpectators={setMuteSpectators}
-          onSend={sendChat}
-          onReport={(id) => chatAction(id, "report")}
-          onRemove={(id) => chatAction(id, "remove-spectator")}
-          onClose={() => {
-            setChatOpen(false);
-            setUnread(0);
-          }}
-        />
-      )}
-
-      {toast && (
-        <div className="toast" role="status">
-          {toast}
-        </div>
-      )}
+      {overlays}
 
       {confirm === "double" && (
         <Modal title={`Offer the cube at ${game!.cubeValue * 2}?`} onClose={() => setConfirm(null)}>
@@ -924,23 +997,6 @@ export default function MatchView({ matchId }: { matchId: string }) {
           <button className="btn block" onClick={() => setMenuOpen(false)}>
             Close
           </button>
-        </Modal>
-      )}
-
-      {leaveAsk && (
-        <Modal title="Leave the table?" onClose={() => setLeaveAsk(false)}>
-          <p className="muted">
-            The match keeps going and leaving does <strong>not</strong> forfeit it. Come back from the lobby&apos;s Resume button. If it&apos;s your turn and
-            you stay away for 10 minutes while your opponent waits, you lose the match by abandonment.
-          </p>
-          <div className="grid2">
-            <button className="btn" onClick={() => setLeaveAsk(false)}>
-              Stay
-            </button>
-            <button className="btn primary" onClick={() => router.push("/play")}>
-              Go to lobby
-            </button>
-          </div>
         </Modal>
       )}
 
@@ -1250,7 +1306,7 @@ function WaitingRoom({ snap, matchId, onChange }: { snap: Snapshot; matchId: str
       if (snap.canCancel) await api(`/api/matches/${matchId}/cancel`, { method: "POST" });
       const { matchId: id } = await api<{ matchId: string }>("/api/matches", {
         method: "POST",
-        body: { mode: "bot", targetPoints: snap.targetPoints },
+        body: snap.gameType === "chess" ? { mode: "bot", game: "chess", targetPoints: 1 } : { mode: "bot", targetPoints: snap.targetPoints },
       });
       router.push(`/match/${id}`);
     } catch (e) {
@@ -1297,20 +1353,43 @@ function WaitingRoom({ snap, matchId, onChange }: { snap: Snapshot; matchId: str
             <span>Host</span>
             <strong>{snap.seats[0].name}</strong>
           </li>
-          <li>
-            <span>Format</span>
-            <span>{snap.targetPoints}-point match</span>
-          </li>
-          <li>
-            <span>Cube</span>
-            <span>On · cap 128 · Crawford rule</span>
-          </li>
-          <li>
-            <span>Clock</span>
-            <span>
-              {snap.clockPreset === "none" ? "None" : snap.clockPreset === "fast" ? "Fast · 8 s per move + time bank" : "Standard · 12 s per move + time bank"}
-            </span>
-          </li>
+          {snap.chess ? (
+            <>
+              <li>
+                <span>Game</span>
+                <span>♟ Chess{snap.ranked ? " · rated" : ""}</span>
+              </li>
+              <li>
+                <span>Clock</span>
+                <span>{snap.clockPreset === "none" ? "None" : `${snap.clockPreset} (minutes + seconds a move)`}</span>
+              </li>
+              <li>
+                <span>Host plays</span>
+                <span>{snap.chess.white === 0 ? "White" : "Black"}</span>
+              </li>
+            </>
+          ) : (
+            <>
+              <li>
+                <span>Format</span>
+                <span>{snap.targetPoints}-point match</span>
+              </li>
+              <li>
+                <span>Cube</span>
+                <span>On · cap 128 · Crawford rule</span>
+              </li>
+              <li>
+                <span>Clock</span>
+                <span>
+                  {snap.clockPreset === "none"
+                    ? "None"
+                    : snap.clockPreset === "fast"
+                      ? "Fast · 8 s per move + time bank"
+                      : "Standard · 12 s per move + time bank"}
+                </span>
+              </li>
+            </>
+          )}
           <li>
             <span>Spectators</span>
             <span>{snap.allowSpectators ? "Allowed" : "Off"}</span>
@@ -1322,7 +1401,7 @@ function WaitingRoom({ snap, matchId, onChange }: { snap: Snapshot; matchId: str
         </ul>
         {snap.canJoin && (
           <button className="btn primary block" onClick={() => act(`/api/matches/${matchId}/join`)}>
-            Join as Black
+            {snap.chess ? `Join as ${snap.chess.white === 1 ? "White" : "Black"}` : "Join as Black"}
           </button>
         )}
         {!snap.canJoin && (

@@ -1,6 +1,6 @@
 # Backgammon (Next.js)
 
-Mobile-first multiplayer backgammon: free online matches with the full rules and doubling cube, a
+Mobile-first multiplayer game platform, starting with **Backgammon** and **Chess**. Backgammon: free online matches with the full rules and doubling cube, a
 computer opponent, pass & play, spectators with chat and reactions, wallet accounts, an admin area,
 and a double-entry token ledger with simulated payments (real money is not enabled).
 
@@ -11,10 +11,10 @@ Live: https://backgammon-iota-gules.vercel.app
 ```bash
 npm install
 npm run dev              # http://localhost:3000 (data in .data/db.json)
-npm test                 # 126 unit/integration tests on the in-memory store
+npm test                 # 135 unit/integration tests on the in-memory store
 npm run test:pg          # the same tests on Postgres (PGlite + the Supabase migrations)
 npm run test:postgres    # the same tests through the production driver on a real Postgres (CI)
-npm run build && npm run e2e   # 22 browser tests (Playwright); PW_CHANNEL=chrome uses installed Chrome
+npm run build && npm run e2e   # 24 browser tests (Playwright); PW_CHANNEL=chrome uses installed Chrome
 npm run typecheck        # route types + TypeScript
 npm run lint             # ESLint (Next.js, React hooks, TypeScript rules)
 npm run format           # Prettier
@@ -42,13 +42,14 @@ variables (Project → Settings → Environment Variables; redeploy after changi
 
 ## Pages
 
-`/` landing · `/home` dashboard · `/play` lobby and room browser · `/match/:id` play, watch and chat ·
+`/` landing · `/home` dashboard with game cards · `/play` backgammon lobby · `/play/chess` chess lobby · `/match/:id` play, watch and chat ·
 `/profile` · `/wallet` · `/signup`, `/login`, `/welcome` · `/admin`.
 
 ## What works
 
 | Area | Status |
 | --- | --- |
+| Chess | Full rules (chess.js): castling, en passant, promotion, checkmate, stalemate, threefold, 50-move rule, insufficient material; draw offers and resignation; Bullet/Blitz/Rapid clocks (1+0 to 15+10); computer in three levels; pass & play; rated public tables (Elo); its own XP and level. Pick the game on Home or with the switcher in the lobby |
 | Rules engine (`lib/engine`) | Full legal-move enumeration (max dice, higher-die rule, doubles), hitting, bar, bear-off, single/gammon/backgammon, opening roll, 15-checker invariant every turn |
 | Cube | Offer before rolling, ownership, accept/pass, cap 128, Crawford game, dead-cube block |
 | Authoritative server | Server-only dice; every action carries `actionId` + `expectedVersion`; retries are idempotent; append-only event log per match |

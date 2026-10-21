@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-21
+
+**Chess, and a platform for several games**
+- Chess: full rules, online play with Bullet, Blitz and Rapid clocks (base time plus increment), rated
+  public tables (Elo, its own rating), draw offers, resignation, the computer in three levels, pass &
+  play, spectators and chat, rematch with colours swapped.
+- Games are chosen on Home (game cards with your level and rating in each, and how many are playing)
+  or with the switcher at the top of the lobby; Play remembers the last game.
+- XP, levels and ratings are kept per game. Backgammon numbers are unchanged.
+
 ## 2026-10-19
 
 - The Connect Wallet window is Reown AppKit (browser wallets, QR codes, mobile wallet apps), switched on by

@@ -225,6 +225,7 @@ function toLobbyRow(r: Row): LobbyRow {
   return {
     id: String(r.id),
     mode: r.mode as LobbyRow["mode"],
+    gameType: (r.game as LobbyRow["gameType"]) ?? "backgammon",
     status: String(r.status),
     targetPoints: num(r.target_points),
     createdAt: iso(r.created_at),
@@ -246,7 +247,7 @@ function toLobbyRow(r: Row): LobbyRow {
 }
 
 const LOBBY_SELECT = `
-  select m.id, m.mode, m.status, m.target_points, m.created_at, m.allow_spectators, m.summary, m.entry_fee,
+  select m.id, m.mode, m.game, m.status, m.target_points, m.created_at, m.allow_spectators, m.summary, m.entry_fee,
          (extract(epoch from m.updated_at) * 1000)::float8 as updated_ms,
          coalesce((select (extract(epoch from p.seen_at) * 1000)::float8 from match_presence p
                    where p.match_id = m.id and p.seat = 0), 0) as host_seen_ms,
@@ -433,6 +434,52 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
         return rows.map((r) => ({ day: String(r.day), n: num(r.n) }));
       },
     },
+    gameStats: {
+      async getMany(ids, game) {
+        if (ids.length === 0) return {};
+        const rows =
+          game === "backgammon"
+            ? await q(`select id as user_id, xp, rating, rating_experience, rating_games from app_users where id = any($1::uuid[])`, [ids])
+            : await q(`select user_id, xp, rating, rating_experience, rating_games from user_game_stats where game = $2 and user_id = any($1::uuid[])`, [
+                ids,
+                game,
+              ]);
+        return Object.fromEntries(
+          rows.map((r) => [
+            String(r.user_id),
+            { xp: num(r.xp), rating: Number(r.rating), ratingExperience: num(r.rating_experience), ratingGames: num(r.rating_games) },
+          ]),
+        );
+      },
+      async addXp(id, game, n) {
+        if (game === "backgammon") {
+          const [r] = await q(`update app_users set xp = xp + $2 where id = $1 returning xp`, [id, n]);
+          return r ? num(r.xp) : 0;
+        }
+        const [r] = await q(
+          `insert into user_game_stats (user_id, game, xp) values ($1, $2, $3)
+           on conflict (user_id, game) do update set xp = user_game_stats.xp + excluded.xp returning xp`,
+          [id, game, n],
+        );
+        return num(r.xp);
+      },
+      async applyRating(id, game, delta, points) {
+        if (game === "backgammon") {
+          await q(`update app_users set rating = rating + $2, rating_experience = rating_experience + $3, rating_games = rating_games + 1 where id = $1`, [
+            id,
+            delta,
+            points,
+          ]);
+          return;
+        }
+        await q(
+          `insert into user_game_stats (user_id, game, rating, rating_experience, rating_games) values ($1, $2, 1500 + $3, $4, 1)
+           on conflict (user_id, game) do update set rating = user_game_stats.rating + $3,
+             rating_experience = user_game_stats.rating_experience + $4, rating_games = user_game_stats.rating_games + 1`,
+          [id, game, delta, points],
+        );
+      },
+    },
     sessions: {
       async get(token) {
         const [r] = await q(
@@ -476,8 +523,8 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
         const doc = { ...m, events: [], actions: {} };
         await q(
           `insert into matches (id, mode, status, target_points, created_by, seat0, seat1, version, created_at, updated_at, data,
-             summary, allow_spectators, completed_at, entry_fee)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10::jsonb, $11::jsonb, $12, $13, $14)
+             summary, allow_spectators, completed_at, entry_fee, game)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10::jsonb, $11::jsonb, $12, $13, $14, $15)
            on conflict (id) do update set status = excluded.status, seat0 = excluded.seat0, seat1 = excluded.seat1,
              version = excluded.version, updated_at = now(), data = excluded.data, summary = excluded.summary,
              allow_spectators = excluded.allow_spectators, completed_at = excluded.completed_at, entry_fee = excluded.entry_fee`,
@@ -496,6 +543,7 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
             m.allowSpectators !== false,
             m.completedAt ?? null,
             m.entryFee ?? 0,
+            m.gameType ?? "backgammon",
           ],
         );
         // Rows go in as one JSON document: drivers differ in how they send typed arrays (postgres.js
@@ -578,13 +626,16 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
         );
         return rows.map((r) => String(r.id));
       },
-      async countActiveSince(since) {
-        const [r] = await q(`select count(*) as n from matches where status = 'ACTIVE' and updated_at >= to_timestamp($1::float8 / 1000)`, [since]);
+      async countActiveSince(since, game) {
+        const [r] = await q(
+          `select count(*) as n from matches where status = 'ACTIVE' and updated_at >= to_timestamp($1::float8 / 1000) and ($2::text is null or game = $2)`,
+          [since, game ?? null],
+        );
         return num(r.n);
       },
       async listPublic(f) {
         // Shared filter for the count and the page, so "N tables" always matches what can be paged.
-        const where = `m.mode = 'quick' and m.status = $1
+        const where = `m.mode = 'quick' and m.status = $1 and m.game = $7
            and ($2::int is null or m.target_points = $2)
            and ($3::bigint is null or m.entry_fee >= $3)
            and ($4::bigint is null or m.entry_fee <= $4)
@@ -592,10 +643,10 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
                   then exists (select 1 from match_presence p where p.match_id = m.id and p.seat = 0
                                and p.seen_at >= to_timestamp($5::float8 / 1000))
                   else m.allow_spectators and m.updated_at >= to_timestamp($6::float8 / 1000) end)`;
-        const params = [f.status, f.points ?? null, f.feeMin ?? null, f.feeMax ?? null, f.hostSeenSince, f.activeSince];
+        const params = [f.status, f.points ?? null, f.feeMin ?? null, f.feeMax ?? null, f.hostSeenSince, f.activeSince, f.game ?? "backgammon"];
         const [c] = await q(`select count(*) as n from matches m where ${where}`, params);
         if (f.limit === 0) return { rows: [], total: num(c.n) };
-        const rows = await q(`${LOBBY_SELECT} where ${where} order by m.created_at ${f.sort === "oldest" ? "asc" : "desc"} limit $7 offset $8`, [
+        const rows = await q(`${LOBBY_SELECT} where ${where} order by m.created_at ${f.sort === "oldest" ? "asc" : "desc"} limit $8 offset $9`, [
           ...params,
           f.limit,
           f.offset,
@@ -623,11 +674,11 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
       async put(rows) {
         if (rows.length === 0) return;
         await q(
-          `insert into match_results (match_id, user_id, mode, won, points, games, gammons, opponent, opponent_id, lb_points, rating_change, score_for, score_against,
+          `insert into match_results (match_id, user_id, mode, game, won, points, games, gammons, opponent, opponent_id, lb_points, rating_change, score_for, score_against,
              target_points, end_reason, completed_at)
-           select x.match_id, x.user_id, x.mode, x.won, x.points, x.games, x.gammons, x.opponent, x.opponent_id, x.lb_points, x.rating_change, x.score_for, x.score_against,
+           select x.match_id, x.user_id, x.mode, x.game, x.won, x.points, x.games, x.gammons, x.opponent, x.opponent_id, x.lb_points, x.rating_change, x.score_for, x.score_against,
              x.target_points, x.end_reason, x.completed_at
-           from jsonb_to_recordset($1::jsonb) as x(match_id text, user_id uuid, mode text, won boolean, points int, games int,
+           from jsonb_to_recordset($1::jsonb) as x(match_id text, user_id uuid, mode text, game text, won boolean, points int, games int,
              gammons int, opponent text, opponent_id uuid, lb_points int, rating_change float8, score_for int, score_against int, target_points int, end_reason text, completed_at timestamptz)
            on conflict do nothing`,
           [
@@ -636,6 +687,7 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
                 match_id: r.matchId,
                 user_id: r.userId,
                 mode: r.mode,
+                game: r.game ?? "backgammon",
                 won: r.won,
                 points: r.points,
                 games: r.games,
@@ -690,34 +742,34 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
         );
         return num(r.n);
       },
-      async leaderboard(since, until, limit) {
+      async leaderboard(since, until, limit, game) {
         const rows = await q(
           `select user_id, sum(lb_points) as points, count(*) filter (where won) as wins, count(*) as played,
                   count(distinct opponent_id) as opponents
            from match_results
            where completed_at >= to_timestamp($1::float8 / 1000) and completed_at < to_timestamp($2::float8 / 1000)
-             and opponent_id is not null and not flagged
+             and opponent_id is not null and not flagged and game = $4
            group by user_id having sum(lb_points) > 0
            order by points desc, wins desc, min(completed_at) asc limit $3`,
-          [since, until, limit],
+          [since, until, limit, game ?? "backgammon"],
         );
         return rows.map((r) => ({ userId: String(r.user_id), points: num(r.points), wins: num(r.wins), played: num(r.played), opponents: num(r.opponents) }));
       },
-      async standing(userId, since, until) {
+      async standing(userId, since, until, game) {
         const [r] = await q(
           `with totals as (
              select user_id, sum(lb_points) as points, count(*) filter (where won) as wins, count(*) as played,
                     count(distinct opponent_id) as opponents
              from match_results
              where completed_at >= to_timestamp($2::float8 / 1000) and completed_at < to_timestamp($3::float8 / 1000)
-               and opponent_id is not null and not flagged
+               and opponent_id is not null and not flagged and game = $4
              group by user_id)
            select coalesce(me.points, 0) as points, coalesce(me.wins, 0) as wins, coalesce(me.played, 0) as played,
                   coalesce(me.opponents, 0) as opponents,
                   case when coalesce(me.points, 0) > 0
                        then (select count(*) from totals o where o.points > me.points or (o.points = me.points and o.wins > me.wins)) + 1 end as rank
            from (select 1) one left join totals me on me.user_id = $1`,
-          [userId, since, until],
+          [userId, since, until, game ?? "backgammon"],
         );
         return {
           userId,

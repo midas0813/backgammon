@@ -5,11 +5,14 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Announcements from "@/components/Announcements";
 import CountUp from "@/components/CountUp";
+import GameSwitcher from "@/components/GameSwitcher";
+import PlayTile from "@/components/PlayTile";
 import Modal from "@/components/Modal";
 import RoomBrowser, { type RoomView } from "@/components/RoomBrowser";
 import { ClientApiError, api, isHandled } from "@/lib/client/api";
 import { watchTable, unwatchTable } from "@/lib/client/tables";
 import { toast } from "@/lib/client/toast";
+import { useCurrentGame } from "@/lib/client/game";
 import type { TournamentList } from "@/components/TournamentsCard";
 import type { Lobby } from "@/lib/server/lobby";
 
@@ -24,61 +27,13 @@ function age(iso: string) {
   return s < 45 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min` : `${Math.round(s / 3600)} h`;
 }
 
-/** A full-width play option with its artwork behind the text. */
-function PlayTile({
-  image,
-  title,
-  text,
-  onClick,
-  busy,
-  primary,
-  badge,
-}: {
-  image: string;
-  title: string;
-  text: string;
-  onClick: () => void;
-  busy?: boolean;
-  primary?: boolean;
-  badge?: React.ReactNode;
-}) {
-  return (
-    <button className={`play-tile${primary ? " primary" : ""}`} onClick={onClick} disabled={busy}>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        className="play-tile-img"
-        src={`/images/play/${image}-lg.webp`}
-        srcSet={`/images/play/${image}-sm.webp 640w, /images/play/${image}-lg.webp 1200w`}
-        sizes="(max-width: 680px) 100vw, 640px"
-        alt=""
-        draggable={false}
-      />
-      <span className="play-tile-shade" aria-hidden />
-      <span className="play-tile-text">
-        {badge}
-        <strong>{busy ? "Starting…" : title}</strong>
-        <span>{text}</span>
-      </span>
-      <svg
-        className="play-tile-arrow"
-        viewBox="0 0 24 24"
-        width="22"
-        height="22"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden
-      >
-        <path d="M9 6l6 6-6 6" />
-      </svg>
-    </button>
-  );
-}
-
 export default function LobbyPage() {
   const router = useRouter();
+  // The Play tab opens the game the player last chose.
+  const current = useCurrentGame();
+  useEffect(() => {
+    if (current === "chess") router.replace("/play/chess");
+  }, [current, router]);
   const [data, setData] = useState<Lobby | null>(null);
   const [points, setPoints] = useState(3);
   const [busy, setBusy] = useState<string | null>(null);
@@ -159,7 +114,7 @@ export default function LobbyPage() {
       <Announcements />
       <section className="lobby-head">
         <div>
-          <span className="eyebrow">Free play</span>
+          <GameSwitcher game="backgammon" />
           <h1 className="display">Lobby</h1>
         </div>
         <div className="pulse-chips" aria-live="polite">
@@ -244,7 +199,8 @@ export default function LobbyPage() {
                     {m.status === "WAITING" ? `${MODE_LABEL[m.mode]} · waiting for an opponent` : `${m.players[0].name} vs ${m.players[1].name}`}
                   </div>
                   <div className="muted small">
-                    {m.targetPoints}-pt · {m.status === "WAITING" ? `opened ${age(m.createdAt)} ago` : `${MODE_LABEL[m.mode]} · ${m.score[0]}–${m.score[1]}`}
+                    {m.gameType === "chess" ? "♟ Chess" : `${m.targetPoints}-pt`} ·{" "}
+                    {m.status === "WAITING" ? `opened ${age(m.createdAt)} ago` : `${MODE_LABEL[m.mode]} · ${m.score[0]}–${m.score[1]}`}
                     {m.mode !== "bot" && m.mode !== "local" && !m.allowSpectators ? " · no spectators" : ""}
                   </div>
                 </div>

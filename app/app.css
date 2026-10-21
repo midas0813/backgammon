@@ -2648,3 +2648,286 @@ html[data-reduced-motion="true"]::view-transition-group(*) {
 .legal nav {
   gap: 14px;
 }
+
+/* ---------- Game switcher (multi-game) ---------- */
+.game-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 8px;
+  margin-bottom: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+.game-switch:hover {
+  border-color: var(--action);
+}
+.game-switch-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgb(101 226 188 / 0.14);
+  color: var(--action);
+  font-size: 16px;
+}
+.game-pick {
+  display: grid;
+  gap: 8px;
+}
+.game-pick-item {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+}
+.game-pick-item[aria-disabled] {
+  opacity: 0.5;
+}
+.game-pick-icon {
+  font-size: 28px;
+  width: 40px;
+  text-align: center;
+}
+.play-tile-glyph {
+  display: grid;
+  place-items: center end;
+  padding-right: 13%;
+  font-size: 104px;
+  line-height: 1;
+  color: rgb(244 207 135 / 0.9);
+  text-shadow: 0 8px 30px rgb(0 0 0 / 0.5);
+  background: radial-gradient(circle at 78% 50%, rgb(244 207 135 / 0.22), transparent 55%), linear-gradient(135deg, #1b2b45, #0e1729);
+}
+.play-tile.primary .play-tile-glyph {
+  font-size: 132px;
+  background: radial-gradient(circle at 78% 50%, rgb(101 226 188 / 0.25), transparent 55%), linear-gradient(135deg, #17324a, #0e1729);
+}
+.tc-seg {
+  grid-template-columns: repeat(auto-fit, minmax(56px, 1fr));
+}
+
+/* ---------- Chess ---------- */
+.chess-wrap {
+  display: flex;
+  justify-content: center;
+}
+.chess-board {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-rows: repeat(8, minmax(0, 1fr));
+  width: min(100%, 560px, calc(100dvh - 330px));
+  min-width: 280px;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow:
+    var(--shadow),
+    0 0 0 1px rgb(0 0 0 / 0.4);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.chess-board .sq {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  font: inherit;
+  cursor: default;
+  -webkit-tap-highlight-color: transparent;
+}
+.chess-board .sq.light {
+  background: #ead8b7;
+}
+.chess-board .sq.dark {
+  background: #b38660;
+}
+.chess-board .sq.mine {
+  cursor: pointer;
+}
+.chess-board .sq.last.light {
+  background: #f1df8e;
+}
+.chess-board .sq.last.dark {
+  background: #cdae5c;
+}
+.chess-board .sq.sel {
+  box-shadow: inset 0 0 0 4px rgb(101 226 188 / 0.95);
+}
+.chess-board .sq.check {
+  background: radial-gradient(circle, rgb(255 70 70 / 0.95) 0%, rgb(220 40 40 / 0.55) 45%, transparent 75%), #b38660;
+}
+.chess-board .piece {
+  font-size: min(9.5vw, 56px, calc((100dvh - 330px) / 9.5));
+  line-height: 1;
+  font-family: "Segoe UI Symbol", "DejaVu Sans", "Noto Sans Symbols 2", "Apple Symbols", serif;
+  pointer-events: none;
+}
+.chess-board .piece.white {
+  color: #fffaf0;
+  text-shadow:
+    0 0 1px #2a1d10,
+    0 0 1px #2a1d10,
+    0 2px 3px rgb(0 0 0 / 0.45);
+  -webkit-text-stroke: 1px #3a2a18;
+}
+.chess-board .piece.black {
+  color: #1b1712;
+  text-shadow: 0 2px 3px rgb(0 0 0 / 0.35);
+  -webkit-text-stroke: 0.5px #000;
+}
+.chess-board .hint {
+  position: absolute;
+  width: 30%;
+  height: 30%;
+  border-radius: 50%;
+  background: rgb(20 40 30 / 0.35);
+  pointer-events: none;
+}
+.chess-board .hint.capture {
+  width: 92%;
+  height: 92%;
+  background: transparent;
+  border: 5px solid rgb(20 40 30 / 0.35);
+}
+.chess-board .sq.mine:not(.sel) .hint {
+  display: none;
+}
+.chess-board .coord {
+  position: absolute;
+  font-size: 10px;
+  font-weight: 700;
+  pointer-events: none;
+}
+.chess-board .coord.rank {
+  top: 2px;
+  left: 3px;
+}
+.chess-board .coord.file {
+  bottom: 1px;
+  right: 3px;
+}
+.chess-board .sq.light .coord {
+  color: #b38660;
+}
+.chess-board .sq.dark .coord {
+  color: #ead8b7;
+}
+.chess-board .promo {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgb(8 13 24 / 0.78);
+}
+.chess-board .promo .piece {
+  pointer-events: auto;
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #ead8b7;
+  cursor: pointer;
+}
+.chess-strip {
+  justify-content: space-between;
+}
+.chess-color {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  font-size: 15px;
+  line-height: 1;
+}
+.chess-color.white {
+  color: #fffaf0;
+  -webkit-text-stroke: 1px #3a2a18;
+}
+.chess-color.black {
+  color: #1b1712;
+  -webkit-text-stroke: 0.5px #9aa7b6;
+}
+.chess-clock {
+  font-size: 18px;
+  padding: 4px 10px;
+  min-width: 72px;
+  text-align: center;
+}
+.chess-moves {
+  display: flex;
+  gap: 10px;
+  margin: 0;
+  padding: 6px 2px;
+  list-style: none;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-size: 13px;
+  scrollbar-width: none;
+}
+.chess-moves li {
+  flex: none;
+}
+
+/* ---------- Home: game cards ---------- */
+.home-games {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.game-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: linear-gradient(160deg, var(--surface-2), var(--surface));
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.game-card:hover {
+  border-color: var(--action);
+}
+.game-card.soon {
+  opacity: 0.5;
+  cursor: default;
+}
+.game-card strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: clamp(12px, 3.3vw, 16px);
+}
+.game-card-icon {
+  font-size: 30px;
+  line-height: 1.1;
+  color: var(--gold);
+  margin-bottom: 4px;
+}
+.game-card-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--text-2);
+}

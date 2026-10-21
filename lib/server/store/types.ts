@@ -1,4 +1,6 @@
 import type { MatchState } from "../../engine/match";
+import type { ChessState } from "../../chess/rules";
+import type { GameType } from "../../games";
 import type { ClockState } from "../clock";
 import type { FairState } from "../fair";
 import type { DepositMethod, DepositStatus, WithdrawalStatus } from "../payments/adapter";
@@ -150,9 +152,15 @@ export interface StoredEvent {
 export type MatchMode = "quick" | "private" | "local" | "bot";
 export type ClosedReason = "expired" | "host-missing" | "abandoned" | "inactive" | "ended";
 
+export type { GameType };
+
 export interface MatchRecord {
   id: string;
   mode: MatchMode;
+  /** The game played; undefined = backgammon (matches from before other games). */
+  gameType?: GameType;
+  /** Chess matches: moves, colours, draw offer and result (`state` keeps the shared status fields). */
+  chess?: ChessState;
   createdAt: string;
   createdBy: string;
   seats: [string | null, string | null];
@@ -202,6 +210,7 @@ export interface MatchRecord {
 export interface LobbyRow {
   id: string;
   mode: MatchMode;
+  gameType: GameType;
   status: string;
   targetPoints: number;
   createdAt: string;
@@ -229,6 +238,8 @@ export interface MatchResultRow {
   matchId: string;
   userId: string;
   mode: MatchMode;
+  /** Undefined = backgammon. */
+  game?: GameType;
   won: boolean;
   /** Points this player scored in the match. */
   points: number;
@@ -248,6 +259,13 @@ export interface MatchResultRow {
   targetPoints: number;
   endReason: string;
   completedAt: string;
+}
+
+export interface GameStats {
+  xp: number;
+  rating: number;
+  ratingExperience: number;
+  ratingGames: number;
 }
 
 export interface LeaderRow {
@@ -353,6 +371,8 @@ export interface PlayerTotals {
 
 export interface PublicTableFilter {
   status: "WAITING" | "ACTIVE";
+  /** Undefined = backgammon. */
+  game?: GameType;
   points?: number;
   feeMin?: number;
   feeMax?: number;
@@ -482,6 +502,17 @@ export interface Tx {
     /** New users per UTC day, oldest first, for the last `days` days. */
     dailyNew(days: number): Promise<{ day: string; n: number }[]>;
   };
+  /**
+   * XP and rating per game. Backgammon is stored on the user (xp, rating, …); other games in their own
+   * rows. Missing players read as level 0 and 1500.
+   */
+  gameStats: {
+    getMany(ids: string[], game: GameType): Promise<Record<string, GameStats>>;
+    /** Add XP atomically; returns the new total for that game. */
+    addXp(id: string, game: GameType, n: number): Promise<number>;
+    /** A rated result: add `delta` to the rating and `points` of experience, one more rated game. */
+    applyRating(id: string, game: GameType, delta: number, points: number): Promise<void>;
+  };
   sessions: {
     get(token: string): Promise<Session | undefined>;
     put(token: string, session: Session): Promise<void>;
@@ -509,8 +540,8 @@ export interface Tx {
      * unchanged since `offlineBefore` (all ms).
      */
     idleActive(f: { onlineBefore: number; awayBefore: number; offlineBefore: number; limit: number }): Promise<string[]>;
-    /** Matches in progress changed at or after `since` (ms). */
-    countActiveSince(since: number): Promise<number>;
+    /** Matches in progress changed at or after `since` (ms), of one game when given. */
+    countActiveSince(since: number, game?: GameType): Promise<number>;
     /**
      * Public tables (mode quick) for the room browser, filtered and paged. WAITING tables only count
      * when the host was seen at or after `hostSeenSince`; ACTIVE ones only when watchable and updated
@@ -531,10 +562,10 @@ export interface Tx {
     history(userId: string, offset: number, limit: number): Promise<MatchResultRow[]>;
     /** Matches this user won (or, with `played`, played) against that opponent since `since` (ms). */
     countAgainst(userId: string, opponentId: string, since: number, opts?: { played?: boolean }): Promise<number>;
-    /** Points per player in [since, until) (ms), best first. Flagged results are left out. */
-    leaderboard(since: number, until: number, limit: number): Promise<LeaderRow[]>;
+    /** Points per player in [since, until) (ms) for one game (default backgammon), best first. Flagged results are left out. */
+    leaderboard(since: number, until: number, limit: number, game?: GameType): Promise<LeaderRow[]>;
     /** One player's points, 1-based rank and distinct opponents in [since, until). */
-    standing(userId: string, since: number, until: number): Promise<LeaderRow & { rank: number | null }>;
+    standing(userId: string, since: number, until: number, game?: GameType): Promise<LeaderRow & { rank: number | null }>;
     /** Losses to that opponent since `since` that ended by one of `reasons` (forfeit, timeout, …). */
     countLostBy(userId: string, opponentId: string, since: number, reasons: string[]): Promise<number>;
     /** Mark or clear a match's results as under review. */

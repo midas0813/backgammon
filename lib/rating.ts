@@ -21,3 +21,14 @@ export function ratingChange(winner: { rating: number; experience: number }, los
   const base = 4 * Math.sqrt(n) * pLoserWins;
   return [base * kFactor(winner.experience), base * kFactor(loser.experience)] as const;
 }
+
+/**
+ * Chess (Elo): expected score 1 / (1 + 10^((Rb − Ra) / 400)); a draw scores ½. K is 40 for a player's
+ * first 30 rated games, then 20, as FIDE uses for newer and established players.
+ */
+export const eloK = (games: number) => (games < 30 ? 40 : 20);
+
+export function eloChange(ra: number, rb: number, scoreA: 0 | 0.5 | 1, gamesA: number) {
+  const expected = 1 / (1 + 10 ** ((rb - ra) / 400));
+  return eloK(gamesA) * (scoreA - expected);
+}

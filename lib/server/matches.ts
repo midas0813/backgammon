@@ -17,7 +17,11 @@ import { BOT_NAME, BOT_USER_ID, acceptsDouble, chooseSequence } from "./bot";
 import { ApiError, notFound } from "./errors";
 import { tx, type ClosedReason, type MatchMode, type MatchRecord, type MatchResultRow, type StoredEvent, type Tx, type User } from "./store";
 import { SPECTATOR_WINDOW_MS } from "./store/types";
-import { newClock, nextDecision, noteReturn, timedOut, clockView, type ClockPreset } from "./clock";
+import { newChessClock, newClock, nextDecision, noteReturn, timedOut, clockView, type ClockPreset } from "./clock";
+import { chooseChessMove } from "../chess/bot";
+import { timeControl } from "../chess/rules";
+import { seatToActOf, type GameType } from "../games";
+import { CHESS_ACTIONS, applyChess, chessLoss, chessView, startChess } from "./chess";
 import { cleanSeed } from "../fair";
 import { fairView, newFair, nextDie } from "./fair";
 import { levelOf } from "../quests";
@@ -31,6 +35,24 @@ import { GUEST_IDLE_MS, assertActive, avatarUrl } from "./users";
 
 const ALLOWED_POINTS = [1, 3, 5, 7];
 const ACTION_TYPES: ActionType[] = ["ROLL", "CONFIRM_TURN", "OFFER_DOUBLE", "ACCEPT_DOUBLE", "PASS_DOUBLE", "FORFEIT_MATCH"];
+
+const isChess = (rec: Pick<MatchRecord, "gameType">) => rec.gameType === "chess";
+
+/** Start play (both seats filled) in the match's game. */
+function startPlay(rec: MatchRecord, env: Env): DomainEvent[] {
+  return isChess(rec) ? startChess(rec) : startMatch(rec.state, env);
+}
+
+/** `loser` forfeits (left, ran out of time, or resigned) in the match's game. */
+function forfeitPlay(rec: MatchRecord, loser: Seat, reason: "timeout" | "abandoned" | "forfeit"): DomainEvent[] {
+  if (isChess(rec)) return chessLoss(rec, loser, reason === "forfeit" ? "resign" : reason);
+  const events = applyAction(rec.state, loser, { actionType: "FORFEIT_MATCH", payload: { confirm: true } }, envFor(rec));
+  if (reason !== "forfeit") {
+    rec.state.endReason = reason;
+    for (const e of events) if (e.type === "MATCH_COMPLETED") e.payload.reason = reason;
+  }
+  return events;
+}
 
 /** Tests only: scripted or seeded dice instead of each match's provably fair dice. */
 let testEnv: Env | null = null;
@@ -82,6 +104,7 @@ function resultRows(rec: MatchRecord): MatchResultRow[] {
         matchId: rec.id,
         userId: rec.seats[s]!,
         mode: rec.mode,
+        game: rec.gameType ?? "backgammon",
         won: st.winner === s,
         points: mine.reduce((n, r) => n + r.points, 0),
         games: st.results.length,
@@ -100,7 +123,7 @@ function resultRows(rec: MatchRecord): MatchResultRow[] {
 async function save(t: Tx, rec: MatchRecord) {
   // The clock follows whoever must decide next; a finished decision is charged to its bank.
   if (rec.clock) {
-    const next = rec.state.status === "ACTIVE" ? seatToAct(rec.state) : null;
+    const next = rec.state.status === "ACTIVE" ? seatToActOf(rec) : null;
     if (next !== rec.clock.seat) nextDecision(rec.clock, next, Date.now());
   }
   const games = rec.events.filter((e) => e.type === "GAME_COMPLETED").length;
@@ -161,7 +184,7 @@ export function settlementFor(rec: MatchRecord, seen: [number, number], now: num
     const loser = timedOut(rec.clock, seen, now);
     if (loser !== null) return { kind: "timeout", loser };
   }
-  const toAct = seatToAct(st);
+  const toAct = seatToActOf(rec);
   // With a clock, running out of time replaces the 10-minute abandonment rule.
   if (!rec.clock && toAct !== null && idle >= ABANDON_MS && now - seen[toAct] >= ABANDON_MS && now - seen[1 - toAct] < OPPONENT_PRESENT_MS) {
     return { kind: "abandon", loser: toAct };
@@ -186,10 +209,7 @@ export async function settleIn(t: Tx, matchId: string, now = Date.now()) {
   if (s.kind === "expire") closeNoResult(rec, "expired");
   else if (s.kind === "close") closeNoResult(rec, s.reason);
   else {
-    const reason = s.kind === "timeout" ? "timeout" : "abandoned";
-    const events = applyAction(rec.state, s.loser, { actionType: "FORFEIT_MATCH", payload: { confirm: true } }, envFor(rec));
-    rec.state.endReason = reason;
-    for (const e of events) if (e.type === "MATCH_COMPLETED") e.payload.reason = reason;
+    const events = forfeitPlay(rec, s.loser, s.kind === "timeout" ? "timeout" : "abandoned");
     rec.version += 1;
     pushEvents(rec, events);
   }
@@ -280,7 +300,7 @@ export async function join(t: Tx, rec: MatchRecord, userId: string, clientSeed?:
   rec.startedAt = Date.now();
   rec.version += 1;
   pushEvents(rec, [{ type: "MATCH_READY", payload: {} }]);
-  pushEvents(rec, startMatch(rec.state, envFor(rec)));
+  pushEvents(rec, startPlay(rec, envFor(rec)));
   await save(t, rec);
   await t.presence.touch(rec.id, 1, Date.now()); // the joiner is here
 }
@@ -296,9 +316,21 @@ export async function createMatch(
     clock?: ClockPreset;
     clientSeed?: unknown;
     ranked?: boolean;
+    /** Default backgammon. Chess ignores `targetPoints` and `clock` and uses the next three. */
+    game?: GameType;
+    /** Chess time control ("3+2", …) or "none". */
+    timeControl?: string;
+    /** Chess: the host's colour. */
+    color?: "white" | "black" | "random";
+    /** Chess computer level, 1–3. */
+    botLevel?: number;
   } = {},
 ): Promise<{ matchId: string }> {
-  if (!ALLOWED_POINTS.includes(targetPoints)) throw new ApiError(400, "INVALID_INPUT", "Unsupported match length");
+  const chess = opts.game === "chess";
+  if (chess) targetPoints = 1;
+  else if (!ALLOWED_POINTS.includes(targetPoints)) throw new ApiError(400, "INVALID_INPUT", "Unsupported match length");
+  const tc = chess && mode !== "bot" && mode !== "local" ? timeControl(opts.timeControl ?? "") : undefined;
+  if (chess && mode !== "bot" && mode !== "local" && !tc && opts.timeControl !== "none") throw new ApiError(400, "INVALID_INPUT", "Unsupported time control");
   if (!["quick", "private", "local", "bot"].includes(mode)) throw new ApiError(400, "INVALID_INPUT", "Unsupported mode");
   return tx(async (t) => {
     const settings = await operatorSettings(t);
@@ -322,17 +354,34 @@ export async function createMatch(
       actions: {},
       allowSpectators: opts.allowSpectators !== false,
       // Online matches get a clock (standard unless the host chose otherwise); computer and pass & play none.
-      clock: mode === "quick" || mode === "private" ? newClock(opts.clock ?? "standard", targetPoints) : undefined,
-      fair: newFair(opts.clientSeed),
+      clock: chess
+        ? tc && newChessClock(tc.id, tc.baseMs, tc.incMs)
+        : mode === "quick" || mode === "private"
+          ? newClock(opts.clock ?? "standard", targetPoints)
+          : undefined,
+      // Fair dice are a backgammon feature; chess has no randomness after the colours.
+      fair: chess ? undefined : newFair(opts.clientSeed),
       // Public tables with a clock count for ratings unless the host says otherwise.
-      ranked: mode === "quick" && (opts.clock ?? "standard") !== "none" && opts.ranked !== false,
+      ranked: mode === "quick" && (chess ? !!tc : (opts.clock ?? "standard") !== "none") && opts.ranked !== false,
       spectatorChat: opts.spectatorChat !== false,
       spectatorEmoji: opts.spectatorEmoji !== false,
     };
-    pushEvents(rec, [{ type: "MATCH_CREATED", payload: { mode, targetPoints } }]);
+    if (chess) {
+      rec.gameType = "chess";
+      const white = (opts.color === "white" ? 0 : opts.color === "black" ? 1 : randomInt(2)) as Seat;
+      rec.chess = {
+        moves: [],
+        white,
+        drawOffer: null,
+        result: null,
+        timeControl: tc?.id ?? "none",
+        botLevel: mode === "bot" ? Math.max(1, Math.min(3, Math.trunc(Number(opts.botLevel) || 2))) : undefined,
+      };
+    }
+    pushEvents(rec, [{ type: "MATCH_CREATED", payload: { mode, targetPoints, game: rec.gameType ?? "backgammon" } }]);
     if (mode === "local" || mode === "bot") {
       rec.version += 1;
-      pushEvents(rec, startMatch(rec.state, envFor(rec)));
+      pushEvents(rec, startPlay(rec, envFor(rec)));
     }
     await save(t, rec);
     if (online(rec)) await t.presence.touch(rec.id, 0, Date.now());
@@ -424,7 +473,7 @@ export function leaveMatch(userId: string, matchId: string) {
       closeNoResult(rec, "ended");
     } else if (st.status === "ACTIVE") {
       rec.version += 1;
-      pushEvents(rec, applyAction(st, seats[0], { actionType: "FORFEIT_MATCH", payload: { confirm: true } }, envFor(rec)));
+      pushEvents(rec, forfeitPlay(rec, seats[0], "forfeit"));
     } else {
       return { matchId, status: st.status };
     }
@@ -531,7 +580,9 @@ export interface ActionRequest {
 export async function submitAction(userId: string, matchId: string, req: ActionRequest) {
   const actionId = typeof req.actionId === "string" ? req.actionId : "";
   if (!actionId || actionId.length > 64) throw new ApiError(400, "INVALID_INPUT", "actionId is required");
-  if (!ACTION_TYPES.includes(req.actionType as ActionType)) throw new ApiError(400, "INVALID_INPUT", "Unknown actionType");
+  if (!ACTION_TYPES.includes(req.actionType as ActionType) && !(CHESS_ACTIONS as readonly string[]).includes(req.actionType as string)) {
+    throw new ApiError(400, "INVALID_INPUT", "Unknown actionType");
+  }
   const action: GameAction = { actionType: req.actionType as ActionType, payload: (req.payload ?? {}) as GameAction["payload"] };
   const fingerprint = JSON.stringify([userId, action.actionType, action.payload]);
 
@@ -552,11 +603,17 @@ export async function submitAction(userId: string, matchId: string, req: ActionR
       throw new ApiError(409, "STALE_VERSION", "Game state changed; refreshing", { currentVersion: rec.version });
     }
 
-    // Pass-and-play: one user holds both seats and acts for whichever seat must act.
-    const actor: Seat = seats.length === 2 ? (seatToAct(rec.state) ?? 0) : seats[0];
+    // Pass-and-play: one user holds both seats and acts for whichever seat must act (in chess, a draw
+    // offer is answered by the other side).
+    const toAct = seatToActOf(rec) ?? 0;
+    const answersOffer = isChess(rec) && (action.actionType === "ACCEPT_DRAW" || action.actionType === "DECLINE_DRAW");
+    const actor: Seat = seats.length === 2 ? (answersOffer ? ((1 - rec.chess!.drawOffer!) as Seat) : toAct) : seats[0];
     let events: DomainEvent[];
     try {
-      events = applyAction(rec.state, actor, action, envFor(rec));
+      if (isChess(rec) !== (CHESS_ACTIONS as readonly string[]).includes(action.actionType) && action.actionType !== "FORFEIT_MATCH") {
+        throw new GameError("WRONG_PHASE", "That action is not part of this game");
+      }
+      events = isChess(rec) ? applyChess(rec, actor, action) : applyAction(rec.state, actor, action, envFor(rec));
     } catch (e) {
       if (e instanceof GameError) throw new ApiError(422, e.code, e.message, { currentVersion: rec.version });
       throw e;
@@ -626,7 +683,7 @@ export async function getSnapshot(userId: string, matchId: string, settled = fal
     const ids = m.seats.filter((s) => s && s !== BOT_USER_ID) as string[];
     return {
       rec: m,
-      users: await t.users.getMany(ids),
+      users: await withGameStats(t, await t.users.getMany(ids), m.gameType ?? "backgammon"),
       seen,
       spectators: online(m) ? await t.spectators.count(matchId, now - SPECTATOR_WINDOW_MS) : 0,
       events: await t.matches.events(matchId, { last: 30 }),
@@ -666,6 +723,15 @@ export async function getSnapshot(userId: string, matchId: string, settled = fal
   };
 }
 
+/** The players' level and rating shown in a match are those of its game. */
+async function withGameStats(t: Tx, users: Record<string, User>, game: GameType) {
+  const stats = await t.gameStats.getMany(Object.keys(users), game);
+  return Object.fromEntries(Object.entries(users).map(([id, u]) => [id, { ...u, xp: stats[id]?.xp ?? 0, rating: stats[id]?.rating ?? 1500 }])) as Record<
+    string,
+    User
+  >;
+}
+
 function snapshotOf(
   rec: MatchRecord,
   userId: string,
@@ -682,7 +748,9 @@ function snapshotOf(
   return {
     matchId: rec.id,
     mode: rec.mode,
-    rulesVersion: st.rulesVersion,
+    gameType: (rec.gameType ?? "backgammon") as GameType,
+    chess: rec.chess ? chessView(rec.chess) : null,
+    rulesVersion: rec.chess ? "chess-1" : st.rulesVersion,
     stateVersion: rec.version,
     status: st.status,
     targetPoints: st.targetPoints,
@@ -721,7 +789,7 @@ function snapshotOf(
     voided: rec.voided ? { reason: rec.voided.reason, at: rec.voided.at } : null,
     canJoin: st.status === "WAITING" && rec.mode !== "local" && rec.mode !== "bot" && mySeats.length === 0,
     canCancel: st.status === "WAITING" && rec.createdBy === userId,
-    seatToAct: seatToAct(st),
+    seatToAct: seatToActOf(rec),
     game: g ? { ...g, cubeBlock: [cubeBlockReason(st, 0), cubeBlockReason(st, 1)] } : null,
     events,
     eventCursor: rec.eventSeq,
@@ -741,11 +809,26 @@ export async function tickBot(matchId: string) {
   // Cheap unlocked check first: most polls are for human matches or the bot isn't due yet.
   const due = await tx(async (t) => {
     const rec = await t.matches.get(matchId);
-    if (!rec || rec.mode !== "bot" || rec.state.status !== "ACTIVE") return false;
-    const seat = seatToAct(rec.state);
-    return seat !== null && rec.seats[seat] === BOT_USER_ID && Date.now() - (rec.updatedAt ?? 0) >= BOT_STEP_MS;
+    if (!rec || rec.mode !== "bot" || rec.state.status !== "ACTIVE") return null;
+    const seat = seatToActOf(rec);
+    return seat !== null && rec.seats[seat] === BOT_USER_ID && Date.now() - (rec.updatedAt ?? 0) >= BOT_STEP_MS ? rec : null;
   });
   if (!due) return;
+  if (isChess(due)) {
+    // Think outside the row lock, then play only if nothing changed meanwhile.
+    const ply = due.chess!.moves.length;
+    const uci = chooseChessMove(due.chess!.moves, due.chess!.botLevel ?? 2);
+    await tx(async (t) => {
+      const rec = await t.matches.get(matchId, { lock: true });
+      if (!rec?.chess || rec.state.status !== "ACTIVE" || rec.chess.moves.length !== ply) return;
+      const seat = seatToActOf(rec);
+      if (seat === null || rec.seats[seat] !== BOT_USER_ID) return;
+      rec.version += 1;
+      pushEvents(rec, applyChess(rec, seat, { actionType: "MOVE", payload: { uci } }));
+      await save(t, rec);
+    });
+    return;
+  }
   await tx(async (t) => {
     const rec = await t.matches.get(matchId, { lock: true });
     if (!rec || rec.mode !== "bot" || rec.state.status !== "ACTIVE") return;
@@ -787,7 +870,8 @@ export async function matchHistory(userId: string, matchId: string, cursor: numb
 
 /** How late this viewer sees the match (ms): spectators of ranked and tournament matches in play. */
 export function spectatorDelayMs(rec: MatchRecord, userId: string, delaySec: number) {
-  if (!delaySec || rec.seats.includes(userId) || rec.state.status !== "ACTIVE") return 0;
+  // The delayed view replays backgammon boards; chess spectators watch live for now.
+  if (!delaySec || rec.seats.includes(userId) || rec.state.status !== "ACTIVE" || isChess(rec)) return 0;
   return rec.ranked || rec.tournamentId ? delaySec * 1000 : 0;
 }
 

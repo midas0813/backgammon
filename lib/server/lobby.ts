@@ -5,6 +5,7 @@ import { HOST_ONLINE_MS, TABLE_EXPIRY_MS, createMatch, sweep } from "./matches";
 import { operatorSettings } from "./settings";
 import { tx, type Tx, type User } from "./store";
 import { avatarUrl } from "./users";
+import { isGameType, type GameType } from "../games";
 
 /**
  * The online lobby: open tables to join, live matches to watch, and the player's own game.
@@ -45,12 +46,19 @@ export async function createTable(
     clock?: unknown;
     clientSeed?: unknown;
     ranked?: unknown;
+    game?: unknown;
+    timeControl?: unknown;
+    color?: unknown;
   },
 ) {
-  const targetPoints = Number(body.targetPoints);
+  const chess = body.game === "chess";
+  const targetPoints = chess ? 1 : Number(body.targetPoints);
   if (!ALLOWED_POINTS.includes(targetPoints)) throw new ApiError(400, "INVALID_INPUT", "Unsupported match length");
   const visibility = body.visibility === "private" ? "private" : "public";
   return createMatch(userId, visibility === "private" ? "private" : "quick", targetPoints, {
+    game: chess ? "chess" : "backgammon",
+    timeControl: typeof body.timeControl === "string" ? body.timeControl : undefined,
+    color: body.color === "white" || body.color === "black" ? body.color : "random",
     allowSpectators: body.allowSpectators !== false,
     spectatorChat: body.spectatorChat !== false,
     spectatorEmoji: body.spectatorEmoji !== false,
@@ -78,18 +86,18 @@ function players(seats: [string | null, string | null], names: [string, string],
 const realIds = (ids: (string | null)[]) => [...new Set(ids.filter((id): id is string => !!id && id !== BOT_USER_ID))];
 
 /** Site-wide numbers for the lobby and Home. */
-export async function pulse(t: Tx, now: number, spectators: boolean) {
-  const base = { hostSeenSince: now - TABLE_EXPIRY_MS, activeSince: now - LIVE_WINDOW_MS, sort: "newest" as const, offset: 0, limit: 0 };
+export async function pulse(t: Tx, now: number, spectators: boolean, game: GameType = "backgammon") {
+  const base = { game, hostSeenSince: now - TABLE_EXPIRY_MS, activeSince: now - LIVE_WINDOW_MS, sort: "newest" as const, offset: 0, limit: 0 };
   return {
     online: await t.users.countSeenSince(now - ONLINE_WINDOW_MS),
     open: (await t.matches.listPublic({ ...base, status: "WAITING" })).total,
     live: spectators ? (await t.matches.listPublic({ ...base, status: "ACTIVE" })).total : 0,
-    playing: await t.matches.countActiveSince(now - LIVE_WINDOW_MS),
+    playing: await t.matches.countActiveSince(now - LIVE_WINDOW_MS, game),
   };
 }
 
-/** The player's own game plus lobby counts. Tables to join are paged by publicTables. */
-export async function lobby(userId: string) {
+/** The player's own game plus lobby counts (for one game). Tables to join are paged by publicTables. */
+export async function lobby(userId: string, game: GameType = "backgammon") {
   await sweep();
   const data = await tx(async (t) => {
     const now = Date.now();
@@ -101,11 +109,12 @@ export async function lobby(userId: string) {
     }
     const users = await t.users.getMany(realIds(mine.flatMap((m) => m.seats)));
     const settings = await operatorSettings(t);
-    const counts = await pulse(t, now, settings.spectators);
+    const counts = await pulse(t, now, settings.spectators, game);
     return {
       mine: mine.map((m) => ({
         matchId: m.id,
         mode: m.mode,
+        gameType: m.gameType,
         status: m.status,
         targetPoints: m.targetPoints,
         players: players(m.seats, m.names, users),
@@ -117,7 +126,7 @@ export async function lobby(userId: string) {
       counts: {
         ...counts,
         // Open tables other players can join (your own waiting table is not counted).
-        open: Math.max(0, counts.open - mine.filter((m) => m.status === "WAITING" && m.mode === "quick" && m.hostId === userId).length),
+        open: Math.max(0, counts.open - mine.filter((m) => m.status === "WAITING" && m.mode === "quick" && m.hostId === userId && m.gameType === game).length),
       },
       limits: { tableExpiryMinutes: TABLE_EXPIRY_MS / 60_000 },
       maintenance: settings.maintenance.enabled ? settings.maintenance.message : null,
@@ -141,6 +150,7 @@ export const FEE_BANDS: Record<string, [number | undefined, number | undefined]>
 };
 
 export interface PublicTableQuery {
+  game?: unknown;
   view?: unknown;
   points?: unknown;
   fee?: unknown;
@@ -154,6 +164,7 @@ export interface PublicTableQuery {
  */
 export async function publicTables(input: PublicTableQuery) {
   const view = input.view === "live" ? "live" : "open";
+  const game: GameType = isGameType(input.game) ? input.game : "backgammon";
   const points = ALLOWED_POINTS.includes(Number(input.points)) ? Number(input.points) : undefined;
   const fee = typeof input.fee === "string" && input.fee in FEE_BANDS ? input.fee : "all";
   const sort = input.sort === "oldest" ? "oldest" : "newest";
@@ -168,6 +179,7 @@ export async function publicTables(input: PublicTableQuery) {
         ? { rows: [], total: 0 }
         : await t.matches.listPublic({
             status: view === "live" ? "ACTIVE" : "WAITING",
+            game,
             points,
             feeMin,
             feeMax,
@@ -180,6 +192,7 @@ export async function publicTables(input: PublicTableQuery) {
     const users = await t.users.getMany(realIds(rows.flatMap((r) => r.seats)));
     return {
       view,
+      game,
       filters: { points: points ?? null, fee, sort },
       page,
       pageSize: PAGE_SIZE,
@@ -191,6 +204,7 @@ export async function publicTables(input: PublicTableQuery) {
         return {
           matchId: r.id,
           targetPoints: r.targetPoints,
+          gameType: r.gameType,
           entryFee: r.entryFee,
           clock: r.clock,
           ranked: r.ranked,

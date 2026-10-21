@@ -29,6 +29,7 @@ function age(iso: string, now: number) {
  * or watch live matches. The list is the shared, cached /api/tables page, refreshed every few seconds.
  */
 export default function RoomBrowser({
+  game = "backgammon",
   initialView,
   myIds,
   busy,
@@ -38,6 +39,8 @@ export default function RoomBrowser({
   onCreate,
   onClose,
 }: {
+  /** Which game's tables to list. */
+  game?: "backgammon" | "chess";
   initialView: RoomView;
   /** Tables the viewer hosts: shown as "Your table" instead of Join. */
   myIds: Set<string>;
@@ -58,7 +61,8 @@ export default function RoomBrowser({
   const [now, setNow] = useState(() => Date.now());
   const gridRef = useRef<HTMLDivElement>(null);
 
-  const query = `/api/tables?view=${view}&sort=${sort}&page=${page}&fee=${fee}${points ? `&points=${points}` : ""}`;
+  const chess = game === "chess";
+  const query = `/api/tables?game=${game}&view=${view}&sort=${sort}&page=${page}&fee=${fee}${points ? `&points=${points}` : ""}`;
   const load = useCallback(async () => {
     try {
       const d = await api<PublicTables>(query);
@@ -127,19 +131,21 @@ export default function RoomBrowser({
         </header>
 
         <div className="rb-filters">
-          <div className="rb-filter">
-            <span className="rb-filter-label">Length</span>
-            <div className="rb-chips" role="group" aria-label="Match length">
-              <button className="chip" aria-pressed={points === null} onClick={() => change(setPoints)(null)}>
-                All
-              </button>
-              {LENGTHS.map((p) => (
-                <button key={p} className="chip" aria-pressed={points === p} onClick={() => change(setPoints)(p)}>
-                  {p} pt
+          {!chess && (
+            <div className="rb-filter">
+              <span className="rb-filter-label">Length</span>
+              <div className="rb-chips" role="group" aria-label="Match length">
+                <button className="chip" aria-pressed={points === null} onClick={() => change(setPoints)(null)}>
+                  All
                 </button>
-              ))}
+                {LENGTHS.map((p) => (
+                  <button key={p} className="chip" aria-pressed={points === p} onClick={() => change(setPoints)(p)}>
+                    {p} pt
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
           <div className="rb-filter">
             <span className="rb-filter-label">Entry fee</span>
             <div className="rb-chips" role="group" aria-label="Entry fee">
@@ -201,9 +207,9 @@ export default function RoomBrowser({
                 return (
                   <article key={t.matchId} className="room-card enter" style={{ animationDelay: `${(i % 8) * 35}ms` }}>
                     <div className="room-top">
-                      <span className="room-badge">{t.targetPoints}-pt</span>
+                      <span className="room-badge">{chess ? `⏱ ${t.clock === "none" ? "No clock" : t.clock}` : `${t.targetPoints}-pt`}</span>
                       <span className={`room-badge ${t.entryFee ? "paid" : "free"}`}>{feeLabel(t.entryFee)}</span>
-                      {t.clock !== "none" && <span className="room-badge">⏱ {t.clock === "fast" ? "Fast" : "Clock"}</span>}
+                      {!chess && t.clock !== "none" && <span className="room-badge">⏱ {t.clock === "fast" ? "Fast" : "Clock"}</span>}
                       {t.ranked && <span className="room-badge ranked">Ranked</span>}
                     </div>
                     <div className="room-seats">
@@ -232,10 +238,16 @@ export default function RoomBrowser({
                           {t.host.name} vs {t.opponent?.name}
                         </strong>
                         <span className="muted small">
-                          <span className="mono">
-                            {t.score?.[0]}–{t.score?.[1]}
-                          </span>{" "}
-                          to {t.targetPoints} · game {t.gameNumber}
+                          {chess ? (
+                            `in progress · ${t.clock}`
+                          ) : (
+                            <>
+                              <span className="mono">
+                                {t.score?.[0]}–{t.score?.[1]}
+                              </span>{" "}
+                              to {t.targetPoints} · game {t.gameNumber}
+                            </>
+                          )}
                           {t.spectators > 0 ? ` · 👁 ${t.spectators}` : ""}
                         </span>
                       </div>

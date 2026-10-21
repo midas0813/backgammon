@@ -14,6 +14,7 @@ import type { HomeData } from "@/lib/server/home";
 import QuestsCard from "@/components/QuestsCard";
 import FriendsCard from "@/components/FriendsCard";
 import TournamentsCard from "@/components/TournamentsCard";
+import { lobbyPath, setCurrentGame } from "@/lib/client/game";
 
 const POLL_MS = 8000;
 
@@ -150,6 +151,38 @@ export default function Home() {
         </div>
       )}
 
+      <section className="home-games" aria-label="Games">
+        {data.games.map((g) => (
+          <button
+            key={g.id}
+            className={`game-card game-${g.id}`}
+            onClick={() => {
+              setCurrentGame(g.id);
+              router.push(lobbyPath(g.id));
+            }}
+          >
+            <span className="game-card-icon" aria-hidden>
+              {g.icon}
+            </span>
+            <strong>{g.name}</strong>
+            <span className="muted small">
+              Lv {g.level}
+              {g.rated ? ` · ${g.rating}` : ""}
+            </span>
+            <span className="game-card-live small">
+              <span className="live-dot" aria-hidden /> {g.playing} playing
+            </span>
+          </button>
+        ))}
+        <div className="game-card soon" aria-label="Poker, coming soon">
+          <span className="game-card-icon" aria-hidden>
+            🂡
+          </span>
+          <strong>Poker</strong>
+          <span className="muted small">Coming soon</span>
+        </div>
+      </section>
+
       <QuestsCard />
       <TournamentsCard />
       <FriendsCard />
@@ -204,7 +237,8 @@ export default function Home() {
                     {m.status === "WAITING" ? "Your table" : `vs ${m.opponent}`}
                   </div>
                   <div className="muted small">
-                    {m.targetPoints}-pt · {m.status === "WAITING" ? "waiting for an opponent" : `score ${m.score[0]}–${m.score[1]}`}
+                    {m.gameType === "chess" ? "♟ Chess" : `${m.targetPoints}-pt`} ·{" "}
+                    {m.status === "WAITING" ? "waiting for an opponent" : m.gameType === "chess" ? "in progress" : `score ${m.score[0]}–${m.score[1]}`}
                   </div>
                 </div>
                 <span className="row" style={{ gap: 6, flexWrap: "nowrap" }}>

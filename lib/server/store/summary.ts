@@ -1,4 +1,4 @@
-import { seatToAct } from "../../engine/match";
+import { seatToActOf } from "../../games";
 import type { LobbyRow, MatchRecord } from "./types";
 
 /** The lobby fields of a match, stored beside the document so lists never load it. */
@@ -10,7 +10,7 @@ export function summarize(m: MatchRecord) {
     gameNumber: m.state.game?.gameNumber ?? 0,
     hostId: m.createdBy,
     seats: m.seats,
-    seatToAct: seatToAct(m.state),
+    seatToAct: seatToActOf(m),
     clock: m.clock?.preset ?? "none",
     ranked: !!m.ranked,
   };
@@ -21,6 +21,7 @@ export function lobbyRow(m: MatchRecord, hostSeenAt: number, spectators: number)
   return {
     id: m.id,
     mode: m.mode,
+    gameType: m.gameType ?? "backgammon",
     status: m.state.status,
     targetPoints: m.state.targetPoints,
     createdAt: m.createdAt,

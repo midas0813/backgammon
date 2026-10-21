@@ -1,5 +1,6 @@
 import { ApiError, notFound } from "./errors";
 import { ONLINE_WINDOW_MS } from "./lobby";
+import type { ClockPreset } from "./clock";
 import { createMatch, joinMatch } from "./matches";
 import { tx, type Friendship, type Tx } from "./store";
 import { levelOf } from "../quests";
@@ -81,12 +82,23 @@ export function listFriends(userId: string, now = Date.now()) {
 }
 
 /** Invite a friend: opens an invite-only table and sends them the invite. */
-export async function inviteFriend(userId: string, friendshipId: number, body: { targetPoints?: unknown; clock?: unknown; clientSeed?: unknown }) {
+export async function inviteFriend(
+  userId: string,
+  friendshipId: number,
+  body: { targetPoints?: unknown; clock?: unknown; clientSeed?: unknown; game?: unknown; timeControl?: unknown },
+) {
   const f = await tx((t) => t.friends.byId(friendshipId));
   if (!f || f.status !== "ACCEPTED" || (f.userA !== userId && f.userB !== userId)) throw notFound("Friend");
   const points = [1, 3, 5, 7].includes(Number(body.targetPoints)) ? Number(body.targetPoints) : 3;
   const clock = body.clock === "fast" || body.clock === "none" ? body.clock : "standard";
-  const { matchId } = await createMatch(userId, "private", points, { clock, clientSeed: body.clientSeed });
+  const { matchId } = await createMatch(
+    userId,
+    "private",
+    points,
+    body.game === "chess"
+      ? { game: "chess", timeControl: typeof body.timeControl === "string" ? body.timeControl : "5+0" }
+      : { clock, clientSeed: body.clientSeed },
+  );
   await tx((t) => t.invites.add({ fromUser: userId, toUser: other(f, userId), matchId }));
   return { matchId };
 }
@@ -142,7 +154,12 @@ export async function rematch(userId: string, matchId: string, clientSeed?: unkn
   }
   const mine = await tx((t) => t.invites.rematch(matchId, userId));
   if (mine) return { matchId: mine.matchId, joined: false };
-  const { matchId: next } = await createMatch(userId, "private", rec.state.targetPoints, { clock: rec.clock?.preset ?? "none", clientSeed });
+  // Same length and clock; in chess the colours swap.
+  const seat = rec.seats.indexOf(userId);
+  const opts: Parameters<typeof createMatch>[3] = rec.chess
+    ? { game: "chess", timeControl: rec.chess.timeControl, color: rec.chess.white === seat ? "black" : "white" }
+    : { clock: (rec.clock?.preset ?? "none") as ClockPreset, clientSeed };
+  const { matchId: next } = await createMatch(userId, "private", rec.state.targetPoints, opts);
   await tx((t) => t.invites.add({ fromUser: userId, toUser: opp, matchId: next, rematchOf: matchId }));
   return { matchId: next, joined: false };
 }

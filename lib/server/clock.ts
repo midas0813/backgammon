@@ -9,14 +9,20 @@ import type { Seat } from "../engine/board";
  * reconnect window runs instead (90 s per drop, 3 min per match). When both players are gone at once
  * (more likely our problem than theirs) nobody's clock runs.
  *
+ * Chess uses the usual Fischer clock instead: no free seconds, a starting bank, and an increment
+ * added after each move ("3+2" = 3 minutes + 2 seconds a move).
+ *
  * Pure functions over a small state object stored on the match; the server applies them under the
  * match's row lock, and the browser uses the same numbers to draw the clocks.
  */
 export type ClockPreset = "standard" | "fast" | "none";
 
 export interface ClockState {
-  preset: Exclude<ClockPreset, "none">;
+  /** "standard" / "fast" (backgammon) or a chess time control such as "3+2". */
+  preset: string;
   perMoveMs: number;
+  /** Chess: added to the mover's bank after each move. */
+  incrementMs?: number;
   bankMs: [number, number];
   /** The seat whose decision is running, and when it started (ms; moved forward after a reconnect). */
   seat: Seat | null;
@@ -39,6 +45,11 @@ export function newClock(preset: ClockPreset, targetPoints: number): ClockState 
   const s = CLOCK_SETTINGS[preset];
   const bank = Math.max(s.minBankMs, s.bankPerPointMs * targetPoints);
   return { preset, perMoveMs: s.perMoveMs, bankMs: [bank, bank], seat: null, turnStartedAt: 0, awayUsedMs: [0, 0] };
+}
+
+/** A chess clock: `baseMs` each, plus `incMs` after every move. */
+export function newChessClock(id: string, baseMs: number, incMs: number): ClockState {
+  return { preset: id, perMoveMs: 0, incrementMs: incMs, bankMs: [baseMs, baseMs], seat: null, turnStartedAt: 0, awayUsedMs: [0, 0] };
 }
 
 const offline = (seen: [number, number], seat: Seat, now: number) => now - seen[seat] > DISCONNECT_GRACE_MS;
@@ -106,6 +117,7 @@ export function nextDecision(c: ClockState, nextSeat: Seat | null, now: number) 
   if (c.seat !== null) {
     const used = Math.max(0, now - c.turnStartedAt);
     c.bankMs[c.seat] = Math.max(0, c.bankMs[c.seat] - Math.max(0, used - c.perMoveMs));
+    if (c.incrementMs && nextSeat !== null && nextSeat !== c.seat) c.bankMs[c.seat] += c.incrementMs;
   }
   c.seat = nextSeat;
   c.turnStartedAt = now;
