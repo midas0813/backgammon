@@ -4,6 +4,8 @@ import { replay } from "@/lib/chess/rules";
 import { nextDecision, newChessClock } from "@/lib/server/clock";
 import { createTable, lobby, publicTables } from "@/lib/server/lobby";
 import { createMatch, forceBotDue, getSnapshot, joinMatch, leaveMatch, submitAction, tickBot } from "@/lib/server/matches";
+import { gamesHub } from "@/lib/server/hub";
+import { accountXp } from "@/lib/server/stats";
 import { tx } from "@/lib/server/store";
 import { ensureAccount } from "./helpers";
 
@@ -135,5 +137,28 @@ describe("chess", () => {
     snap = await getSnapshot(me.id, matchId);
     expect(snap.chess!.moves.length % 2).toBe(snap.chess!.white === 0 ? 0 : 1);
     expect(snap.seatToAct).toBe(0);
+  });
+});
+
+describe("chess pass & play", () => {
+  it("the seat named White plays White", async () => {
+    const me = await ensureAccount();
+    const { matchId } = await createMatch(me.id, "local", 1, { game: "chess" });
+    const snap = await getSnapshot(me.id, matchId);
+    expect(snap.seats[0].name).toMatch(/\(White\)$/);
+    expect(snap.chess!.white).toBe(0);
+  });
+});
+
+describe("platform: Arena level and the Play hub", () => {
+  it("chess XP counts toward the Arena level, and the hub lists every game", async () => {
+    const { matchId, white, black } = await chessGame();
+    await play(matchId, white.id, black.id, ["f2f3", "e7e5", "g2g4", "d8h4"]);
+    const [chessXp, arena] = await tx(async (t) => [(await t.gameStats.getMany([black.id], "chess"))[black.id].xp, await accountXp(t, black.id)]);
+    expect(chessXp).toBeGreaterThan(0);
+    expect(arena).toBe(chessXp);
+    const hub = await gamesHub(black.id);
+    expect(hub.games.map((g) => g.id)).toEqual(["backgammon", "chess"]);
+    expect(hub.games.find((g) => g.id === "chess")).toMatchObject({ xp: chessXp, rated: true });
   });
 });

@@ -1,4 +1,4 @@
-# Backgammon (Next.js)
+# Liquen Arena (Next.js)
 
 Mobile-first multiplayer game platform, starting with **Backgammon** and **Chess**. Backgammon: free online matches with the full rules and doubling cube, a
 computer opponent, pass & play, spectators with chat and reactions, wallet accounts, an admin area,
@@ -42,14 +42,14 @@ variables (Project → Settings → Environment Variables; redeploy after changi
 
 ## Pages
 
-`/` landing · `/home` dashboard with game cards · `/play` backgammon lobby · `/play/chess` chess lobby · `/match/:id` play, watch and chat ·
+`/` landing · `/home` platform dashboard · `/play` choose a game · `/play/backgammon` · `/play/chess` · `/match/:id` play, watch and chat ·
 `/profile` · `/wallet` · `/signup`, `/login`, `/welcome` · `/admin`.
 
 ## What works
 
 | Area | Status |
 | --- | --- |
-| Chess | Full rules (chess.js): castling, en passant, promotion, checkmate, stalemate, threefold, 50-move rule, insufficient material; draw offers and resignation; Bullet/Blitz/Rapid clocks (1+0 to 15+10); computer in three levels; pass & play; rated public tables (Elo); its own XP and level. Pick the game on Home or with the switcher in the lobby |
+| Chess | Full rules (chess.js): castling, en passant, promotion, checkmate, stalemate, threefold, 50-move rule, insufficient material; draw offers and resignation; Bullet/Blitz/Rapid clocks (1+0 to 15+10); computer in three levels; pass & play; rated public tables (Elo); its own XP and level. Pick the game on Play (all games as tiles) or Home |
 | Rules engine (`lib/engine`) | Full legal-move enumeration (max dice, higher-die rule, doubles), hitting, bar, bear-off, single/gammon/backgammon, opening roll, 15-checker invariant every turn |
 | Cube | Offer before rolling, ownership, accept/pass, cap 128, Crawford game, dead-cube block |
 | Authoritative server | Server-only dice; every action carries `actionId` + `expectedVersion`; retries are idempotent; append-only event log per match |

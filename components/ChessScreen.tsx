@@ -7,7 +7,8 @@ import ChessBoard from "@/components/ChessBoard";
 import Confetti from "@/components/Confetti";
 import FeedbackButton from "@/components/FeedbackButton";
 import Modal from "@/components/Modal";
-import { END_LABEL } from "@/lib/chess/rules";
+import { END_LABEL, TIME_CONTROLS } from "@/lib/chess/rules";
+import { useMe } from "@/lib/client/me";
 import type { Seat } from "@/lib/engine/board";
 import type { MatchSnapshot } from "@/lib/server/matches";
 
@@ -15,6 +16,17 @@ type Clock = { bankMs: number; running: boolean; low: boolean };
 type ChessView = NonNullable<MatchSnapshot["chess"]>;
 
 const VALUE: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9 };
+const START: Record<string, number> = { q: 1, r: 2, b: 2, n: 2, p: 8 };
+const GLYPH: Record<string, string> = { q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
+
+/** Pieces each colour has lost (shown in the other player's tray), most valuable first. */
+function lost(fen: string) {
+  const left: Record<string, number> = {};
+  for (const ch of fen.split(" ")[0]) if (/[a-z]/i.test(ch)) left[ch] = (left[ch] ?? 0) + 1;
+  const of = (color: "w" | "b") =>
+    Object.entries(START).flatMap(([t, n]) => Array(Math.max(0, n - (left[color === "w" ? t.toUpperCase() : t] ?? 0))).fill(t) as string[]);
+  return { w: of("w"), b: of("b") };
+}
 const mmss = (ms: number) => {
   const s = Math.ceil(ms / 1000);
   return s < 20 && s > 0 ? `0:${String(s).padStart(2, "0")}` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -58,6 +70,10 @@ export default function ChessScreen({
   overlays: React.ReactNode;
 }) {
   const ch = snap.chess as ChessView;
+  const me_ = useMe();
+  const base = TIME_CONTROLS.find((t) => t.id === ch.timeControl)?.baseMs ?? 0;
+  const gone = lost(ch.fen);
+  const [banner, setBanner] = useState(true);
   const [menu, setMenu] = useState(false);
   const [resign, setResign] = useState(false);
   const [flip, setFlip] = useState(false);
@@ -88,6 +104,7 @@ export default function ChessScreen({
     const color = colorOf(seat);
     const lead = mat[color] - mat[color === "w" ? "b" : "w"];
     const clock = faces?.[seat];
+    const took = gone[color === "w" ? "b" : "w"];
     return (
       <div className={`strip chess-strip${active && ch.toMove === seat ? " active" : ""}`}>
         <div className="who">
@@ -108,13 +125,25 @@ export default function ChessScreen({
             </span>
           )}
           {!s.online && <span className="badge warn">offline</span>}
-          {lead > 0 && <span className="muted small mono">+{lead}</span>}
         </div>
         {clock && (
           <span className={`clock chess-clock${clock.running ? " running" : ""}${clock.low ? " low" : ""}`} aria-label={`${mmss(clock.bankMs)} left`}>
             {mmss(clock.bankMs)}
+            {base > 0 && (
+              <span className="clock-bar" aria-hidden>
+                <span style={{ width: `${Math.min(100, (clock.bankMs / base) * 100)}%` }} />
+              </span>
+            )}
           </span>
         )}
+        <span className="chess-tray" aria-label={`Captured: ${took.length} pieces`}>
+          {took.map((t, i) => (
+            <span key={i} className={`tray-piece ${color === "w" ? "black" : "white"}`}>
+              {GLYPH[t]}&#xFE0E;
+            </span>
+          ))}
+          {lead > 0 && <span className="tray-lead">+{lead}</span>}
+        </span>
       </div>
     );
   };
@@ -168,20 +197,36 @@ export default function ChessScreen({
 
       {strip(topSeat)}
       <div className="board-wrap chess-wrap">
+        {active && !spectating && (
+          <span key={`${ch.moves.length}`} className={`turn-pill${myTurn ? " mine" : ""}${ch.inCheck && myTurn ? " check" : ""}`}>
+            {myTurn ? (ch.inCheck ? "Check! Your move" : "Your move") : `${snap.seats[ch.toMove].name} is thinking…`}
+          </span>
+        )}
         <ChessBoard
-          fen={ch.fen}
+          moves={ch.moves}
           orientation={colorOf(bottomSeat)}
-          interactive={myTurn && !busy}
-          lastMove={ch.moves[ch.moves.length - 1] ?? null}
+          interactive={myTurn}
+          busy={busy}
+          sound={me_?.sound ?? true}
           onMove={(uci) => onSend("MOVE", { uci })}
         />
+        {result && banner && (
+          <button className={`chess-banner${result.winner === null ? " draw" : youWon ? " win" : ""}`} onClick={() => setBanner(false)}>
+            <span className="chess-banner-icon" aria-hidden>
+              {result.winner === null ? "🤝" : youWon || local ? "👑" : "♚"}
+            </span>
+            <strong>{result.reason === "checkmate" ? "Checkmate" : resultTitle}</strong>
+            <span>{result.winner === null ? END_LABEL[result.reason] : `${snap.seats[result.winner].name} wins ${END_LABEL[result.reason]}`}</span>
+            <span className="muted small">Tap to see the board</span>
+          </button>
+        )}
       </div>
       {strip(bottomSeat)}
 
       <ol className="chess-moves" ref={moveList} aria-label="Moves">
         {pairs.length === 0 && <li className="muted small">White to move</li>}
         {pairs.map(([w, b], i) => (
-          <li key={i}>
+          <li key={i} className={i === pairs.length - 1 ? "latest" : undefined}>
             <span className="muted">{i + 1}.</span> {w} {b ?? ""}
           </li>
         ))}

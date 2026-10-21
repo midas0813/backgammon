@@ -45,7 +45,7 @@ export default function QuestsCard() {
       const unlocked = FRAMES.find((f) => f.level === r.level);
       toast(
         r.levelUp
-          ? `Level ${r.level}!${unlocked ? ` New avatar frame: ${unlocked.name}.` : ""}`
+          ? `Arena level ${r.level}!${unlocked ? ` New avatar frame: ${unlocked.name}.` : ""}`
           : `Quest complete${r.credits ? ` · +${r.credits / 100} practice credits` : ""}`,
         { tone: "ok" },
       );
@@ -62,7 +62,9 @@ export default function QuestsCard() {
       {celebrate > 0 && <Confetti key={celebrate} pieces={60} />}
       <div className="spread">
         <h2>Quests</h2>
-        <span className="level-chip">Level {board.level}</span>
+        <span className="level-chip" title="Arena level: XP from every game">
+          Arena Lv {board.level}
+        </span>
       </div>
       <div className="xp-bar" aria-label={`${board.into} of ${board.span} XP to level ${board.level + 1}`}>
         <span style={{ width: `${Math.round((board.into / board.span) * 100)}%` }} />
@@ -83,7 +85,14 @@ export default function QuestsCard() {
         {quests.map((q) => (
           <li key={q.id} className={q.claimed ? "claimed" : done(q) ? "ready" : ""}>
             <div className="quest-main">
-              <strong>{q.title}</strong>
+              <strong>
+                {q.game && (
+                  <span className="quest-game" title={q.game === "chess" ? "Chess" : "Backgammon"}>
+                    {q.game === "chess" ? "♟" : "⚀"}
+                  </span>
+                )}
+                {q.title}
+              </strong>
               <span className="muted small">
                 +{q.xp} XP{board.registered && q.credits ? ` · ${q.credits / 100} credits` : ""}
               </span>

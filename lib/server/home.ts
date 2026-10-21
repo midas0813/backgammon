@@ -1,12 +1,11 @@
 import type { Seat } from "../engine/board";
 import { userBalances } from "./ledger";
 import { sweep } from "./matches";
-import { LIVE_WINDOW_MS, pulse, touchUser } from "./lobby";
+import { pulse, touchUser } from "./lobby";
 import { operatorSettings } from "./settings";
 import { tx } from "./store";
 import { profileIn } from "./users";
-import { GAMES } from "../games";
-import { levelOf } from "../quests";
+import { gamesSummaryIn } from "./hub";
 
 export const DAILY_GOAL = 3;
 
@@ -52,17 +51,12 @@ export async function homeData(userId: string, tzOffset: number) {
     const counts = await pulse(t, now, settings.spectators);
     const myWaiting = continuing.filter((m) => m.mode === "quick" && m.status === "WAITING").length;
     const reports = await t.disputes.listByUser(userId);
-    // One card per game: your level and rating in it, and how many are playing.
-    const games = [];
-    for (const g of GAMES) {
-      const s = (await t.gameStats.getMany([userId], g.id))[userId];
-      games.push({
-        ...g,
-        level: levelOf(s?.xp ?? 0).level,
-        rating: Math.round(s?.rating ?? 1500),
-        rated: (s?.ratingGames ?? 0) > 0,
-        playing: g.id === "backgammon" ? counts.playing : await t.matches.countActiveSince(now - LIVE_WINDOW_MS, g.id),
-      });
+    // One card per game: your level and rating in it, how many are playing and open tables.
+    const games = await gamesSummaryIn(t, userId, now);
+    // Today's matches per game (all games together make the daily goal).
+    const todayByGame = Object.fromEntries(games.map((g) => [g.id, 0]));
+    for (const r of await t.results.history(userId, 0, 50)) {
+      if (Date.parse(r.completedAt) >= dayStart) todayByGame[r.game ?? "backgammon"] = (todayByGame[r.game ?? "backgammon"] ?? 0) + 1;
     }
     return {
       profile,
@@ -74,13 +68,14 @@ export async function homeData(userId: string, tzOffset: number) {
         games: today.games,
         points: today.points,
         goal: DAILY_GOAL,
+        byGame: todayByGame,
         dayStart: new Date(dayStart).toISOString(),
       },
       continuing,
       pulse: {
         online: counts.online,
         live: games.reduce((n, g) => n + g.playing, 0),
-        open: Math.max(0, counts.open - myWaiting),
+        open: Math.max(0, games.reduce((n, g) => n + g.open, 0) - myWaiting),
         gamesPlayed: (await t.counters.get(["games"])).games,
       },
       games,

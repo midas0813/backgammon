@@ -83,7 +83,7 @@ export default function DelayedWatch({
   return (
     <main className="game">
       <div className="topbar">
-        <Link className="btn sm" href="/play">
+        <Link className="btn sm" href="/play/backgammon">
           ← Lobby
         </Link>
         <div className="info">

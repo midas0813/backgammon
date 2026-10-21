@@ -38,8 +38,8 @@ export default function TournamentsPage() {
   };
   return (
     <main className="page">
-      <Link className="btn sm" href="/play" style={{ alignSelf: "flex-start" }}>
-        ← Lobby
+      <Link className="btn sm" href="/play/backgammon" style={{ alignSelf: "flex-start" }}>
+        ← Backgammon
       </Link>
       <section className="lobby-head">
         <div>

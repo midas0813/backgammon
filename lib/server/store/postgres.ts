@@ -797,6 +797,7 @@ function makeTx(q: Query, committed: (() => void)[]): Tx {
           matchId: String(r.match_id),
           userId: String(r.user_id),
           mode: r.mode as LobbyRow["mode"],
+          game: (r.game as LobbyRow["gameType"]) ?? "backgammon",
           won: Boolean(r.won),
           points: num(r.points),
           games: num(r.games),

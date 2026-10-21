@@ -1,3 +1,4 @@
+import { accountXp } from "./stats";
 import { randomUUID } from "node:crypto";
 import { TOKEN_SCALE } from "../fees";
 import { levelOf } from "../quests";
@@ -148,6 +149,7 @@ export async function matchHistoryPage(t: Tx, userId: string, offset: number) {
     items: rows.slice(0, HISTORY_PAGE).map((r) => ({
       matchId: r.matchId,
       mode: r.mode,
+      game: r.game ?? "backgammon",
       opponent: r.opponent,
       won: r.won,
       score: r.score,
@@ -182,6 +184,7 @@ export async function playerStats(t: Tx, userId: string) {
 export async function profileIn(t: Tx, userId: string) {
   const u = await t.users.get(userId);
   if (!u) throw new ApiError(401, "UNAUTHENTICATED", "Session expired");
+  const xp = await accountXp(t, userId);
   return {
     name: u.name,
     walletAddress: u.walletAddress ?? null,
@@ -190,8 +193,10 @@ export async function profileIn(t: Tx, userId: string) {
     registeredAt: u.registeredAt ?? null,
     createdAt: u.createdAt,
     avatarUrl: avatarUrl(u),
-    xp: u.xp ?? 0,
-    level: levelOf(u.xp ?? 0).level,
+    /** Arena XP and level: all games together (each game also has its own). */
+    xp,
+    level: levelOf(xp).level,
+    /** Backgammon rating (each game has its own; see the game cards). */
     rating: Math.round(u.rating ?? 1500),
     ratedGames: u.ratingGames ?? 0,
     frame: u.frame ?? "none",

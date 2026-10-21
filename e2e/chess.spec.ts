@@ -23,8 +23,10 @@ test("chess: pick the game on Home, play the computer, and Play remembers chess"
   await expect(p.locator(".chess-moves")).toContainText("e4");
   await expect.poll(async () => (await p.locator(".chess-moves").innerText()).split(/\s+/).length, { timeout: 15000 }).toBeGreaterThan(2);
   await p.waitForTimeout(800);
-  // Back to Play remembers chess.
+  // Play shows every game; Chess is one tile away.
   await p.goto("/play");
+  await expect(p.getByRole("heading", { name: "Choose a game" })).toBeVisible();
+  await p.locator(".hub-chess").click();
   await p.waitForURL(/\/play\/chess/);
   expect(errs).toEqual([]);
   await ctx.close();

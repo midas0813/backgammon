@@ -261,6 +261,9 @@ export interface MatchResultRow {
   completedAt: string;
 }
 
+/** Per-game stats, plus "arena": XP earned on the platform rather than in one game (general quests). */
+export type StatsKey = GameType | "arena";
+
 export interface GameStats {
   xp: number;
   rating: number;
@@ -507,11 +510,11 @@ export interface Tx {
    * rows. Missing players read as level 0 and 1500.
    */
   gameStats: {
-    getMany(ids: string[], game: GameType): Promise<Record<string, GameStats>>;
+    getMany(ids: string[], game: StatsKey): Promise<Record<string, GameStats>>;
     /** Add XP atomically; returns the new total for that game. */
-    addXp(id: string, game: GameType, n: number): Promise<number>;
+    addXp(id: string, game: StatsKey, n: number): Promise<number>;
     /** A rated result: add `delta` to the rating and `points` of experience, one more rated game. */
-    applyRating(id: string, game: GameType, delta: number, points: number): Promise<void>;
+    applyRating(id: string, game: StatsKey, delta: number, points: number): Promise<void>;
   };
   sessions: {
     get(token: string): Promise<Session | undefined>;

@@ -14,7 +14,8 @@ import type { HomeData } from "@/lib/server/home";
 import QuestsCard from "@/components/QuestsCard";
 import FriendsCard from "@/components/FriendsCard";
 import TournamentsCard from "@/components/TournamentsCard";
-import { lobbyPath, setCurrentGame } from "@/lib/client/game";
+import { GAMES, UPCOMING_GAMES, lobbyPath } from "@/lib/games";
+import { levelOf } from "@/lib/quests";
 
 const POLL_MS = 8000;
 
@@ -65,11 +66,14 @@ export default function Home() {
     return () => window.clearInterval(t);
   }, [load]);
 
-  const playComputer = async () => {
-    setBusy("bot");
+  const playComputer = async (game: "backgammon" | "chess") => {
+    setBusy(game);
     setError(null);
     try {
-      const { matchId } = await api<{ matchId: string }>("/api/matches", { method: "POST", body: { mode: "bot", targetPoints: 3 } });
+      const { matchId } = await api<{ matchId: string }>("/api/matches", {
+        method: "POST",
+        body: game === "chess" ? { mode: "bot", game: "chess", targetPoints: 1, botLevel: 2 } : { mode: "bot", targetPoints: 3 },
+      });
       router.push(`/match/${matchId}`);
     } catch (e) {
       if (!isHandled(e)) setError(e instanceof Error ? e.message : "Could not start");
@@ -91,6 +95,8 @@ export default function Home() {
   const { profile: me, balances, today, continuing, pulse } = data;
   const left = Math.max(0, today.goal - today.matches);
   const recent = me.stats.history.slice(0, 5);
+  const arena = levelOf(me.xp);
+  const icon = (g: string) => GAMES.find((x) => x.id === g)?.icon ?? "";
 
   return (
     <main className="page home">
@@ -103,7 +109,13 @@ export default function Home() {
           <div style={{ minWidth: 0 }}>
             <div className="muted small">{greeting()},</div>
             <h1 className="home-name">{me.name}</h1>
+            <span className="arena-xp" aria-label={`${arena.into} of ${arena.span} XP to Arena level ${me.level + 1}`}>
+              <span style={{ width: `${Math.round((arena.into / arena.span) * 100)}%` }} />
+            </span>
             <div className="row" style={{ gap: 6, marginTop: 6 }}>
+              <span className="badge gold-badge" title="Your Arena level: XP from every game together">
+                Arena Lv {me.level}
+              </span>
               {me.registered ? <span className="badge ok">Wallet account</span> : <span className="badge warn">Guest</span>}
               <span className="badge" title="Identity and age checks are not required for free play">
                 Free play · not verified
@@ -153,14 +165,7 @@ export default function Home() {
 
       <section className="home-games" aria-label="Games">
         {data.games.map((g) => (
-          <button
-            key={g.id}
-            className={`game-card game-${g.id}`}
-            onClick={() => {
-              setCurrentGame(g.id);
-              router.push(lobbyPath(g.id));
-            }}
-          >
+          <button key={g.id} className={`game-card game-${g.id}`} onClick={() => router.push(lobbyPath(g.id))}>
             <span className="game-card-icon" aria-hidden>
               {g.icon}
             </span>
@@ -174,14 +179,44 @@ export default function Home() {
             </span>
           </button>
         ))}
-        <div className="game-card soon" aria-label="Poker, coming soon">
+        <Link className="game-card soon" href="/play" aria-label={`${UPCOMING_GAMES.length} more games coming soon`}>
           <span className="game-card-icon" aria-hidden>
-            🂡
+            {UPCOMING_GAMES.map((g) => g.icon).join("")}
           </span>
-          <strong>Poker</strong>
-          <span className="muted small">Coming soon</span>
-        </div>
+          <strong>+{UPCOMING_GAMES.length} soon</strong>
+          <span className="muted small">{UPCOMING_GAMES.map((g) => g.name).join(", ")}</span>
+        </Link>
       </section>
+
+      {continuing.length > 0 && (
+        <section className="card accent">
+          <div className="card-title">
+            <span className="badge live">Live</span>
+            <h2>Continue</h2>
+          </div>
+          <ul className="list">
+            {continuing.map((m) => (
+              <li key={m.matchId} className="enter">
+                <div style={{ minWidth: 0 }}>
+                  <div className="ellipsis" style={{ fontWeight: 650 }}>
+                    {m.status === "WAITING" ? "Your table" : `vs ${m.opponent}`}
+                  </div>
+                  <div className="muted small">
+                    {m.gameType === "chess" ? "♟ Chess" : `⚀ Backgammon · ${m.targetPoints}-pt`} ·{" "}
+                    {m.status === "WAITING" ? "waiting for an opponent" : m.gameType === "chess" ? "in progress" : `score ${m.score[0]}–${m.score[1]}`}
+                  </div>
+                </div>
+                <span className="row" style={{ gap: 6, flexWrap: "nowrap" }}>
+                  {m.yourTurn && <span className="badge ok pulse">Your turn</span>}
+                  <Link className="btn sm primary" href={`/match/${m.matchId}`} transitionTypes={["nav-forward"]}>
+                    {m.status === "WAITING" ? "Open" : "Resume"}
+                  </Link>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <QuestsCard />
       <TournamentsCard />
@@ -191,6 +226,13 @@ export default function Home() {
         <div className="spread">
           <h2>Today</h2>
           <span className="muted small">{left === 0 ? "Daily goal reached 🎉" : `${left} more match${left === 1 ? "" : "es"} to today's goal`}</span>
+        </div>
+        <div className="row" style={{ gap: 6 }}>
+          {GAMES.map((g) => (
+            <span key={g.id} className="badge">
+              {g.icon} {g.name} · {today.byGame[g.id] ?? 0}
+            </span>
+          ))}
         </div>
         <div className="today-body">
           <GoalRing done={today.matches} goal={today.goal} />
@@ -208,12 +250,6 @@ export default function Home() {
               </strong>
             </div>
             <div className="stat">
-              <span className="muted small">Points won</span>
-              <strong>
-                <CountUp value={today.points} />
-              </strong>
-            </div>
-            <div className="stat">
               <span className="muted small">Streak</span>
               <strong>
                 <CountUp value={me.stats.currentStreak} />
@@ -223,79 +259,40 @@ export default function Home() {
         </div>
       </section>
 
-      {continuing.length > 0 && (
-        <section className="card accent">
-          <div className="card-title">
-            <span className="badge live">Live</span>
-            <h2>Continue</h2>
-          </div>
-          <ul className="list">
-            {continuing.map((m) => (
-              <li key={m.matchId} className="enter">
-                <div style={{ minWidth: 0 }}>
-                  <div className="ellipsis" style={{ fontWeight: 650 }}>
-                    {m.status === "WAITING" ? "Your table" : `vs ${m.opponent}`}
-                  </div>
-                  <div className="muted small">
-                    {m.gameType === "chess" ? "♟ Chess" : `${m.targetPoints}-pt`} ·{" "}
-                    {m.status === "WAITING" ? "waiting for an opponent" : m.gameType === "chess" ? "in progress" : `score ${m.score[0]}–${m.score[1]}`}
-                  </div>
-                </div>
-                <span className="row" style={{ gap: 6, flexWrap: "nowrap" }}>
-                  {m.yourTurn && <span className="badge ok pulse">Your turn</span>}
-                  <Link className="btn sm primary" href={`/match/${m.matchId}`} transitionTypes={["nav-forward"]}>
-                    {m.status === "WAITING" ? "Open" : "Resume"}
-                  </Link>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
       <section className="card">
         <h2>Quick start</h2>
         <div className="mode-grid">
-          <button className="mode-tile primary" disabled={!!busy} onClick={playComputer}>
+          <button className="mode-tile primary" disabled={!!busy} onClick={() => playComputer("chess")}>
             <span className="mode-icon" aria-hidden>
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M5 8h14v11H5zM12 4v4M9 13h.01M15 13h.01M9 16h6" />
-              </svg>
+              ♞
             </span>
-            <strong>{busy === "bot" ? "Starting…" : "vs Computer"}</strong>
+            <strong>{busy === "chess" ? "Starting…" : "Chess vs Computer"}</strong>
+            <span className="muted small">Medium strength, no clock</span>
+          </button>
+          <button className="mode-tile primary" disabled={!!busy} onClick={() => playComputer("backgammon")}>
+            <span className="mode-icon" aria-hidden>
+              ⚀
+            </span>
+            <strong>{busy === "backgammon" ? "Starting…" : "Backgammon vs Computer"}</strong>
             <span className="muted small">3-point match, starts now</span>
           </button>
-          <Link className="mode-tile" href="/play?find=1">
+          <Link className="mode-tile" href="/play">
             <span className="mode-icon" aria-hidden>
               <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
                 <path d="M13 2 3 14h8l-1 8 10-12h-8z" />
               </svg>
             </span>
-            <strong>Find a game</strong>
+            <strong>All games</strong>
             <span className="muted small">
-              {pulse.open} open table{pulse.open === 1 ? "" : "s"} to choose from
+              {pulse.open} open table{pulse.open === 1 ? "" : "s"} across the Arena
             </span>
           </Link>
-          <Link className="mode-tile" href="/play?create=1">
+          <Link className="mode-tile" href="/tournaments">
             <span className="mode-icon" aria-hidden>
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M12 5v14M5 12h14" />
-              </svg>
+              🏆
             </span>
-            <strong>Create table</strong>
-            <span className="muted small">Public or invite-only</span>
-          </Link>
-          <Link className="mode-tile" href="/play?watch=1">
-            <span className="mode-icon" aria-hidden>
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-            </span>
-            <strong>Watch live</strong>
-            <span className="muted small">
-              {pulse.live} match{pulse.live === 1 ? "" : "es"} in progress
-            </span>
+            <strong>Tournaments</strong>
+            <span className="muted small">Free sit &amp; go · Backgammon</span>
           </Link>
         </div>
         {error && <p className="err small">{error}</p>}
@@ -303,9 +300,9 @@ export default function Home() {
 
       <section className="card">
         <div className="spread">
-          <h2>Lobby right now</h2>
+          <h2>Arena right now</h2>
           <Link className="btn sm" href="/play">
-            Open lobby →
+            All games →
           </Link>
         </div>
         <div className="pulse-grid">
@@ -343,12 +340,16 @@ export default function Home() {
             {recent.map((h) => (
               <li key={h.matchId}>
                 <span className="row" style={{ flexWrap: "nowrap", minWidth: 0 }}>
-                  <span className={`result-pill ${h.won ? "win" : "loss"}`}>{h.won ? "W" : "L"}</span>
-                  <span className="ellipsis">vs {h.opponent}</span>
+                  <span className={`result-pill ${h.won ? "win" : h.reason === "draw" ? "draw" : "loss"}`}>
+                    {h.won ? "W" : h.reason === "draw" ? "D" : "L"}
+                  </span>
+                  <span className="ellipsis">
+                    {icon(h.game)} vs {h.opponent}
+                  </span>
                 </span>
                 <span className="row" style={{ gap: 8, flexWrap: "nowrap" }}>
                   <span className="mono small">
-                    {h.score[0]}–{h.score[1]}
+                    {h.game === "chess" ? (h.reason === "draw" ? "draw" : h.reason === "points" ? "mate" : h.reason) : `${h.score[0]}–${h.score[1]}`}
                   </span>
                   <Link className="btn sm" href={`/match/${h.matchId}`}>
                     View

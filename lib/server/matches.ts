@@ -368,7 +368,8 @@ export async function createMatch(
     };
     if (chess) {
       rec.gameType = "chess";
-      const white = (opts.color === "white" ? 0 : opts.color === "black" ? 1 : randomInt(2)) as Seat;
+      // Pass & play: the seats are named White and Black, so seat 0 plays White.
+      const white = (mode === "local" || opts.color === "white" ? 0 : opts.color === "black" ? 1 : randomInt(2)) as Seat;
       rec.chess = {
         moves: [],
         white,

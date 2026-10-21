@@ -1,3 +1,4 @@
+import { BRAND } from "../../brand";
 import { randomBytes, randomUUID } from "node:crypto";
 import type { Tx } from "../store";
 import { tx, type AdminChallenge, type AdminRole, type AuditEntry, type User } from "../store";
@@ -114,7 +115,7 @@ export interface ChallengeDetails {
 
 function challengeMessage(user: User, nonce: string, d: ChallengeDetails, issued: Date, expires: Date) {
   return [
-    "Backgammon admin",
+    `${BRAND.name} admin`,
     `Action: ${d.action}`,
     ...(d.target ? [`Target: ${d.target}`] : []),
     ...(d.reason ? [`Reason: ${d.reason}`] : []),

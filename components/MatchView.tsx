@@ -199,8 +199,6 @@ export default function MatchView({ matchId }: { matchId: string }) {
           sounds.move();
         } else if (e.type === "MATCH_COMPLETED" && soundRef.current) {
           sounds.win();
-        } else if (e.type === "MOVE_MADE" && soundRef.current && !s.yourSeats.includes(Number(p.seat) as Seat)) {
-          sounds.move();
         } else if (e.type === "DRAW_OFFERED" && !s.yourSeats.includes(Number(p.seat) as Seat)) {
           showToast(`${name(p.seat)} offers a draw.`);
         } else if (e.type === "DRAW_DECLINED" && !s.yourSeats.includes(Number(p.seat) as Seat)) {
@@ -553,7 +551,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
       <main className="page">
         <div className="card">
           <h1 style={{ fontSize: 22 }}>{loadError}</h1>
-          <Link className="btn primary" href="/play">
+          <Link className="btn primary" href="/play/backgammon">
             Back to lobby
           </Link>
         </div>
@@ -583,7 +581,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
     );
   }
 
-  const lobbyHref = snap.gameType === "chess" ? "/play/chess" : "/play";
+  const lobbyHref = snap.gameType === "chess" ? "/play/chess" : "/play/backgammon";
   // Chat, notices and the leave dialog are the same for every game.
   const overlays = (
     <>
@@ -693,7 +691,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
       <div className="topbar">
         <Link
           className="btn sm"
-          href="/play"
+          href="/play/backgammon"
           transitionTypes={["nav-back"]}
           aria-label="Back to lobby (the match continues)"
           onClick={(e) => {
@@ -811,7 +809,7 @@ export default function MatchView({ matchId }: { matchId: string }) {
               {snap.voided?.reason ? `Reason: “${snap.voided.reason}”. ` : ""}It no longer counts in anyone&apos;s stats. Nothing was at stake in this free
               match.
             </p>
-            <Link className="btn primary block" href="/play">
+            <Link className="btn primary block" href="/play/backgammon">
               Back to lobby
             </Link>
           </div>
@@ -1231,7 +1229,7 @@ function MatchOver({ snap }: { snap: Snapshot }) {
           Verify this game&apos;s dice
         </Link>
       )}
-      <Link className="btn primary block" href="/play">
+      <Link className="btn primary block" href="/play/backgammon">
         Back to lobby
       </Link>
     </div>
@@ -1320,7 +1318,7 @@ function WaitingRoom({ snap, matchId, onChange }: { snap: Snapshot; matchId: str
         <div className="card">
           <h1>{closed.title}</h1>
           <p className="muted">{closed.text} Nothing was reserved for this free match.</p>
-          <Link className="btn primary" href="/play">
+          <Link className="btn primary" href="/play/backgammon">
             Back to lobby
           </Link>
         </div>
@@ -1436,7 +1434,7 @@ function WaitingRoom({ snap, matchId, onChange }: { snap: Snapshot; matchId: str
         )}
         {err && <p className="err small">{err}</p>}
       </div>
-      <Link href="/play" className="btn">
+      <Link href="/play/backgammon" className="btn">
         ← Lobby
       </Link>
     </main>

@@ -5,12 +5,10 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Announcements from "@/components/Announcements";
 import CountUp from "@/components/CountUp";
-import GameSwitcher from "@/components/GameSwitcher";
 import Modal from "@/components/Modal";
 import PlayTile from "@/components/PlayTile";
 import RoomBrowser, { type RoomView } from "@/components/RoomBrowser";
 import { ClientApiError, api, isHandled } from "@/lib/client/api";
-import { setCurrentGame } from "@/lib/client/game";
 import { watchTable, unwatchTable } from "@/lib/client/tables";
 import { toast } from "@/lib/client/toast";
 import { TIME_CONTROLS } from "@/lib/chess/rules";
@@ -38,8 +36,6 @@ export default function ChessLobbyPage() {
   const [computer, setComputer] = useState(false);
   const [browsing, setBrowsing] = useState<RoomView | null>(null);
   const versionRef = useRef<string | null>(null);
-
-  useEffect(() => setCurrentGame("chess"), []);
 
   const load = useCallback(async (force = false) => {
     try {
@@ -110,8 +106,10 @@ export default function ChessLobbyPage() {
       <Announcements />
       <section className="lobby-head">
         <div>
-          <GameSwitcher game="chess" />
-          <h1 className="display">Lobby</h1>
+          <Link className="lobby-back" href="/play" transitionTypes={["nav-back"]}>
+            ← All games
+          </Link>
+          <h1 className="display">Chess</h1>
         </div>
         <div className="pulse-chips" aria-live="polite">
           <span className="pulse-chip">

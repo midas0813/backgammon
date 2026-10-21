@@ -132,7 +132,7 @@ export default function FairPlayPage() {
       <Suspense>
         <Verifier />
       </Suspense>
-      <Link className="btn" href="/play">
+      <Link className="btn" href="/play/backgammon">
         ← Lobby
       </Link>
     </main>

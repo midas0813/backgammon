@@ -7,7 +7,7 @@ test("a host opens a table, another player joins from the room browser, and both
   await openTable(host.page, { points: 5 });
   await expect(host.page.getByText(/Finding an opponent/)).toBeVisible();
 
-  await guest.page.goto("/play?find=1");
+  await guest.page.goto("/play/backgammon?find=1");
   const browserDialog = guest.page.getByRole("dialog", { name: "Find a game" });
   await expect(browserDialog.locator(".room-card").first()).toBeVisible();
   // Filters: the table is a 5-pointer.

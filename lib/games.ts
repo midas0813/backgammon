@@ -13,6 +13,16 @@ export const GAMES: { id: GameType; name: string; icon: string; tagline: string 
   { id: "chess", name: "Chess", icon: "♟", tagline: "Bullet, blitz and rapid" },
 ];
 
+/** Announced on the Play page as "coming soon". */
+export const UPCOMING_GAMES = [
+  { id: "poker", name: "Poker", icon: "🂡", tagline: "Sit & go tournaments and cash tables" },
+  { id: "cribbage", name: "Cribbage", icon: "🃏", tagline: "Pegging, crib and the classic 121" },
+  { id: "checkers", name: "Checkers", icon: "⛀", tagline: "Fast, tactical, timeless" },
+];
+
+/** A game's lobby. */
+export const lobbyPath = (game: GameType) => `/play/${game}`;
+
 export const isGameType = (v: unknown): v is GameType => v === "backgammon" || v === "chess";
 
 /** The seat that must act next in a match of any game (null when nobody). */

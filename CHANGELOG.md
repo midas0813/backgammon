@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-21 (later)
+
+- The platform is **Liquen Arena**. Play shows every game as a tile (Backgammon, Chess, and Poker,
+  Cribbage and Checkers coming soon); each game has its own lobby (`/play/backgammon`, `/play/chess`).
+- Home is the dashboard for the whole platform: Arena level (XP from every game), game cards, games to
+  continue, today's matches per game, quick start for each game, live numbers across the Arena.
+- Quests count matches in any game; game-specific quests are marked, and Chess has its own.
+- Chess looks and feels new: a lit wooden board with sculpted pieces that glide between squares,
+  capture bursts, a pulsing check, the king toppling at checkmate, a result banner, captured-piece
+  trays, clocks that glow and drain, and your move shown instantly.
+
 ## 2026-10-21
 
 **Chess, and a platform for several games**

@@ -23,7 +23,7 @@ export default function AppHeader() {
             Home
           </Link>
           <Link className="btn sm ghost desktop-only" href="/play">
-            Lobby
+            Play
           </Link>
           <Link className="btn sm ghost desktop-only" href="/leaderboard">
             Ranks

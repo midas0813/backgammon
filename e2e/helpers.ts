@@ -10,7 +10,7 @@ export async function player(browser: Browser, opts: { mobile?: boolean } = {}) 
 }
 
 export async function openLobby(page: Page) {
-  await page.goto("/play");
+  await page.goto("/play/backgammon");
   await expect(page.locator(".play-tile").first()).toBeVisible();
 }
 

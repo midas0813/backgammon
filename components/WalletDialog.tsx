@@ -7,13 +7,14 @@ import { createSiweMessage } from "viem/siwe";
 import { useConnect, useConnection, useConnectors, useDisconnect, useSignMessage } from "wagmi";
 import { getConnection } from "wagmi/actions";
 import Modal from "@/components/Modal";
+import { BRAND } from "@/lib/brand";
 import { useLatest } from "@/lib/client/hooks";
 import { setMe, useMe, type Profile } from "@/lib/client/me";
 import { appKit } from "@/lib/client/appkit";
 import { chains, wagmiConfig } from "@/lib/client/wagmi";
 import { closeWalletDialog, walletDialogStore } from "@/lib/client/wallet";
 
-const STATEMENT = "Sign in to Backgammon. This free signature proves you own this wallet. It does not send a transaction, cost gas or move funds.";
+const STATEMENT = `Sign in to ${BRAND.name}. This free signature proves you own this wallet. It does not send a transaction, cost gas or move funds.`;
 
 /** The invite code from the link the player arrived with (counted when their account is created). */
 const savedInvite = () => {
