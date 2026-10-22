@@ -4,11 +4,12 @@ In this app **the wallet is the account**. There is no email or password.
 
 ## How it works
 
-1. **Connect.** **Connect Wallet** opens Reown AppKit's wallet window (on wagmi 3) once a Reown project ID
-   is set: installed browser wallets by name, WalletConnect QR codes and links into mobile wallet apps.
-   AppKit only connects; its email/social wallets, swaps and on-ramp are off. Without a project ID the
-   app's own dialog lists browser wallets (MetaMask, Rabby, Brave, Trust, in-app browsers), the MetaMask
-   app and Coinbase Wallet. Either way the signature below is asked for as soon as a wallet connects.
+1. **Connect.** **Connect Wallet** opens the app's own wallet window, laid out like Reown AppKit's
+   (wagmi 3, browser wallets only). Wallets installed in the browser are listed by name (EIP-6963:
+   MetaMask, Rabby, Brave, Coinbase, Trust, OKX, Phantom, and the wallet apps' own browsers), with the
+   one used last marked *Recent*. On a phone without a wallet browser, the popular wallets open this
+   site inside their app; on a computer without the extension they link to its download. There is no
+   WalletConnect and no QR code. The signature below is asked for as soon as a wallet connects.
 2. **Sign in with Ethereum (EIP-4361 / "SIWE").** The server issues a one-time nonce. The wallet signs a
    human-readable message containing this site's domain, the address, the chain and the nonce.
    Signing is free: no transaction, no gas, no funds move.
@@ -34,16 +35,16 @@ others stay in those players' history. Guests have no balances. Payments will ne
 | Lost wallet | No recovery — losing the wallet's recovery phrase means losing the account | Add a recovery method later (e.g. link a second wallet, or email as a backup factor)? |
 | One wallet per account | Yes. A second address is a second account | Allow linking several wallets to one account? |
 | Supported networks | Base (default), Ethereum, Optimism, Arbitrum, Polygon, plus Base Sepolia/Sepolia for testing | Which chains for production, and which one for stablecoin deposits |
-| AppKit / WalletConnect | Off until `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` is set | Steps in [RUNBOOK.md](RUNBOOK.md#wallet-window-reown-appkit) |
+| QR / WalletConnect | Removed: browser wallets and wallet-app browsers only | Bring back WalletConnect if desktop users without an extension need their phone wallet |
 | Paid play / KYC | A wallet proves control of an address, not identity or age | Eligibility, age and territory checks before token play (spec 05) |
 | Deposits | Still simulated; connecting a wallet does not move funds | Choose the stablecoin + chain + contract and a provider (spec 06) |
 | ENS names / avatars | Not shown | Optional: display ENS name and avatar on profiles |
 
 ## Where the code is
 
-- `lib/client/wagmi.ts`: chains and connectors (AppKit's adapter when a project ID is set)
-- `lib/client/appkit.ts`: the AppKit window (theme, features, Terms/Privacy links)
-- `components/WalletDialog.tsx`: choose a wallet, sign the SIWE message, finish sign-in
+- `lib/client/wagmi.ts`: chains and the browser-wallet connector
+- `public/wallets/`: icons for the wallets listed when they are not installed
+- `components/WalletDialog.tsx`: the wallet window (choose, connect, sign the SIWE message, finish sign-in)
 - `components/Web3Provider.tsx`: wagmi + React Query, the dialog, and sign-out when the wallet switches account
 - `components/WalletButton.tsx`: the header button / account chip
 - `lib/server/siwe.ts`: nonce, verification, account creation and session rotation

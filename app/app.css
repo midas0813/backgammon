@@ -2201,52 +2201,371 @@ html[data-reduced-motion="true"]::view-transition-group(*) {
   }
 }
 
-/* ---- Connect a wallet ------------------------------------------------------------------------- */
-.wallet-list {
+/* ---- Connect a wallet (laid out like Reown AppKit's window) --------------------------------- */
+.wk-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(4 8 16 / 0.7);
+  backdrop-filter: blur(6px);
+  animation: fade-in 180ms ease both;
+}
+.wk {
+  --wk-bg: #141a24;
+  --wk-row: rgb(255 255 255 / 0.04);
+  --wk-row-hover: rgb(255 255 255 / 0.08);
+  --wk-line: rgb(255 255 255 / 0.08);
+  width: 100%;
+  max-width: 360px;
+  max-height: calc(100dvh - 32px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 30px;
+  border: 1px solid var(--wk-line);
+  background: var(--wk-bg);
+  color: var(--text);
+  box-shadow: 0 30px 90px -20px rgb(0 0 0 / 0.85);
+  animation: wk-in 260ms var(--ease-out) both;
+}
+@media (max-width: 430px) {
+  .wk-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .wk {
+    max-width: none;
+    border-radius: 30px 30px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+    animation-name: wk-up;
+  }
+}
+.wk-head {
+  display: grid;
+  grid-template-columns: 32px 1fr 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 16px 8px;
+}
+.wk-head h2 {
+  margin: 0;
+  text-align: center;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.wk-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+}
+button.wk-icon-btn:hover {
+  background: var(--wk-row-hover);
+  color: var(--text);
+}
+.wk-body {
+  overflow-y: auto;
+  padding: 8px 12px 12px;
+  animation: wk-fade 200ms ease both;
+}
+.wk-list {
   display: grid;
   gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
-.wallet-option {
+.wk-row {
   display: flex;
   align-items: center;
   gap: 12px;
   width: 100%;
-  min-height: 56px;
-  padding: 10px 14px;
-  border: 1px solid var(--border-soft);
-  border-radius: 14px;
-  background: var(--surface);
+  padding: 8px 14px 8px 8px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--wk-row);
   color: var(--text);
   font: inherit;
-  font-weight: 650;
   text-align: left;
+  text-decoration: none;
   cursor: pointer;
+  transition: background 120ms;
 }
-.wallet-option:hover:not(:disabled) {
-  border-color: var(--action);
+.wk-row:hover {
+  background: var(--wk-row-hover);
 }
-.wallet-option img,
-.wallet-option-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+.wk-row:active {
+  transform: scale(0.99);
+}
+.wk-row-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 500;
+}
+.wk-wicon {
   flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  object-fit: cover;
+  box-shadow: inset 0 0 0 1px var(--wk-line);
+  background: #fff;
 }
-.wallet-option-icon {
+.wk-wicon-letter {
   display: grid;
   place-items: center;
   background: var(--surface-2);
-  font-weight: 800;
+  color: var(--text);
+  font-weight: 700;
 }
-.wallet-option .muted {
-  margin-left: auto;
+.wk-tag {
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--action);
+  background: rgb(101 226 188 / 0.15);
 }
-.wallet-current {
-  display: grid;
+.wk-tag.recent {
+  color: var(--gold);
+  background: rgb(244 207 135 / 0.15);
+}
+.wk-tag.muted {
+  color: var(--text-2);
+  background: var(--wk-row-hover);
+}
+.wk-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--wk-line);
+  color: var(--text-2);
+  font-size: 14px;
+}
+.wk-pill {
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 99px;
+  background: rgb(101 226 188 / 0.15);
+  color: var(--action);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.wk-pill:hover {
+  background: rgb(101 226 188 / 0.25);
+}
+.wk-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 8px 8px;
+  text-align: center;
+}
+.wk-big {
+  font-size: 16px;
+  font-weight: 600;
+  margin-top: 6px;
+}
+.wk-muted {
+  display: block;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.wk-error {
+  margin: 0;
+  color: var(--error);
+  font-size: 14px;
+}
+.wk-address {
+  padding: 4px 10px;
+  border-radius: 99px;
+  background: var(--wk-row);
+  color: var(--text-2);
+  font-size: 13px;
+}
+.wk-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 18px;
+  border: 1px solid var(--wk-line);
+  border-radius: 99px;
+  background: var(--wk-row);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.wk-btn:hover:not(:disabled) {
+  background: var(--wk-row-hover);
+}
+.wk-btn.primary {
+  border-color: transparent;
+  background: var(--action);
+  color: var(--action-text);
+}
+.wk-btn.primary:hover:not(:disabled) {
+  background: #7aeccb;
+}
+.wk-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.wk-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: 100%;
+  margin-top: 6px;
+}
+.wk-link {
+  padding: 6px;
+  border: 0;
+  background: none;
+  color: var(--action);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.wk-legal {
+  margin: 0;
+  padding: 14px 24px 16px;
+  border-top: 1px solid var(--wk-line);
+  background: rgb(255 255 255 / 0.02);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+.wk-legal a {
+  color: var(--text);
+}
+
+/* Connecting: the wallet's icon inside a ring that runs round it. */
+.wk-spinner {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 110px;
+  height: 110px;
+}
+.wk-spinner svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+.wk-spinner rect {
+  fill: none;
+  stroke: var(--action);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 22 78;
+  animation: wk-run 1.1s linear infinite;
+}
+.wk-spinner.failed rect {
+  stroke: var(--error);
+  stroke-dasharray: 100 0;
+  animation: none;
+}
+.wk-spinner .wk-wicon {
+  border-radius: 22px;
+}
+.wk-pair {
+  display: flex;
+  align-items: center;
+}
+.wk-pair > span {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 4px solid var(--wk-bg);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.wk-pair-wallet {
+  margin-left: -14px;
+}
+.wk-pair .wk-wicon {
+  border-radius: 50%;
+}
+.wk-about {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  margin-bottom: 8px;
+  text-align: left;
+}
+.wk-about-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.wk-about-row strong {
+  display: block;
+  font-size: 15px;
+  margin-bottom: 2px;
+}
+.wk-about-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgb(101 226 188 / 0.12);
+  color: var(--action);
+}
+@keyframes wk-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+}
+@keyframes wk-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes wk-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes wk-run {
+  to {
+    stroke-dashoffset: -100;
+  }
 }
 
 /* Animated emojis (Noto) */

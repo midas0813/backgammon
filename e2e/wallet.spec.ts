@@ -68,7 +68,7 @@ test("a new wallet signs in, creates its account, and returns to it after signin
 
   await page.goto("/play");
   await page.getByRole("button", { name: "Connect Wallet" }).click();
-  const dialog = page.getByRole("dialog", { name: "Connect a wallet" });
+  const dialog = page.getByRole("dialog", { name: "Connect Wallet" });
   await dialog.getByRole("button", { name: /Test Wallet/ }).click();
   await page.waitForURL(/\/welcome/);
   const me = await (await page.request.get("/api/me")).json();
@@ -82,8 +82,8 @@ test("a new wallet signs in, creates its account, and returns to it after signin
   await page.goto("/play");
   await page.getByRole("button", { name: "Connect Wallet" }).click();
   await page
-    .getByRole("dialog", { name: "Connect a wallet" })
-    .getByRole("button", { name: /Test Wallet|Sign in with this wallet/ })
+    .getByRole("dialog", { name: "Connect Wallet" })
+    .getByRole("button", { name: /Test Wallet|^Sign$/ })
     .first()
     .click();
   await expect.poll(async () => (await (await page.request.get("/api/me")).json()).walletAddress).toBe(account.address);
@@ -99,7 +99,7 @@ test("the admin wallet unlocks the admin area with a signature", async ({ browse
   await page.goto("/play");
   await page.getByRole("button", { name: "Connect Wallet" }).click();
   await page
-    .getByRole("dialog", { name: "Connect a wallet" })
+    .getByRole("dialog", { name: "Connect Wallet" })
     .getByRole("button", { name: /Test Wallet/ })
     .click();
   // (New account or returning one, depending on which browser ran first against this server.)

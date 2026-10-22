@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-22
+
+- Connect Wallet is the app's own window, laid out like Reown AppKit (wallet list with Installed and
+  Recent tags, a connecting screen with a running ring, a Sign In screen, "What is a wallet?" and
+  "Get a wallet"), and a bottom sheet on phones. QR-code login is gone: Reown AppKit, WalletConnect
+  and the MetaMask and Coinbase SDKs are removed. Browser wallets connect directly; on a phone the
+  popular wallet apps open the site in their own browser.
+
 ## 2026-10-21 (evening)
 
 - **Tournaments are organised by admins** (new admin section *Tournaments*, for owners and operators):

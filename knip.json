@@ -1,7 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["tests/**/*.ts", "lib/stubs/*.ts"],
+  "entry": ["tests/**/*.ts"],
   "project": ["app/**/*.{ts,tsx}", "components/**/*.{ts,tsx}", "lib/**/*.ts", "tests/**/*.ts"],
-  "ignoreExportsUsedInFile": true,
-  "ignoreDependencies": ["@coinbase/wallet-sdk", "@walletconnect/ethereum-provider", "@metamask/connect-evm"]
+  "ignoreExportsUsedInFile": true
 }
